@@ -77,28 +77,15 @@ Each milestone builds on the previous ones. Dependencies are noted where they ex
 
 ---
 
-### M5: Movement Validation
+### ~~M5: Movement Validation~~ COMPLETE
 
-Replace unrestricted `moveUnit()` with rules-compliant movement.
-
-**New `core/movement.ts`:**
-
-- `getValidMoveTargets(unit, grid, units)` → set of legal destination hexes
-- Movement through front hexsides only (uses M2 facing zones)
-- Respect movement allowance (from M1 unit definitions)
-- Terrain entry restrictions (from M3)
-- Stacking: 1 unit per hex, no moving through occupied hexes (Light Infantry exception: may pass through friendly)
-- Facing change: 1 vertex during move, up to 2 if stationary (costs the action)
-- Road bonus: +1 hex if entire path on road, not approaching enemy
-- Non-charging units cannot voluntarily move adjacent to enemy
-
-**Difficult terrain check:** Units with `terrainCheckRequired` in a difficult terrain hex must pass ~50% check to leave. Failure spends the action.
-
-**Pathfinding:** BFS/flood-fill from unit position through front hexsides, respecting terrain and stacking.
-
-**Depends on:** M2 (facing zones), M3 (terrain effects)
-**Files:** new `core/movement.ts`, `gameStore.svelte.ts`, `HexTile.svelte` (highlight valid targets)
-**Tests:** Movement range per unit type. Terrain blocking. Stacking. Light Infantry pass-through. Facing constraints. Road bonus. Difficult terrain check.
+- Created `core/movement.ts` with `getValidMoveTargets(unit, grid, units, remainingMP?)` — BFS pathfinding through front-arc hexsides respecting terrain entry, stacking, Light Infantry pass-through, enemy-adjacency exclusion, and road bonus (+1 on all-road path); `remainingMP` parameter enables hex-by-hex multi-step movement for 2-MP units
+- `requiresDifficultTerrainCheck` / `rollDifficultTerrainCheck` — units with `terrainCheckRequired` on a difficult terrain hex must pass ~50% roll to leave; failure exhausts all remaining MP without moving
+- Replaced `hasMoved: boolean` on `Unit` with `movementPointsUsed: number` and `facingStepsUsed: number` — enables incremental MP tracking and decouples facing rotation from movement consumption
+- Facing rule revised for digital play: 1-step rotation is valid at any point during a move (before, during, or after); only a 2-step stationary pivot consumes the full move action and blocks subsequent hex movement
+- `validMoveTargets` derived on `GameStore` recomputes after each move step with remaining MP; highlights valid hexes in the UI via `HexTile.svelte` yellow stroke overlay
+- `moveUnit` validates against `validMoveTargets`, looks up step cost, increments `movementPointsUsed`; `changeFacing` caps total rotation at 1 step if any MP have been spent, 2 steps if stationary
+- 42 tests in `movement.spec.ts` (range by type, all 6 facing arcs, all-around overrides, terrain entry, stacking, road bonus, edge cases); 14 new tests in `gameStore.spec.ts` covering multi-step Dragoon movement, rotate-before-move, 2-step pivot blocking movement, and second-rotation rejection
 
 ---
 

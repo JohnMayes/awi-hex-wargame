@@ -18,6 +18,10 @@
 	const canEndActivation = $derived(store.activationStep === ActivationStep.ACTIVATION_COMPLETE);
 	const canEndPlayerTurn = $derived(store.activationStep === ActivationStep.AWAITING_ACTIVATION);
 
+	const validKeys = $derived(
+		new Set(store.validMoveTargets.map((t) => `${t.coordinates.col},${t.coordinates.row}`))
+	);
+
 	const allPoints = [...store.grid!].flatMap((hex) => hex.corners);
 
 	const xs = allPoints.map((p) => p.x);
@@ -40,7 +44,11 @@
 		preserveAspectRatio="xMidYMid meet"
 	>
 		{#each store.grid as Hex, i (`${Hex.q},${Hex.r}`)}
-			<HexTile cell={Hex} onClick={() => store.moveUnit({ col: Hex.col, row: Hex.row })} />
+			<HexTile
+				cell={Hex}
+				highlighted={validKeys.has(`${Hex.col},${Hex.row}`)}
+				onClick={() => store.moveUnit({ col: Hex.col, row: Hex.row })}
+			/>
 		{/each}
 		{#each store.units as unit, i (unit.id)}
 			{@const pos = store.takesCordsReturnsPos(unit.coordinates)}

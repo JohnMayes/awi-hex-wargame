@@ -1,10 +1,20 @@
 import { describe, expect, it } from 'vitest';
 import { GameStore } from './gameStore.svelte';
-import { ActivationStep } from '../core/types';
+import { ActivationStep, HexFacing, type Unit } from '../core/types';
 import { TEST_UNITS } from '../data/scenarios';
 import { TEST_MAP } from '../data/maps';
 
 const makeStore = () => new GameStore(structuredClone(TEST_UNITS), TEST_MAP);
+
+// Blue-line-inf at (0,0) facing SE has no legal front-arc moves on the test
+// map (all front neighbors fall off-map). For tests that exercise a valid
+// move, give it facing N so that direction 0 lands on (1, 0).
+const makeStoreForLineInfMove = () => {
+	const units = structuredClone(TEST_UNITS) as Unit[];
+	const lineInf = units.find((u) => u.id === 'blue-line-inf');
+	if (lineInf) lineInf.facing = HexFacing.N;
+	return new GameStore(units, TEST_MAP);
+};
 
 const BLUE_IDS = ['blue-line-inf', 'blue-light-inf', 'blue-dragoons'];
 const RED_IDS = ['red-light-horse', 'red-horse', 'red-artillery'];
@@ -40,10 +50,10 @@ describe('GameStore initial state', () => {
 		expect(store.units.every((u) => u.activated === false)).toBe(true);
 	});
 
-	it('starts with all units not moved', () => {
+	it('starts with all units at movementPointsUsed 0', () => {
 		expect.assertions(1);
 		const store = makeStore();
-		expect(store.units.every((u) => u.hasMoved === false)).toBe(true);
+		expect(store.units.every((u) => u.movementPointsUsed === 0)).toBe(true);
 	});
 
 	it('starts with no units selected', () => {
@@ -156,15 +166,15 @@ describe('endActivation', () => {
 		expect(unit?.activated).toBe(true);
 	});
 
-	it('clears hasMoved on the active unit', () => {
+	it('clears movementPointsUsed on the active unit', () => {
 		expect.assertions(1);
-		const store = makeStore();
+		const store = makeStoreForLineInfMove();
 		store.activateUnit('blue-line-inf');
 		store.moveUnit({ col: 1, row: 0 });
 		store.completeAction();
 		store.endActivation();
 		const unit = store.units.find((u) => u.id === 'blue-line-inf');
-		expect(unit?.hasMoved).toBe(false);
+		expect(unit?.movementPointsUsed).toBe(0);
 	});
 
 	it('clears selected on the active unit', () => {
@@ -346,20 +356,20 @@ describe('moveUnit gating', () => {
 
 	it('moves the active unit during ACTION', () => {
 		expect.assertions(1);
-		const store = makeStore();
+		const store = makeStoreForLineInfMove();
 		store.activateUnit('blue-line-inf');
 		store.moveUnit({ col: 1, row: 0 });
 		const unit = store.units.find((u) => u.id === 'blue-line-inf');
 		expect(unit?.coordinates).toEqual({ col: 1, row: 0 });
 	});
 
-	it('sets hasMoved on the active unit after a move', () => {
+	it('increments movementPointsUsed after a move', () => {
 		expect.assertions(1);
-		const store = makeStore();
+		const store = makeStoreForLineInfMove();
 		store.activateUnit('blue-line-inf');
 		store.moveUnit({ col: 1, row: 0 });
 		const unit = store.units.find((u) => u.id === 'blue-line-inf');
-		expect(unit?.hasMoved).toBe(true);
+		expect(unit?.movementPointsUsed).toBe(1);
 	});
 
 	it('does not move any other unit', () => {
@@ -458,6 +468,252 @@ describe('toggleUnit', () => {
 		store.toggleUnit(redHorse);
 		const after = store.units.find((u) => u.id === 'red-horse');
 		expect(after?.selected).toBe(false);
+	});
+});
+
+describe('moveUnit — validation (M5)', () => {
+	it('rejects a target that is not in validMoveTargets', () => {
+		expect.assertions(2);
+		const store = makeStoreForLineInfMove();
+		store.activateUnit('blue-line-inf');
+		const before = store.units.find((u) => u.id === 'blue-line-inf')!.coordinates;
+		store.moveUnit({ col: 4, row: 3 });
+		const after = store.units.find((u) => u.id === 'blue-line-inf')!;
+		expect(after.coordinates).toEqual(before);
+		expect(after.movementPointsUsed).toBe(0);
+	});
+
+	it('rejects a move after MP is exhausted (1-MP unit)', () => {
+		expect.assertions(1);
+		const store = makeStoreForLineInfMove();
+		store.activateUnit('blue-line-inf');
+		store.moveUnit({ col: 1, row: 0 });
+		// validMoveTargets is now empty (movementPointsUsed === allowance), so rejected
+		store.moveUnit({ col: 0, row: 0 });
+		const after = store.units.find((u) => u.id === 'blue-line-inf')!;
+		expect(after.coordinates).toEqual({ col: 1, row: 0 });
+	});
+
+	it('validMoveTargets is empty in AWAITING_ACTIVATION', () => {
+		expect.assertions(1);
+		const store = makeStoreForLineInfMove();
+		expect(store.validMoveTargets).toHaveLength(0);
+	});
+
+	it('validMoveTargets is non-empty for a freshly-activated unit', () => {
+		expect.assertions(1);
+		const store = makeStoreForLineInfMove();
+		store.activateUnit('blue-line-inf');
+		expect(store.validMoveTargets.length).toBeGreaterThan(0);
+	});
+
+	it('validMoveTargets clears after a successful move', () => {
+		expect.assertions(1);
+		const store = makeStoreForLineInfMove();
+		store.activateUnit('blue-line-inf');
+		store.moveUnit({ col: 1, row: 0 });
+		expect(store.validMoveTargets).toHaveLength(0);
+	});
+
+	it('validMoveTargets is empty in ACTIVATION_COMPLETE', () => {
+		expect.assertions(1);
+		const store = makeStoreForLineInfMove();
+		store.activateUnit('blue-line-inf');
+		store.completeAction();
+		expect(store.validMoveTargets).toHaveLength(0);
+	});
+});
+
+describe('moveUnit — difficult terrain check (M5)', () => {
+	// Custom setup: Line Infantry on HILLTOP at (2,2) facing N.
+	const makeHilltopStore = () => {
+		const units = structuredClone(TEST_UNITS) as Unit[];
+		const lineInf = units.find((u) => u.id === 'blue-line-inf')!;
+		lineInf.coordinates = { col: 2, row: 2 };
+		lineInf.facing = HexFacing.N;
+		return new GameStore(units, TEST_MAP);
+	};
+
+	it('Line Infantry on HILLTOP escapes when RNG ≥ 0.5', () => {
+		expect.assertions(2);
+		const store = makeHilltopStore();
+		store.activateUnit('blue-line-inf');
+		const target = store.validMoveTargets[0];
+		expect(target).toBeDefined();
+		store.moveUnit(target.coordinates, () => 0.9);
+		const after = store.units.find((u) => u.id === 'blue-line-inf')!;
+		expect(after.coordinates).toEqual(target.coordinates);
+	});
+
+	it('Line Infantry on HILLTOP stays put when RNG < 0.5, consuming the action', () => {
+		expect.assertions(2);
+		const store = makeHilltopStore();
+		store.activateUnit('blue-line-inf');
+		const target = store.validMoveTargets[0];
+		store.moveUnit(target.coordinates, () => 0.1);
+		const after = store.units.find((u) => u.id === 'blue-line-inf')!;
+		expect(after.coordinates).toEqual({ col: 2, row: 2 });
+		expect(after.movementPointsUsed).toBe(1); // allowance exhausted despite no movement
+	});
+
+	it('Light Infantry on HILLTOP moves without a check even when RNG < 0.5', () => {
+		expect.assertions(1);
+		const units = structuredClone(TEST_UNITS) as Unit[];
+		const lightInf = units.find((u) => u.id === 'blue-light-inf')!;
+		lightInf.coordinates = { col: 2, row: 2 };
+		const store = new GameStore(units, TEST_MAP);
+		store.activateUnit('blue-light-inf');
+		const target = store.validMoveTargets[0];
+		store.moveUnit(target.coordinates, () => 0.01);
+		const after = store.units.find((u) => u.id === 'blue-light-inf')!;
+		expect(after.coordinates).toEqual(target.coordinates);
+	});
+});
+
+describe('moveUnit — multi-step movement (M5)', () => {
+	// Dragoons have movementAllowance 2. Position at (1,1) facing N — OPEN
+	// terrain, no terrain check required, front neighbors on-map.
+	const makeStoreForDragonMove = () => {
+		const units = structuredClone(TEST_UNITS) as Unit[];
+		const dragoons = units.find((u) => u.id === 'blue-dragoons')!;
+		dragoons.coordinates = { col: 1, row: 1 };
+		dragoons.facing = HexFacing.N;
+		return new GameStore(units, TEST_MAP);
+	};
+
+	it('Dragoon validMoveTargets is non-empty after moving 1 of 2 hexes', () => {
+		expect.assertions(2);
+		const store = makeStoreForDragonMove();
+		store.activateUnit('blue-dragoons');
+		const firstTarget = store.validMoveTargets[0];
+		expect(firstTarget).toBeDefined();
+		store.moveUnit(firstTarget.coordinates);
+		// 1 MP used, 1 remaining — targets should still be available
+		expect(store.validMoveTargets.length).toBeGreaterThan(0);
+	});
+
+	it('Dragoon can move hex-by-hex across 2 hexes', () => {
+		expect.assertions(2);
+		const store = makeStoreForDragonMove();
+		store.activateUnit('blue-dragoons');
+		const firstTarget = store.validMoveTargets[0];
+		store.moveUnit(firstTarget.coordinates);
+		const secondTarget = store.validMoveTargets[0];
+		expect(secondTarget).toBeDefined();
+		store.moveUnit(secondTarget.coordinates);
+		const u = store.units.find((u) => u.id === 'blue-dragoons')!;
+		expect(u.movementPointsUsed).toBe(2);
+	});
+
+	it('Dragoon validMoveTargets clears after using both MP', () => {
+		expect.assertions(1);
+		const store = makeStoreForDragonMove();
+		store.activateUnit('blue-dragoons');
+		const first = store.validMoveTargets[0];
+		store.moveUnit(first.coordinates);
+		const second = store.validMoveTargets[0];
+		store.moveUnit(second.coordinates);
+		expect(store.validMoveTargets).toHaveLength(0);
+	});
+});
+
+describe('changeFacing — rotation limits (M5)', () => {
+	// blue-line-inf starts facing SE (120).
+	// 1 step: NE(60) or S(180). 2 steps: N(0) or SW(240). 3 steps: NW(300).
+
+	it('allows 1-step rotation stationary and sets facingStepsUsed to 1', () => {
+		expect.assertions(2);
+		const store = makeStore();
+		store.activateUnit('blue-line-inf');
+		store.changeFacing(HexFacing.S);
+		const u = store.units.find((u) => u.id === 'blue-line-inf')!;
+		expect(u.facing).toBe(HexFacing.S);
+		expect(u.facingStepsUsed).toBe(1);
+	});
+
+	it('allows 2-step rotation stationary and sets facingStepsUsed to 2', () => {
+		expect.assertions(2);
+		const store = makeStore();
+		store.activateUnit('blue-line-inf');
+		store.changeFacing(HexFacing.N);
+		const u = store.units.find((u) => u.id === 'blue-line-inf')!;
+		expect(u.facing).toBe(HexFacing.N);
+		expect(u.facingStepsUsed).toBe(2);
+	});
+
+	it('rejects 3-step rotation (NW from SE)', () => {
+		expect.assertions(2);
+		const store = makeStore();
+		store.activateUnit('blue-line-inf');
+		store.changeFacing(HexFacing.NW);
+		const u = store.units.find((u) => u.id === 'blue-line-inf')!;
+		expect(u.facing).toBe(HexFacing.SE);
+		expect(u.facingStepsUsed).toBe(0);
+	});
+
+	it('rejects 2-step rotation after a move (post-move cap is 1)', () => {
+		expect.assertions(1);
+		const store = makeStoreForLineInfMove();
+		store.activateUnit('blue-line-inf');
+		store.moveUnit({ col: 1, row: 0 });
+		// Now facing N; 2-step target is SE or SW. Try SE.
+		store.changeFacing(HexFacing.SE);
+		const u = store.units.find((u) => u.id === 'blue-line-inf')!;
+		expect(u.facing).toBe(HexFacing.N);
+	});
+
+	it('allows 1-step rotation after a move', () => {
+		expect.assertions(1);
+		const store = makeStoreForLineInfMove();
+		store.activateUnit('blue-line-inf');
+		store.moveUnit({ col: 1, row: 0 });
+		// Facing N; 1-step target NE.
+		store.changeFacing(HexFacing.NE);
+		const u = store.units.find((u) => u.id === 'blue-line-inf')!;
+		expect(u.facing).toBe(HexFacing.NE);
+	});
+
+	it('does not increment facingStepsUsed on a 0-step facing change', () => {
+		expect.assertions(2);
+		const store = makeStore();
+		store.activateUnit('blue-line-inf');
+		store.changeFacing(HexFacing.SE); // same as current
+		const u = store.units.find((u) => u.id === 'blue-line-inf')!;
+		expect(u.facing).toBe(HexFacing.SE);
+		expect(u.facingStepsUsed).toBe(0);
+	});
+
+	it('allows 1-step rotation before a move (rotate-then-move)', () => {
+		expect.assertions(2);
+		const store = makeStoreForLineInfMove();
+		store.activateUnit('blue-line-inf');
+		// Rotate 1 step (SE → S or NE) — should not block subsequent movement
+		store.changeFacing(HexFacing.NE);
+		const u = store.units.find((u) => u.id === 'blue-line-inf')!;
+		expect(u.facingStepsUsed).toBe(1);
+		// validMoveTargets should still be non-empty (facing changed, allowance not consumed)
+		expect(store.validMoveTargets.length).toBeGreaterThan(0);
+	});
+
+	it('2-step stationary rotation blocks subsequent movement', () => {
+		expect.assertions(1);
+		const store = makeStore();
+		store.activateUnit('blue-line-inf');
+		store.changeFacing(HexFacing.N); // 2 steps from SE
+		// validMoveTargets should now be empty (facingStepsUsed === 2 gates it)
+		expect(store.validMoveTargets).toHaveLength(0);
+	});
+
+	it('rejects a second rotation after rotate-then-move', () => {
+		expect.assertions(1);
+		const store = makeStoreForLineInfMove();
+		store.activateUnit('blue-line-inf');
+		store.changeFacing(HexFacing.NE); // 1 step: SE → NE
+		store.moveUnit({ col: 1, row: 0 });
+		// 1 facing step already used + 1 MP used; another rotation should be rejected
+		store.changeFacing(HexFacing.N); // would be 1 more step, but cap=1 already reached
+		const u = store.units.find((u) => u.id === 'blue-line-inf')!;
+		expect(u.facing).toBe(HexFacing.NE);
 	});
 });
 

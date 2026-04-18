@@ -14,7 +14,8 @@ export const TEST_UNITS: Unit[] = [
 		strengthPoints: sp(UnitType.LINE_INFANTRY),
 		maxStrengthPoints: sp(UnitType.LINE_INFANTRY),
 		selected: false,
-		hasMoved: false,
+		movementPointsUsed: 0,
+		facingStepsUsed: 0,
 		activated: false
 	},
 	{
@@ -26,7 +27,8 @@ export const TEST_UNITS: Unit[] = [
 		strengthPoints: sp(UnitType.LIGHT_INFANTRY),
 		maxStrengthPoints: sp(UnitType.LIGHT_INFANTRY),
 		selected: false,
-		hasMoved: false,
+		movementPointsUsed: 0,
+		facingStepsUsed: 0,
 		activated: false
 	},
 	{
@@ -38,7 +40,8 @@ export const TEST_UNITS: Unit[] = [
 		strengthPoints: sp(UnitType.DRAGOONS),
 		maxStrengthPoints: sp(UnitType.DRAGOONS),
 		selected: false,
-		hasMoved: false,
+		movementPointsUsed: 0,
+		facingStepsUsed: 0,
 		activated: false
 	},
 	{
@@ -50,7 +53,8 @@ export const TEST_UNITS: Unit[] = [
 		strengthPoints: sp(UnitType.LIGHT_HORSE),
 		maxStrengthPoints: sp(UnitType.LIGHT_HORSE),
 		selected: false,
-		hasMoved: false,
+		movementPointsUsed: 0,
+		facingStepsUsed: 0,
 		activated: false
 	},
 	{
@@ -62,7 +66,8 @@ export const TEST_UNITS: Unit[] = [
 		strengthPoints: sp(UnitType.HORSE),
 		maxStrengthPoints: sp(UnitType.HORSE),
 		selected: false,
-		hasMoved: false,
+		movementPointsUsed: 0,
+		facingStepsUsed: 0,
 		activated: false
 	},
 	{
@@ -74,7 +79,8 @@ export const TEST_UNITS: Unit[] = [
 		strengthPoints: sp(UnitType.ARTILLERY),
 		maxStrengthPoints: sp(UnitType.ARTILLERY),
 		selected: false,
-		hasMoved: false,
+		movementPointsUsed: 0,
+		facingStepsUsed: 0,
 		activated: false
 	}
 ];

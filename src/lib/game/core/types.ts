@@ -78,6 +78,7 @@ export type Unit = {
 	strengthPoints: number;
 	maxStrengthPoints: number;
 	selected: boolean;
-	hasMoved: boolean;
+	movementPointsUsed: number;
+	facingStepsUsed: number;
 	activated: boolean;
 };

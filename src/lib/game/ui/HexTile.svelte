@@ -4,9 +4,10 @@
 	type Props = {
 		cell: HexCell;
 		onClick: () => void;
+		highlighted?: boolean;
 	};
 
-	let { cell, onClick }: Props = $props();
+	let { cell, onClick, highlighted = false }: Props = $props();
 
 	const terrainColors: Record<TerrainType, string> = {
 		open: '#d9cbb2',
@@ -31,6 +32,15 @@
 	stroke="black"
 	onclick={onClick}
 />
+{#if highlighted}
+	<polygon
+		points={cell.corners.map(({ x, y }) => `${x},${y}`).join(' ')}
+		fill="none"
+		stroke="#ffcc00"
+		stroke-width="3"
+		pointer-events="none"
+	/>
+{/if}
 
 <style>
 	polygon {

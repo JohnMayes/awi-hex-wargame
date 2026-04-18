@@ -1,7 +1,15 @@
 import type { MapDefinition } from '../data/maps';
 import { Grid, type OffsetCoordinates } from 'honeycomb-grid';
 import { HexCell, coordsEqual } from '../core/hex';
-import { ActivationStep, type Player, type Unit } from '../core/types';
+import { facingStepsBetween } from '../core/facing';
+import {
+	getValidMoveTargets,
+	requiresDifficultTerrainCheck,
+	rollDifficultTerrainCheck,
+	type MoveTarget
+} from '../core/movement';
+import { ActivationStep, HexFacing, type Player, type Unit } from '../core/types';
+import { getUnitDefinition } from '../core/unitDefinitions';
 
 export class GameStore {
 	units: Unit[] = $state([]);
@@ -11,6 +19,18 @@ export class GameStore {
 	activeUnitId: string | null = $state(null);
 	turn: number = $state(1);
 	selectedUnit = $derived(this.units.find((u) => u.selected === true));
+	validMoveTargets: MoveTarget[] = $derived.by(() => {
+		if (this.activeUnitId === null) return [];
+		if (this.activationStep !== ActivationStep.ACTION) return [];
+		if (!this.grid) return [];
+		const active = this.units.find((u) => u.id === this.activeUnitId);
+		if (!active) return [];
+		const def = getUnitDefinition(active.type);
+		if (active.movementPointsUsed >= def.movementAllowance) return [];
+		if (active.facingStepsUsed >= 2) return [];
+		const remainingMP = def.movementAllowance - active.movementPointsUsed;
+		return getValidMoveTargets(active, this.grid, this.units, remainingMP);
+	});
 
 	constructor(units: Unit[], map: MapDefinition) {
 		const newGrid = new Grid(
@@ -51,7 +71,8 @@ export class GameStore {
 		this.units = this.units.map((u) => ({
 			...u,
 			selected: false,
-			hasMoved: false,
+			movementPointsUsed: 0,
+			facingStepsUsed: 0,
 			activated: false
 		}));
 	}
@@ -71,30 +92,54 @@ export class GameStore {
 
 	// -- Movement --
 
-	moveUnit(newCords: OffsetCoordinates) {
+	moveUnit(newCords: OffsetCoordinates, rng: () => number = Math.random) {
 		if (this.activeUnitId === null) return;
 		if (this.activationStep !== ActivationStep.ACTION) return;
 		if (this.selectedUnit?.id !== this.activeUnitId) return;
 		if (this.selectedUnit.player !== this.activePlayer) return;
+		if (!this.grid) return;
 
+		const target = this.validMoveTargets.find((t) => coordsEqual(t.coordinates, newCords));
+		if (!target) return;
+
+		const def = getUnitDefinition(this.selectedUnit.type);
 		const activeId = this.activeUnitId;
+
+		if (requiresDifficultTerrainCheck(this.selectedUnit, this.grid)) {
+			const passed = rollDifficultTerrainCheck(rng);
+			if (!passed) {
+				this.units = this.units.map((u) =>
+					u.id === activeId ? { ...u, movementPointsUsed: def.movementAllowance } : u
+				);
+				return;
+			}
+		}
+
 		this.units = this.units.map((u) => ({
 			...u,
 			coordinates: u.id === activeId ? newCords : u.coordinates,
-			hasMoved: u.id === activeId ? true : u.hasMoved
+			movementPointsUsed:
+				u.id === activeId ? u.movementPointsUsed + target.cost : u.movementPointsUsed
 		}));
 	}
 
-	changeFacing(facing: number) {
+	changeFacing(facing: HexFacing) {
 		if (this.activeUnitId === null) return;
 		if (this.activationStep !== ActivationStep.ACTION) return;
 		if (this.selectedUnit?.id !== this.activeUnitId) return;
 		if (this.selectedUnit.player !== this.activePlayer) return;
 
+		const current = this.selectedUnit.facing;
+		const steps = facingStepsBetween(current, facing);
+		if (steps === 0) return;
+		const maxAllowed = this.selectedUnit.movementPointsUsed > 0 ? 1 : 2;
+		if (this.selectedUnit.facingStepsUsed + steps > maxAllowed) return;
+
 		const activeId = this.activeUnitId;
 		this.units = this.units.map((u) => ({
 			...u,
-			facing: u.id === activeId ? facing : u.facing
+			facing: u.id === activeId ? facing : u.facing,
+			facingStepsUsed: u.id === activeId ? u.facingStepsUsed + steps : u.facingStepsUsed
 		}));
 	}
 
@@ -134,7 +179,8 @@ export class GameStore {
 		this.units = this.units.map((u) => ({
 			...u,
 			activated: u.id === activeId ? true : u.activated,
-			hasMoved: u.id === activeId ? false : u.hasMoved,
+			movementPointsUsed: u.id === activeId ? 0 : u.movementPointsUsed,
+			facingStepsUsed: u.id === activeId ? 0 : u.facingStepsUsed,
 			selected: u.id === activeId ? false : u.selected
 		}));
 		this.activeUnitId = null;
