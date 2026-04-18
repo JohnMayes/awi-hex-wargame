@@ -8,7 +8,7 @@ function facingToIndex(facing: HexFacing): number {
 
 // Maps a 0-based clockwise index back to a HexFacing, with wrapping
 function indexToFacing(index: number): HexFacing {
-	return (((index % 6) + 6) % 6 * 60) as HexFacing;
+	return ((((index % 6) + 6) % 6) * 60) as HexFacing;
 }
 
 /**
@@ -35,7 +35,11 @@ export function getRearHexsides(facing: HexFacing): HexFacing[] {
  * Pass allAround=true for units with no facing (Light Infantry) or units in a Town hex —
  * they have 360° coverage and every direction is treated as front.
  */
-export function getZone(unitFacing: HexFacing, direction: HexFacing, allAround: boolean): FacingZone {
+export function getZone(
+	unitFacing: HexFacing,
+	direction: HexFacing,
+	allAround: boolean
+): FacingZone {
 	if (allAround) return 'front';
 	return getFrontHexsides(unitFacing).includes(direction) ? 'front' : 'rear';
 }

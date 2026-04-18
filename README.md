@@ -1,6 +1,6 @@
 # AWI Hex & Counter Wargame
 
-A digital hex-and-counter wargame for the Horse and Musket era (1700–1860), built with SvelteKit and Svelte 5. Derived from Neil Thomas' *One-Hour Wargames* and *Simplicity in Practice* systems.
+A digital hex-and-counter wargame for the Horse and Musket era (1700–1860), built with SvelteKit and Svelte 5. Derived from Neil Thomas' _One-Hour Wargames_ and _Simplicity in Practice_ systems.
 
 ## Development
 
@@ -65,32 +65,15 @@ Each milestone builds on the previous ones. Dependencies are noted where they ex
 
 ---
 
-### M4: Turn & Activation Model
+### ~~M4: Turn & Activation Model~~ COMPLETE
 
-**This is the biggest architectural change.** Replace the phase-based system with unit-by-unit activation per rules §5.
-
-**Rules model:** Each game turn has two player turns. During a player turn, the player activates units one at a time in any order. Each activation follows: Command Check → Action → Charge Resolution → Morale Check.
-
-**Replace `Phase` enum** with `ActivationStep`:
-```
-AWAITING_ACTIVATION → COMMAND_CHECK → ACTION → CHARGE_RESOLUTION → MORALE_CHECK → ACTIVATION_COMPLETE
-```
-
-**New GameStore state:**
-- `turn`, `activePlayer`, `activationStep`, `activeUnitId`
-- Remove `currentPhase`
-
-**New GameStore methods:**
-- `activateUnit(id)` — begin activation sequence for a unit
-- `completeAction()` — advance through activation steps
-- `endActivation()` — mark unit as activated, return to AWAITING_ACTIVATION
-- `endPlayerTurn()` — switch players (or advance game turn)
-
-**Stub the command check and morale check steps** — they'll be implemented in M9/M10.
-
-**Depends on:** M1 (activated flag on Unit)
-**Files:** `types.ts`, `gameStore.svelte.ts` (major rewrite), `+page.svelte` (UI flow)
-**Tests:** Full activation lifecycle — activate unit, complete action, end activation, next unit, end player turn, switch players, advance game turn. Cannot activate twice. Only active player's units.
+- Deleted `Phase` enum and `advancePhase()`; replaced with `ActivationStep` (`AWAITING_ACTIVATION` → `COMMAND_CHECK` → `ACTION` → `CHARGE_RESOLUTION` → `MORALE_CHECK` → `ACTIVATION_COMPLETE`) and four lifecycle methods on `GameStore`: `activateUnit(id)`, `completeAction()`, `endActivation()`, `endPlayerTurn()`
+- `GameStore` state now tracks `activationStep` and `activeUnitId` in place of `currentPhase`; `activated` flag on each unit is cleared only at game-turn rollover (not at player-turn switch), enforcing once-per-game-turn activation
+- `COMMAND_CHECK`, `CHARGE_RESOLUTION`, and `MORALE_CHECK` steps are instantaneous auto-pass stubs for M4 — the state machine still enters each step so M7/M9/M10 can slot in real logic without restructuring
+- `moveUnit`/`changeFacing` now gate on `activationStep === ACTION` and `activeUnitId` match (not a legacy phase); `toggleUnit` is a no-op mid-activation and on already-activated units
+- Exported the `GameStore` class (alongside the existing `initGameStore`/`getGameStore` singleton helpers) so tests can instantiate hermetically with `new GameStore(structuredClone(TEST_UNITS), TEST_MAP)`
+- `+page.svelte` replaces the single "Advance Phase" button with four reactively-disabled buttons (Activate Selected / Complete Action / End Activation / End Player Turn) and displays `activationStep` and `activeUnitId`
+- 51 tests in `gameStore.spec.ts` covering initial state, full activation lifecycle, once-per-turn enforcement, player switch vs game-turn rollover, all guard no-ops, move/facing step gating, and `toggleUnit` interaction with activation
 
 ---
 
@@ -99,6 +82,7 @@ AWAITING_ACTIVATION → COMMAND_CHECK → ACTION → CHARGE_RESOLUTION → MORAL
 Replace unrestricted `moveUnit()` with rules-compliant movement.
 
 **New `core/movement.ts`:**
+
 - `getValidMoveTargets(unit, grid, units)` → set of legal destination hexes
 - Movement through front hexsides only (uses M2 facing zones)
 - Respect movement allowance (from M1 unit definitions)
@@ -123,6 +107,7 @@ Replace unrestricted `moveUnit()` with rules-compliant movement.
 Implement center-to-center LOS tracing for firing eligibility.
 
 **New `core/los.ts`:**
+
 - `hasLineOfSight(from, to, grid, units)` → boolean
 - Trace line from hex center to hex center using cube coordinates
 - Check intervening hexes for: Woods (blocks), Towns (blocks), Hills (blocks between lower units), other units (block)
@@ -142,6 +127,7 @@ Implement center-to-center LOS tracing for firing eligibility.
 Implement the fire action with hit resolution per rules §6.2.
 
 **New `core/combat.ts`:**
+
 - `getValidFireTargets(unit, grid, units)` → eligible targets (in range, in arc, with LOS)
 - **Must fire at closest eligible target** in firing arc
 - `resolveFireAction(attacker, target, grid)` → `FireResult`
@@ -163,6 +149,7 @@ Implement the fire action with hit resolution per rules §6.2.
 Implement charge action and opposed resolution per rules §6.3.
 
 **Add to `core/combat.ts`:**
+
 - `canCharge(unit, target)` → boolean (checks mayCharge, restrictions, terrain)
 - Line Infantry cannot charge Cavalry types
 - `resolveCharge(attacker, defender, grid)` → `ChargeResult`
@@ -182,6 +169,7 @@ Implement charge action and opposed resolution per rules §6.3.
 Implement morale checks triggered when a unit takes hits, per rules §9.
 
 **New `core/morale.ts`:**
+
 - `checkMorale(unit, modifiers)` → `MoraleResult` (pass/fail)
 - Base pass chance scales with remaining SP / max SP
 - Modifiers: elite/veteran +1, flank/rear attack −1, out of command −1, leader attached +1
@@ -189,6 +177,7 @@ Implement morale checks triggered when a unit takes hits, per rules §9.
 - **No cascading:** additional hit from failed morale does not trigger another check
 
 **New `core/retreat.ts`:**
+
 - `getRetreatHex(unit, attackSource, grid, units)` → best rear hex or null
 - Prefer hex away from attacker, toward friendly units
 - Units in Towns retreat away from attack source
@@ -204,6 +193,7 @@ Implement morale checks triggered when a unit takes hits, per rules §9.
 Implement leaders, command radius, and command checks per rules §8.
 
 **New `core/command.ts`:**
+
 - `Leader` type: id, attachedToUnitId, commandRadius (default 2)
 - `isInCommand(unit, leaders, grid)` → boolean (within any friendly leader's radius)
 - `resolveCommandCheck(unit, leaders)` → boolean (50% base, −15% if far out of range)
@@ -238,6 +228,7 @@ Formalize unit removal and retreat finalization.
 Replace hardcoded test data with a scenario system.
 
 **`Scenario` type:**
+
 - Map definition (6×6 grid per rules §2, replacing current 5×4 test map)
 - Unit setup per side (type, position, facing, SP, quality modifiers)
 - Leader assignments
@@ -245,6 +236,7 @@ Replace hardcoded test data with a scenario system.
 - Victory conditions (objective hexes, elimination count, hold for N turns, exit map edge)
 
 **New `core/victory.ts`:**
+
 - `checkVictoryConditions(scenario, gameState)` → result or null
 - Evaluated at end of each full game turn
 

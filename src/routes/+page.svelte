@@ -4,8 +4,19 @@
 	import UnitCounter from '$lib/game/ui/UnitCounter.svelte';
 	import { TEST_MAP } from '$lib/game/data/maps';
 	import { TEST_UNITS } from '$lib/game/data/scenarios';
+	import { ActivationStep } from '$lib/game/core/types';
 
 	const store = initGameStore(TEST_UNITS, TEST_MAP);
+
+	const canActivate = $derived(
+		store.activationStep === ActivationStep.AWAITING_ACTIVATION &&
+			store.selectedUnit !== undefined &&
+			store.selectedUnit.player === store.activePlayer &&
+			!store.selectedUnit.activated
+	);
+	const canCompleteAction = $derived(store.activationStep === ActivationStep.ACTION);
+	const canEndActivation = $derived(store.activationStep === ActivationStep.ACTIVATION_COMPLETE);
+	const canEndPlayerTurn = $derived(store.activationStep === ActivationStep.AWAITING_ACTIVATION);
 
 	const allPoints = [...store.grid!].flatMap((hex) => hex.corners);
 
@@ -44,9 +55,24 @@
 	</svg>
 	<div style="position: absolute; top: 0; left: 0;">
 		<p>Active Player: {store.activePlayer}</p>
-		<p>Current Phase: {store.currentPhase}</p>
 		<p>Turn Number: {store.turn}</p>
-		<button onclick={() => store.advancePhase()}>Advance Phase</button>
+		<p>Activation Step: {store.activationStep}</p>
+		<p>Active Unit: {store.activeUnitId ?? '—'}</p>
+		<button
+			disabled={!canActivate}
+			onclick={() => store.selectedUnit && store.activateUnit(store.selectedUnit.id)}
+		>
+			Activate Selected
+		</button>
+		<button disabled={!canCompleteAction} onclick={() => store.completeAction()}>
+			Complete Action
+		</button>
+		<button disabled={!canEndActivation} onclick={() => store.endActivation()}>
+			End Activation
+		</button>
+		<button disabled={!canEndPlayerTurn} onclick={() => store.endPlayerTurn()}>
+			End Player Turn
+		</button>
 	</div>
 </div>
 

@@ -26,6 +26,7 @@ Prettier with: tabs, single quotes, no trailing commas, 100 char print width. Sv
 ## Testing
 
 Vitest with two test projects configured in `vite.config.ts`:
+
 - **Browser tests** (`*.svelte.spec.ts` / `*.svelte.test.ts`): Run in headless Chromium via Playwright. For Svelte component tests.
 - **Server tests** (`*.spec.ts` / `*.test.ts`): Run in Node. For pure logic/unit tests.
 
