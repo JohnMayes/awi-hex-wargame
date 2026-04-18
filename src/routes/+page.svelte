@@ -1,0 +1,73 @@
+<script lang="ts">
+	import { initGameStore } from '$lib/game/state/gameStore.svelte';
+	import HexTile from '$lib/game/ui/HexTile.svelte';
+	import UnitCounter from '$lib/game/ui/UnitCounter.svelte';
+	import { TEST_MAP } from '$lib/game/data/maps';
+	import { TEST_UNITS } from '$lib/game/data/scenarios';
+
+	const store = initGameStore(TEST_UNITS, TEST_MAP);
+
+	const allPoints = [...store.grid!].flatMap((hex) => hex.corners);
+
+	const xs = allPoints.map((p) => p.x);
+	const ys = allPoints.map((p) => p.y);
+
+	const minX = Math.min(...xs);
+	const maxX = Math.max(...xs);
+	const minY = Math.min(...ys);
+	const maxY = Math.max(...ys);
+
+	const width = maxX - minX;
+	const height = maxY - minY;
+
+	const padding = 2;
+</script>
+
+<div class="container">
+	<svg
+		viewBox={`${minX - padding} ${minY - padding} ${width + padding * 2} ${height + padding * 2}`}
+		preserveAspectRatio="xMidYMid meet"
+	>
+		{#each store.grid as Hex, i (`${Hex.q},${Hex.r}`)}
+			<HexTile cell={Hex} onClick={() => store.moveUnit({ col: Hex.col, row: Hex.row })} />
+		{/each}
+		{#each store.units as unit, i (unit.id)}
+			{@const pos = store.takesCordsReturnsPos(unit.coordinates)}
+			<!-- Render counter here -->
+			<UnitCounter
+				{unit}
+				pos={pos!}
+				changeFacing={(facing) => store.changeFacing(facing)}
+				onClick={() => store.toggleUnit(unit)}
+			/>
+		{/each}
+	</svg>
+	<div style="position: absolute; top: 0; left: 0;">
+		<p>Active Player: {store.activePlayer}</p>
+		<p>Current Phase: {store.currentPhase}</p>
+		<p>Turn Number: {store.turn}</p>
+		<button onclick={() => store.advancePhase()}>Advance Phase</button>
+	</div>
+</div>
+
+<style>
+	svg {
+		width: 100vw;
+		height: 100vh;
+		display: block;
+		background-color: cadetblue;
+	}
+
+	rect {
+		transition: all 0.1s ease-in;
+	}
+
+	.container {
+		position: relative;
+		display: flex;
+		width: 100%;
+		height: 98vh;
+		align-items: center;
+		justify-content: center;
+	}
+</style>
