@@ -66,6 +66,7 @@ function unit(
 		selected: false,
 		movementPointsUsed: 0,
 		facingStepsUsed: 0,
+		firedThisActivation: false,
 		activated: false
 	};
 }

@@ -100,25 +100,15 @@ Each milestone builds on the previous ones. Dependencies are noted where they ex
 
 ---
 
-### M7: Firing Combat
+### ~~M7: Firing Combat~~ COMPLETE
 
-Implement the fire action with hit resolution per rules §6.2.
-
-**New `core/combat.ts`:**
-
-- `getValidFireTargets(unit, grid, units)` → eligible targets (in range, in arc, with LOS)
-- **Must fire at closest eligible target** in firing arc
-- `resolveFireAction(attacker, target, grid)` → `FireResult`
-- Base hit chance per unit type (65% line infantry, 50% others)
-- Modifiers: target in cover (−15%), artillery at 3+ hex range (−15%)
-- Hit → 1 SP damage. On hit, ~1-in-6 additional chance → 2 SP damage instead
-- Light Infantry special: may fire AND move (or move AND fire) in same activation
-
-**RNG design:** Accept injectable random function for testability, default to `Math.random`.
-
-**Depends on:** M2 (arc of fire from facing zones), M6 (LOS)
-**Files:** new `core/combat.ts`, `gameStore.svelte.ts`
-**Tests:** Target selection (range, arc, LOS, closest-target rule). Hit resolution. Cover modifier. Artillery long-range. Double damage roll.
+- Created `core/combat.ts` with `getValidFireTargets(attacker, grid, units)` and `resolveFireAction(attacker, target, grid, rng?)` returning a transparent `FireResult` (base, cover, long-range modifiers, final hit chance, hit, damage)
+- Front-arc inclusion uses cube-line first-step direction with the same nudged-pair tie detection as `los.ts`; permissive at hexside boundaries (in-arc if either candidate first-neighbor is a front direction) — the asymmetry vs. LOS's restrictive tie rule is intentional and avoids prompting the user to pick a hexside
+- Hit resolution: base hit chance per unit type, −0.15 if target in Woods/Town cover, −0.15 if attacker is Artillery firing at distance ≥3; final clamped to [0,1]; on a hit, a fresh 1/6 RNG draw upgrades 1 SP damage to 2 SP ("devastating volley"); miss does not consume the second draw
+- New `firedThisActivation: boolean` on `Unit` enforces action-type gating: `MOVE_OR_FIRE` units (Line Inf, Dragoons, Artillery) cannot move/rotate after firing nor fire after moving/rotating; `FIRE_AND_MOVE` (Light Infantry) may do both in either order; `MOVE_ONLY` (Cavalry) never fire (encoded as `firingRange: 0`)
+- `GameStore.fireAt(targetId, rng?)` validates against `validFireTargets`, applies clamped SP damage to the target, sets the firer's `firedThisActivation`, and returns the `FireResult`; flag is cleared in `endActivation` and `#clearActivatedFlags` (turn rollover)
+- `UnitCounter.svelte` gains a `fireTarget` prop that draws a non-rotating red ring around eligible targets; `+page.svelte` computes a fire-target id set from `validFireTargets` and branches the click handler to `store.fireAt(unit.id)` when the target is eligible
+- 29 tests in `combat.spec.ts` (range, arc/all-around/Town, LOS, fired flag, multi-target, hexside-tie permissive, base hit chances, cover, long-range, RNG-driven hit/double-damage/miss, second-draw frugality, clamping); 14 new tests in `gameStore.spec.ts` covering hit/double/miss SP arithmetic, flag set on hit and miss, target/step gating, MOVE_OR_FIRE vs FIRE_AND_MOVE mutual exclusion, SP-clamp at 0, and `endActivation` clearing the flag
 
 ---
 

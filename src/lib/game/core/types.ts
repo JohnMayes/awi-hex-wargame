@@ -80,5 +80,6 @@ export type Unit = {
 	selected: boolean;
 	movementPointsUsed: number;
 	facingStepsUsed: number;
+	firedThisActivation: boolean;
 	activated: boolean;
 };

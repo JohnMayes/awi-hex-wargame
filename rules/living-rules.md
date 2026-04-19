@@ -194,7 +194,6 @@ The unit fires at a single eligible target. To be eligible, the target must be:
 
 - Within the firing unit's range.
 - Within the firing unit's arc of fire (front three hexsides for units with facing; any hexside for units without facing or units in towns).
-- The **closest eligible enemy unit** in the firing arc. A unit must always fire at the nearest valid target.
 - Connected by an unblocked **line of sight** (see Section 7).
 
 When a unit fires, the system resolves whether a hit is scored based on the unit's base hit chance, modified by circumstances:

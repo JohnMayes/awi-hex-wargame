@@ -6,9 +6,18 @@
 		pos: { x: number; y: number };
 		onClick: () => void;
 		changeFacing: (facing: HexFacing) => void;
+		fireTarget?: boolean;
+		rotateMode?: boolean;
 	};
 
-	let { unit, pos, onClick, changeFacing }: Props = $props();
+	let {
+		unit,
+		pos,
+		onClick,
+		changeFacing,
+		fireTarget = false,
+		rotateMode = false
+	}: Props = $props();
 
 	const SIZE = 80;
 	const HALF = SIZE / 2;
@@ -61,38 +70,99 @@
 
 <svelte:window onkeydown={handleKeyDown} />
 
-<g
-	transform="translate({pos.x},{pos.y}) rotate({rotation})"
-	style="transition: transform 0.1s ease-in; outline: none"
-	onclick={onClick}
-	role="button"
-	tabindex="0"
-	aria-label="{unit.type}, {unit.id}"
-	onkeydown={(e) => null}
-	class="counter-base"
->
-	<rect
-		width={SIZE}
-		height={SIZE}
-		x={-HALF}
-		y={-HALF}
-		fill={unit.player === 0 ? '#1a56db' : '#e02424'}
-		stroke={unit.selected ? 'gold' : 'transparent'}
-		stroke-width={2}
-		rx={8}
-	/>
-	{#if unit.type === UnitType.LINE_INFANTRY}
-		{@render lineInfantry()}
-	{:else if unit.type === UnitType.LIGHT_INFANTRY}
-		{@render lightInfantry()}
-	{:else if unit.type === UnitType.DRAGOONS}
-		{@render dragoons()}
-	{:else if unit.type === UnitType.LIGHT_HORSE}
-		{@render lightHorse()}
-	{:else if unit.type === UnitType.HORSE}
-		{@render horse()}
-	{:else if unit.type === UnitType.ARTILLERY}
-		{@render artillery()}
+<g transform="translate({pos.x},{pos.y})">
+	{#if fireTarget}
+		<circle
+			r={SIZE * 0.7}
+			cx="0"
+			cy="0"
+			fill="none"
+			stroke="#cc2222"
+			stroke-width="3"
+			pointer-events="none"
+		/>
+	{/if}
+	<g
+		transform="rotate({rotation})"
+		style="transition: transform 0.1s ease-in; outline: none"
+		onclick={onClick}
+		role="button"
+		tabindex="0"
+		aria-label="{unit.type}, {unit.id}"
+		onkeydown={(e) => null}
+		class="counter-base"
+	>
+		<rect
+			width={SIZE}
+			height={SIZE}
+			x={-HALF}
+			y={-HALF}
+			fill={unit.player === 0 ? '#1a56db' : '#e02424'}
+			stroke={unit.selected ? 'gold' : 'transparent'}
+			stroke-width={2}
+			rx={8}
+		/>
+		{#if unit.type === UnitType.LINE_INFANTRY}
+			{@render lineInfantry()}
+		{:else if unit.type === UnitType.LIGHT_INFANTRY}
+			{@render lightInfantry()}
+		{:else if unit.type === UnitType.DRAGOONS}
+			{@render dragoons()}
+		{:else if unit.type === UnitType.LIGHT_HORSE}
+			{@render lightHorse()}
+		{:else if unit.type === UnitType.HORSE}
+			{@render horse()}
+		{:else if unit.type === UnitType.ARTILLERY}
+			{@render artillery()}
+		{/if}
+	</g>
+	{#if rotateMode}
+		<g
+			transform="translate(-60, 0)"
+			onclick={(e) => {
+				e.stopPropagation();
+				rotateLeft(unit.facing);
+			}}
+			role="button"
+			tabindex="0"
+			aria-label="Rotate left"
+			style="cursor: pointer"
+			pointer-events="all"
+		>
+			<circle r={12} cx="0" cy="0" fill="#f5f5f5" stroke="#222" stroke-width="1.5" />
+			<text
+				x="0"
+				y="1"
+				text-anchor="middle"
+				dominant-baseline="middle"
+				font-size="14"
+				fill="#222"
+				pointer-events="none">↺</text
+			>
+		</g>
+		<g
+			transform="translate(60, 0)"
+			onclick={(e) => {
+				e.stopPropagation();
+				rotateRight(unit.facing);
+			}}
+			role="button"
+			tabindex="0"
+			aria-label="Rotate right"
+			style="cursor: pointer"
+			pointer-events="all"
+		>
+			<circle r={12} cx="0" cy="0" fill="#f5f5f5" stroke="#222" stroke-width="1.5" />
+			<text
+				x="0"
+				y="1"
+				text-anchor="middle"
+				dominant-baseline="middle"
+				font-size="14"
+				fill="#222"
+				pointer-events="none">↻</text
+			>
+		</g>
 	{/if}
 </g>
 

@@ -16,6 +16,7 @@ export const TEST_UNITS: Unit[] = [
 		selected: false,
 		movementPointsUsed: 0,
 		facingStepsUsed: 0,
+		firedThisActivation: false,
 		activated: false
 	},
 	{
@@ -29,6 +30,7 @@ export const TEST_UNITS: Unit[] = [
 		selected: false,
 		movementPointsUsed: 0,
 		facingStepsUsed: 0,
+		firedThisActivation: false,
 		activated: false
 	},
 	{
@@ -42,6 +44,7 @@ export const TEST_UNITS: Unit[] = [
 		selected: false,
 		movementPointsUsed: 0,
 		facingStepsUsed: 0,
+		firedThisActivation: false,
 		activated: false
 	},
 	{
@@ -55,6 +58,7 @@ export const TEST_UNITS: Unit[] = [
 		selected: false,
 		movementPointsUsed: 0,
 		facingStepsUsed: 0,
+		firedThisActivation: false,
 		activated: false
 	},
 	{
@@ -68,6 +72,7 @@ export const TEST_UNITS: Unit[] = [
 		selected: false,
 		movementPointsUsed: 0,
 		facingStepsUsed: 0,
+		firedThisActivation: false,
 		activated: false
 	},
 	{
@@ -81,6 +86,7 @@ export const TEST_UNITS: Unit[] = [
 		selected: false,
 		movementPointsUsed: 0,
 		facingStepsUsed: 0,
+		firedThisActivation: false,
 		activated: false
 	}
 ];

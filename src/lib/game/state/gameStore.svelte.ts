@@ -8,8 +8,11 @@ import {
 	rollDifficultTerrainCheck,
 	type MoveTarget
 } from '../core/movement';
-import { ActivationStep, HexFacing, type Player, type Unit } from '../core/types';
+import { getValidFireTargets, resolveFireAction, type FireResult } from '../core/combat';
+import { ActionType, ActivationStep, HexFacing, type Player, type Unit } from '../core/types';
 import { getUnitDefinition } from '../core/unitDefinitions';
+
+export type ActionMode = 'move' | 'fire' | 'rotate';
 
 export class GameStore {
 	units: Unit[] = $state([]);
@@ -17,19 +20,38 @@ export class GameStore {
 	activePlayer: Player = $state(0);
 	activationStep: ActivationStep = $state(ActivationStep.AWAITING_ACTIVATION);
 	activeUnitId: string | null = $state(null);
+	actionMode: ActionMode | null = $state(null);
 	turn: number = $state(1);
 	selectedUnit = $derived(this.units.find((u) => u.selected === true));
 	validMoveTargets: MoveTarget[] = $derived.by(() => {
 		if (this.activeUnitId === null) return [];
 		if (this.activationStep !== ActivationStep.ACTION) return [];
+		if (this.actionMode === 'fire' || this.actionMode === 'rotate') return [];
 		if (!this.grid) return [];
 		const active = this.units.find((u) => u.id === this.activeUnitId);
 		if (!active) return [];
 		const def = getUnitDefinition(active.type);
+		if (def.actionType === ActionType.MOVE_OR_FIRE && active.firedThisActivation) return [];
 		if (active.movementPointsUsed >= def.movementAllowance) return [];
 		if (active.facingStepsUsed >= 2) return [];
 		const remainingMP = def.movementAllowance - active.movementPointsUsed;
 		return getValidMoveTargets(active, this.grid, this.units, remainingMP);
+	});
+	validFireTargets: Unit[] = $derived.by(() => {
+		if (this.activeUnitId === null) return [];
+		if (this.activationStep !== ActivationStep.ACTION) return [];
+		if (this.actionMode === 'move' || this.actionMode === 'rotate') return [];
+		if (!this.grid) return [];
+		const active = this.units.find((u) => u.id === this.activeUnitId);
+		if (!active) return [];
+		const def = getUnitDefinition(active.type);
+		if (def.firingRange === 0) return [];
+		if (active.firedThisActivation) return [];
+		if (def.actionType === ActionType.MOVE_OR_FIRE) {
+			if (active.movementPointsUsed > 0) return [];
+			if (active.facingStepsUsed > 0) return [];
+		}
+		return getValidFireTargets(active, this.grid, this.units);
 	});
 
 	constructor(units: Unit[], map: MapDefinition) {
@@ -73,21 +95,104 @@ export class GameStore {
 			selected: false,
 			movementPointsUsed: 0,
 			facingStepsUsed: 0,
+			firedThisActivation: false,
 			activated: false
 		}));
 	}
 
-	toggleUnit(unit: Unit) {
-		if (this.activeUnitId !== null) return;
+	#activate(id: string) {
+		this.activeUnitId = id;
+		this.units = this.units.map((u) => ({
+			...u,
+			selected: u.id === id
+		}));
+		this.activationStep = ActivationStep.COMMAND_CHECK;
+		// Stub: command check auto-passes
+		this.activationStep = ActivationStep.ACTION;
+	}
+
+	#finishActivation() {
+		if (this.activeUnitId === null) return;
+		// Stub: charge resolution and morale check auto-complete
+		this.activationStep = ActivationStep.CHARGE_RESOLUTION;
+		this.activationStep = ActivationStep.MORALE_CHECK;
+		this.activationStep = ActivationStep.ACTIVATION_COMPLETE;
+
+		const activeId = this.activeUnitId;
+		this.units = this.units.map((u) => ({
+			...u,
+			activated: u.id === activeId ? true : u.activated,
+			movementPointsUsed: u.id === activeId ? 0 : u.movementPointsUsed,
+			facingStepsUsed: u.id === activeId ? 0 : u.facingStepsUsed,
+			firedThisActivation: u.id === activeId ? false : u.firedThisActivation,
+			selected: u.id === activeId ? false : u.selected
+		}));
+		this.activeUnitId = null;
+		this.actionMode = null;
+		this.activationStep = ActivationStep.AWAITING_ACTIVATION;
+	}
+
+	// -- Selection / activation --
+
+	selectUnit(unit: Unit) {
 		if (unit.player !== this.activePlayer) return;
 		if (unit.activated) return;
 
-		const isSelected = this.selectedUnit?.id === unit.id;
+		// Auto-end any in-progress activation on a foreign-friendly click.
+		if (this.activeUnitId !== null && this.activeUnitId !== unit.id) {
+			this.#finishActivation();
+		}
 
+		// If the unit is already activated (re-clicking the active unit), no-op.
+		if (this.activeUnitId === unit.id) return;
+
+		const isSelected = this.selectedUnit?.id === unit.id;
 		this.units = this.units.map((u) => ({
 			...u,
 			selected: u.id === unit.id ? !isSelected : false
 		}));
+	}
+
+	beginAction(mode: ActionMode) {
+		const sel = this.selectedUnit;
+		if (!sel) return;
+		if (sel.player !== this.activePlayer) return;
+		if (sel.activated) return;
+
+		const def = getUnitDefinition(sel.type);
+
+		// Static eligibility checks
+		if (mode === 'fire' && def.firingRange === 0) return;
+		if (mode === 'rotate' && !def.hasFacing) return;
+
+		// Per-unit current eligibility (mirrors the derives' final guards)
+		if (mode === 'fire') {
+			if (sel.firedThisActivation) return;
+			if (def.actionType === ActionType.MOVE_OR_FIRE) {
+				if (sel.movementPointsUsed > 0 || sel.facingStepsUsed > 0) return;
+			}
+		}
+		if (mode === 'move') {
+			if (def.actionType === ActionType.MOVE_OR_FIRE && sel.firedThisActivation) return;
+			if (sel.movementPointsUsed >= def.movementAllowance && sel.facingStepsUsed >= 2) return;
+		}
+		if (mode === 'rotate') {
+			if (def.actionType === ActionType.MOVE_OR_FIRE && sel.firedThisActivation) return;
+			if (sel.facingStepsUsed >= 2) return;
+		}
+
+		// Mode-switch committal lock for MOVE_OR_FIRE units
+		if (this.actionMode !== null && def.actionType === ActionType.MOVE_OR_FIRE) {
+			const currentSide = this.actionMode === 'fire' ? 'fire' : 'move';
+			const newSide = mode === 'fire' ? 'fire' : 'move';
+			if (currentSide !== newSide) return;
+		}
+
+		// Activate if not yet
+		if (this.activeUnitId !== sel.id) {
+			this.#activate(sel.id);
+		}
+		this.actionMode = mode;
 	}
 
 	// -- Movement --
@@ -129,6 +234,11 @@ export class GameStore {
 		if (this.selectedUnit?.id !== this.activeUnitId) return;
 		if (this.selectedUnit.player !== this.activePlayer) return;
 
+		const def = getUnitDefinition(this.selectedUnit.type);
+		if (def.actionType === ActionType.MOVE_OR_FIRE && this.selectedUnit.firedThisActivation) {
+			return;
+		}
+
 		const current = this.selectedUnit.facing;
 		const steps = facingStepsBetween(current, facing);
 		if (steps === 0) return;
@@ -143,52 +253,48 @@ export class GameStore {
 		}));
 	}
 
+	// -- Firing --
+
+	fireAt(targetId: string, rng: () => number = Math.random): FireResult | null {
+		if (this.activeUnitId === null) return null;
+		if (this.activationStep !== ActivationStep.ACTION) return null;
+		if (this.selectedUnit?.id !== this.activeUnitId) return null;
+		if (this.selectedUnit.player !== this.activePlayer) return null;
+		if (!this.grid) return null;
+
+		const target = this.validFireTargets.find((u) => u.id === targetId);
+		if (!target) return null;
+
+		const result = resolveFireAction(this.selectedUnit, target, this.grid, rng);
+		const activeId = this.activeUnitId;
+		this.units = this.units.map((u) => {
+			if (u.id === activeId) return { ...u, firedThisActivation: true };
+			if (u.id === targetId && result.damage > 0) {
+				return { ...u, strengthPoints: Math.max(0, u.strengthPoints - result.damage) };
+			}
+			return u;
+		});
+		return result;
+	}
+
 	// -- Activation lifecycle --
 
 	activateUnit(id: string) {
-		if (this.activationStep !== ActivationStep.AWAITING_ACTIVATION) return;
+		if (this.activeUnitId !== null) return;
 		const unit = this.#getUnit(id);
 		if (unit.player !== this.activePlayer) return;
 		if (unit.activated) return;
-
-		this.activeUnitId = id;
-		this.units = this.units.map((u) => ({
-			...u,
-			selected: u.id === id
-		}));
-		this.activationStep = ActivationStep.COMMAND_CHECK;
-		// Stub: command check auto-passes
-		this.activationStep = ActivationStep.ACTION;
-	}
-
-	completeAction() {
-		if (this.activationStep !== ActivationStep.ACTION) return;
-
-		this.activationStep = ActivationStep.CHARGE_RESOLUTION;
-		// Stub: charge resolution auto-completes
-		this.activationStep = ActivationStep.MORALE_CHECK;
-		// Stub: morale check auto-passes
-		this.activationStep = ActivationStep.ACTIVATION_COMPLETE;
+		this.#activate(id);
 	}
 
 	endActivation() {
-		if (this.activationStep !== ActivationStep.ACTIVATION_COMPLETE) return;
-		if (this.activeUnitId === null) return;
-
-		const activeId = this.activeUnitId;
-		this.units = this.units.map((u) => ({
-			...u,
-			activated: u.id === activeId ? true : u.activated,
-			movementPointsUsed: u.id === activeId ? 0 : u.movementPointsUsed,
-			facingStepsUsed: u.id === activeId ? 0 : u.facingStepsUsed,
-			selected: u.id === activeId ? false : u.selected
-		}));
-		this.activeUnitId = null;
-		this.activationStep = ActivationStep.AWAITING_ACTIVATION;
+		this.#finishActivation();
 	}
 
 	endPlayerTurn() {
-		if (this.activationStep !== ActivationStep.AWAITING_ACTIVATION) return;
+		if (this.activeUnitId !== null) {
+			this.#finishActivation();
+		}
 
 		if (this.activePlayer === 0) {
 			this.activePlayer = 1;
