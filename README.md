@@ -89,23 +89,14 @@ Each milestone builds on the previous ones. Dependencies are noted where they ex
 
 ---
 
-### M6: Line of Sight
+### ~~M6: Line of Sight~~ COMPLETE
 
-Implement center-to-center LOS tracing for firing eligibility.
-
-**New `core/los.ts`:**
-
-- `hasLineOfSight(from, to, grid, units)` → boolean
-- Trace line from hex center to hex center using cube coordinates
-- Check intervening hexes for: Woods (blocks), Towns (blocks), Hills (blocks between lower units), other units (block)
-- Hexside-boundary ambiguity: if line runs exactly along a hexside and one adjacent hex blocks → blocked
-- Artillery-on-hill exception: may fire over 1 adjacent unit/terrain at max range (4 hexes)
-
-**Algorithm:** Cube-coordinate line drawing (lerp + round to nearest hex).
-
-**Depends on:** M3 (terrain LOS properties)
-**Files:** new `core/los.ts`, additions to `hex.ts` if needed
-**Tests:** Clear LOS, blocked by woods/town/unit/hill, LOS over hill from hill, artillery plunging fire, hexside boundary edge case.
+- Created `core/los.ts` with `hasLineOfSight(from, to, grid, units)` — pure-geometry LOS via cube-coordinate line tracing (lerp + round-to-nearest-hex), no facing-arc dependency (combat module composes that in M7)
+- Intermediate samples (excluding both endpoints) checked for blockers: Woods/Town terrain, intervening units, and Hilltops only when both endpoints are at lower elevation (so a unit on a hill sees over equal-height hills, and a hill-vs-hill exchange is unblocked)
+- Hexside-tie detection by tracing the line twice with opposite-sign endpoint nudges (±1e-6); when the two traces round to different hexes, the sample is blocked if either candidate blocks (per rules §7)
+- Artillery-on-Hilltop plunging-fire exception: at range ≤ 4 with exactly one blocker adjacent to either firer or target, LOS is restored — denied for two blockers, mid-line blockers, range 5+, non-Artillery on hill, or Artillery off hill
+- Adjacent hexes (`hexDistance ≤ 1`) always have LOS; off-grid endpoints return false; units on the firer/target hex never block their own LOS
+- 37 tests in `los.spec.ts` covering trivial cases, open-ground LOS at varied distances, all blocking-terrain types (and the non-blockers Marsh/Lake/River/Bridge/Road/Ford), unit blockers, hill elevation rules, hexside boundary ties, and all plunging-fire variants
 
 ---
 
