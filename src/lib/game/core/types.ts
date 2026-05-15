@@ -24,17 +24,6 @@ export enum ActivationStep {
 	ACTIVATION_COMPLETE = 'activation_complete'
 }
 
-export enum HexFacing {
-	N = 0,
-	NE = 60,
-	SE = 120,
-	S = 180,
-	SW = 240,
-	NW = 300
-}
-
-export type FacingZone = 'front' | 'rear';
-
 export enum UnitType {
 	LINE_INFANTRY = 'line_infantry',
 	LIGHT_INFANTRY = 'light_infantry',
@@ -60,7 +49,6 @@ export type UnitDefinition = {
 	readonly actionType: ActionType;
 	readonly firingRange: number;
 	readonly baseHitChance: number;
-	readonly hasFacing: boolean;
 	readonly terrainCheckRequired: boolean;
 	readonly charge: ChargeAbility;
 	readonly canEnterWoods: boolean;
@@ -74,12 +62,10 @@ export type Unit = {
 	type: UnitType;
 	player: Player;
 	coordinates: OffsetCoordinates;
-	facing: HexFacing;
 	strengthPoints: number;
 	maxStrengthPoints: number;
 	selected: boolean;
 	movementPointsUsed: number;
-	facingStepsUsed: number;
 	firedThisActivation: boolean;
 	activated: boolean;
 };

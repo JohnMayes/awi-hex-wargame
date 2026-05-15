@@ -1,71 +1,22 @@
 <script lang="ts">
-	import { HexFacing, UnitType, type Unit } from '../core/types';
+	import { UnitType, type Unit } from '../core/types';
 
 	type Props = {
 		unit: Unit;
 		pos: { x: number; y: number };
 		onClick: () => void;
-		changeFacing: (facing: HexFacing) => void;
 		fireTarget?: boolean;
-		rotateMode?: boolean;
 	};
 
-	let {
-		unit,
-		pos,
-		onClick,
-		changeFacing,
-		fireTarget = false,
-		rotateMode = false
-	}: Props = $props();
+	let { unit, pos, onClick, fireTarget = false }: Props = $props();
 
 	const SIZE = 80;
 	const HALF = SIZE / 2;
 
-	function rotateLeft(facing: HexFacing) {
-		if (facing === HexFacing.N) {
-			changeFacing(HexFacing.NW);
-		} else {
-			const newFacing: HexFacing = facing - 60;
-			changeFacing(newFacing);
-		}
-	}
-
-	function rotateRight(facing: HexFacing) {
-		if (facing === HexFacing.NW) {
-			changeFacing(HexFacing.N);
-		} else {
-			const newFacing: HexFacing = facing + 60;
-			changeFacing(newFacing);
-		}
-	}
-
-	// keyboard movement
 	function handleKeyDown(e: KeyboardEvent) {
 		if (!unit.selected) return;
-		switch (e.key) {
-			case 'Enter':
-				onClick?.();
-				break;
-			case 'ArrowRight':
-				rotateRight(unit.facing);
-				break;
-			case 'ArrowLeft':
-				rotateLeft(unit.facing);
-				break;
-		}
+		if (e.key === 'Enter') onClick?.();
 	}
-
-	let rotation = $state(unit.facing);
-
-	$effect(() => {
-		const target = unit.facing;
-		const current = ((rotation % 360) + 360) % 360;
-		let delta = target - current;
-		if (delta > 180) delta -= 360;
-		if (delta < -180) delta += 360;
-		rotation += delta;
-	});
 </script>
 
 <svelte:window onkeydown={handleKeyDown} />
@@ -83,8 +34,7 @@
 		/>
 	{/if}
 	<g
-		transform="rotate({rotation})"
-		style="transition: transform 0.1s ease-in; outline: none"
+		style="outline: none"
 		onclick={onClick}
 		role="button"
 		tabindex="0"
@@ -116,54 +66,6 @@
 			{@render artillery()}
 		{/if}
 	</g>
-	{#if rotateMode}
-		<g
-			transform="translate(-60, 0)"
-			onclick={(e) => {
-				e.stopPropagation();
-				rotateLeft(unit.facing);
-			}}
-			role="button"
-			tabindex="0"
-			aria-label="Rotate left"
-			style="cursor: pointer"
-			pointer-events="all"
-		>
-			<circle r={12} cx="0" cy="0" fill="#f5f5f5" stroke="#222" stroke-width="1.5" />
-			<text
-				x="0"
-				y="1"
-				text-anchor="middle"
-				dominant-baseline="middle"
-				font-size="14"
-				fill="#222"
-				pointer-events="none">↺</text
-			>
-		</g>
-		<g
-			transform="translate(60, 0)"
-			onclick={(e) => {
-				e.stopPropagation();
-				rotateRight(unit.facing);
-			}}
-			role="button"
-			tabindex="0"
-			aria-label="Rotate right"
-			style="cursor: pointer"
-			pointer-events="all"
-		>
-			<circle r={12} cx="0" cy="0" fill="#f5f5f5" stroke="#222" stroke-width="1.5" />
-			<text
-				x="0"
-				y="1"
-				text-anchor="middle"
-				dominant-baseline="middle"
-				font-size="14"
-				fill="#222"
-				pointer-events="none">↻</text
-			>
-		</g>
-	{/if}
 </g>
 
 {#snippet lineInfantry()}

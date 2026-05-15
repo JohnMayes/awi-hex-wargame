@@ -7,7 +7,6 @@ export const unitDefinitions: Readonly<Record<UnitType, UnitDefinition>> = {
 		actionType: ActionType.MOVE_OR_FIRE,
 		firingRange: 2,
 		baseHitChance: 0.65,
-		hasFacing: true,
 		terrainCheckRequired: true,
 		charge: {
 			canCharge: true,
@@ -25,7 +24,6 @@ export const unitDefinitions: Readonly<Record<UnitType, UnitDefinition>> = {
 		actionType: ActionType.FIRE_AND_MOVE,
 		firingRange: 2,
 		baseHitChance: 0.5,
-		hasFacing: false,
 		terrainCheckRequired: false,
 		charge: { canCharge: false },
 		canEnterWoods: true,
@@ -39,7 +37,6 @@ export const unitDefinitions: Readonly<Record<UnitType, UnitDefinition>> = {
 		actionType: ActionType.MOVE_OR_FIRE,
 		firingRange: 2,
 		baseHitChance: 0.5,
-		hasFacing: true,
 		terrainCheckRequired: true,
 		charge: {
 			canCharge: true,
@@ -57,7 +54,6 @@ export const unitDefinitions: Readonly<Record<UnitType, UnitDefinition>> = {
 		actionType: ActionType.MOVE_ONLY,
 		firingRange: 0,
 		baseHitChance: 0,
-		hasFacing: true,
 		terrainCheckRequired: true,
 		charge: {
 			canCharge: true,
@@ -75,7 +71,6 @@ export const unitDefinitions: Readonly<Record<UnitType, UnitDefinition>> = {
 		actionType: ActionType.MOVE_ONLY,
 		firingRange: 0,
 		baseHitChance: 0,
-		hasFacing: true,
 		terrainCheckRequired: true,
 		charge: {
 			canCharge: true,
@@ -93,7 +88,6 @@ export const unitDefinitions: Readonly<Record<UnitType, UnitDefinition>> = {
 		actionType: ActionType.MOVE_OR_FIRE,
 		firingRange: 4,
 		baseHitChance: 0.5,
-		hasFacing: true,
 		terrainCheckRequired: true,
 		charge: { canCharge: false },
 		canEnterWoods: false,

@@ -433,49 +433,6 @@ describe('getTerrainElevation', () => {
 
 // ─── terrainDefinitions property checks ────────────────────────────────────
 
-describe('grantAllAroundFacing', () => {
-	it('TOWN grants all-around facing', () => {
-		expect.assertions(1);
-		expect(terrainDefinitions[TerrainType.TOWN].grantAllAroundFacing).toBe(true);
-	});
-	it('OPEN does not grant all-around facing', () => {
-		expect.assertions(1);
-		expect(terrainDefinitions[TerrainType.OPEN].grantAllAroundFacing).toBe(false);
-	});
-	it('WOODS does not grant all-around facing', () => {
-		expect.assertions(1);
-		expect(terrainDefinitions[TerrainType.WOODS].grantAllAroundFacing).toBe(false);
-	});
-	it('HILLTOP does not grant all-around facing', () => {
-		expect.assertions(1);
-		expect(terrainDefinitions[TerrainType.HILLTOP].grantAllAroundFacing).toBe(false);
-	});
-	it('MARSH does not grant all-around facing', () => {
-		expect.assertions(1);
-		expect(terrainDefinitions[TerrainType.MARSH].grantAllAroundFacing).toBe(false);
-	});
-	it('LAKE does not grant all-around facing', () => {
-		expect.assertions(1);
-		expect(terrainDefinitions[TerrainType.LAKE].grantAllAroundFacing).toBe(false);
-	});
-	it('RIVER does not grant all-around facing', () => {
-		expect.assertions(1);
-		expect(terrainDefinitions[TerrainType.RIVER].grantAllAroundFacing).toBe(false);
-	});
-	it('FORD does not grant all-around facing', () => {
-		expect.assertions(1);
-		expect(terrainDefinitions[TerrainType.FORD].grantAllAroundFacing).toBe(false);
-	});
-	it('BRIDGE does not grant all-around facing', () => {
-		expect.assertions(1);
-		expect(terrainDefinitions[TerrainType.BRIDGE].grantAllAroundFacing).toBe(false);
-	});
-	it('ROAD does not grant all-around facing', () => {
-		expect.assertions(1);
-		expect(terrainDefinitions[TerrainType.ROAD].grantAllAroundFacing).toBe(false);
-	});
-});
-
 describe('isDifficultTerrain', () => {
 	it('HILLTOP is difficult terrain', () => {
 		expect.assertions(1);

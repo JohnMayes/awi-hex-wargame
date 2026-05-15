@@ -1,6 +1,5 @@
 import type { Grid, OffsetCoordinates } from 'honeycomb-grid';
 import { HexCell, coordsEqual, directions } from './hex';
-import { getFrontHexsides } from './facing';
 import { getUnitDefinition } from './unitDefinitions';
 import { canUnitEnterTerrain, terrainDefinitions } from './terrain';
 import type { Unit } from './types';
@@ -21,9 +20,9 @@ const offsetKey = (col: number, row: number) => `${col},${row}`;
  * the current grid and unit positions. Excludes the unit's current hex.
  *
  * Pathfinding is a BFS in cube space that respects: movement allowance,
- * front-arc constraint, terrain entry, stacking, Light Infantry pass-through,
- * adjacency-to-enemy exclusion, and road bonus (+1 when an all-road path is
- * possible from a road start).
+ * terrain entry, stacking, Light Infantry pass-through, adjacency-to-enemy
+ * exclusion, and road bonus (+1 when an all-road path is possible from a
+ * road start).
  */
 export function getValidMoveTargets(
 	unit: Unit,
@@ -36,10 +35,6 @@ export function getValidMoveTargets(
 	if (!startHex) return [];
 
 	const startDef = terrainDefinitions[startHex.terrain];
-	const allAround = !def.hasFacing || startDef.grantAllAroundFacing;
-	const frontDirIndices = allAround
-		? [0, 1, 2, 3, 4, 5]
-		: getFrontHexsides(unit.facing).map((f) => f / 60);
 
 	const hexMap = new Map<string, HexCell>();
 	for (const hex of grid) hexMap.set(cubeKey(hex.q, hex.r), hex);
@@ -88,9 +83,6 @@ export function getValidMoveTargets(
 		if (cost >= limit) continue;
 
 		for (let dirIdx = 0; dirIdx < 6; dirIdx++) {
-			if (mode === 'NORMAL' && !frontDirIndices.includes(dirIdx)) continue;
-			// ROAD_ONLY suspends the facing arc (rules §6.1)
-
 			const [dq, dr] = directions[dirIdx];
 			const neighbor = hexMap.get(cubeKey(hex.q + dq, hex.r + dr));
 			if (!neighbor) continue; // off-map

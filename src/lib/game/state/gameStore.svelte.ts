@@ -1,7 +1,6 @@
 import type { MapDefinition } from '../data/maps';
 import { Grid, type OffsetCoordinates } from 'honeycomb-grid';
 import { HexCell, coordsEqual } from '../core/hex';
-import { facingStepsBetween } from '../core/facing';
 import {
 	getValidMoveTargets,
 	requiresDifficultTerrainCheck,
@@ -9,10 +8,10 @@ import {
 	type MoveTarget
 } from '../core/movement';
 import { getValidFireTargets, resolveFireAction, type FireResult } from '../core/combat';
-import { ActionType, ActivationStep, HexFacing, type Player, type Unit } from '../core/types';
+import { ActionType, ActivationStep, type Player, type Unit } from '../core/types';
 import { getUnitDefinition } from '../core/unitDefinitions';
 
-export type ActionMode = 'move' | 'fire' | 'rotate';
+export type ActionMode = 'move' | 'fire';
 
 export class GameStore {
 	units: Unit[] = $state([]);
@@ -26,21 +25,20 @@ export class GameStore {
 	validMoveTargets: MoveTarget[] = $derived.by(() => {
 		if (this.activeUnitId === null) return [];
 		if (this.activationStep !== ActivationStep.ACTION) return [];
-		if (this.actionMode === 'fire' || this.actionMode === 'rotate') return [];
+		if (this.actionMode === 'fire') return [];
 		if (!this.grid) return [];
 		const active = this.units.find((u) => u.id === this.activeUnitId);
 		if (!active) return [];
 		const def = getUnitDefinition(active.type);
 		if (def.actionType === ActionType.MOVE_OR_FIRE && active.firedThisActivation) return [];
 		if (active.movementPointsUsed >= def.movementAllowance) return [];
-		if (active.facingStepsUsed >= 2) return [];
 		const remainingMP = def.movementAllowance - active.movementPointsUsed;
 		return getValidMoveTargets(active, this.grid, this.units, remainingMP);
 	});
 	validFireTargets: Unit[] = $derived.by(() => {
 		if (this.activeUnitId === null) return [];
 		if (this.activationStep !== ActivationStep.ACTION) return [];
-		if (this.actionMode === 'move' || this.actionMode === 'rotate') return [];
+		if (this.actionMode === 'move') return [];
 		if (!this.grid) return [];
 		const active = this.units.find((u) => u.id === this.activeUnitId);
 		if (!active) return [];
@@ -49,7 +47,6 @@ export class GameStore {
 		if (active.firedThisActivation) return [];
 		if (def.actionType === ActionType.MOVE_OR_FIRE) {
 			if (active.movementPointsUsed > 0) return [];
-			if (active.facingStepsUsed > 0) return [];
 		}
 		return getValidFireTargets(active, this.grid, this.units);
 	});
@@ -94,7 +91,6 @@ export class GameStore {
 			...u,
 			selected: false,
 			movementPointsUsed: 0,
-			facingStepsUsed: 0,
 			firedThisActivation: false,
 			activated: false
 		}));
@@ -123,7 +119,6 @@ export class GameStore {
 			...u,
 			activated: u.id === activeId ? true : u.activated,
 			movementPointsUsed: u.id === activeId ? 0 : u.movementPointsUsed,
-			facingStepsUsed: u.id === activeId ? 0 : u.facingStepsUsed,
 			firedThisActivation: u.id === activeId ? false : u.firedThisActivation,
 			selected: u.id === activeId ? false : u.selected
 		}));
@@ -163,29 +158,22 @@ export class GameStore {
 
 		// Static eligibility checks
 		if (mode === 'fire' && def.firingRange === 0) return;
-		if (mode === 'rotate' && !def.hasFacing) return;
 
 		// Per-unit current eligibility (mirrors the derives' final guards)
 		if (mode === 'fire') {
 			if (sel.firedThisActivation) return;
 			if (def.actionType === ActionType.MOVE_OR_FIRE) {
-				if (sel.movementPointsUsed > 0 || sel.facingStepsUsed > 0) return;
+				if (sel.movementPointsUsed > 0) return;
 			}
 		}
 		if (mode === 'move') {
 			if (def.actionType === ActionType.MOVE_OR_FIRE && sel.firedThisActivation) return;
-			if (sel.movementPointsUsed >= def.movementAllowance && sel.facingStepsUsed >= 2) return;
-		}
-		if (mode === 'rotate') {
-			if (def.actionType === ActionType.MOVE_OR_FIRE && sel.firedThisActivation) return;
-			if (sel.facingStepsUsed >= 2) return;
+			if (sel.movementPointsUsed >= def.movementAllowance) return;
 		}
 
 		// Mode-switch committal lock for MOVE_OR_FIRE units
-		if (this.actionMode !== null && def.actionType === ActionType.MOVE_OR_FIRE) {
-			const currentSide = this.actionMode === 'fire' ? 'fire' : 'move';
-			const newSide = mode === 'fire' ? 'fire' : 'move';
-			if (currentSide !== newSide) return;
+		if (this.actionMode !== null && this.actionMode !== mode) {
+			if (def.actionType === ActionType.MOVE_OR_FIRE) return;
 		}
 
 		// Activate if not yet
@@ -225,31 +213,6 @@ export class GameStore {
 			coordinates: u.id === activeId ? newCords : u.coordinates,
 			movementPointsUsed:
 				u.id === activeId ? u.movementPointsUsed + target.cost : u.movementPointsUsed
-		}));
-	}
-
-	changeFacing(facing: HexFacing) {
-		if (this.activeUnitId === null) return;
-		if (this.activationStep !== ActivationStep.ACTION) return;
-		if (this.selectedUnit?.id !== this.activeUnitId) return;
-		if (this.selectedUnit.player !== this.activePlayer) return;
-
-		const def = getUnitDefinition(this.selectedUnit.type);
-		if (def.actionType === ActionType.MOVE_OR_FIRE && this.selectedUnit.firedThisActivation) {
-			return;
-		}
-
-		const current = this.selectedUnit.facing;
-		const steps = facingStepsBetween(current, facing);
-		if (steps === 0) return;
-		const maxAllowed = this.selectedUnit.movementPointsUsed > 0 ? 1 : 2;
-		if (this.selectedUnit.facingStepsUsed + steps > maxAllowed) return;
-
-		const activeId = this.activeUnitId;
-		this.units = this.units.map((u) => ({
-			...u,
-			facing: u.id === activeId ? facing : u.facing,
-			facingStepsUsed: u.id === activeId ? u.facingStepsUsed + steps : u.facingStepsUsed
 		}));
 	}
 

@@ -15,7 +15,7 @@
 	const moveEnabled = $derived.by(() => {
 		if (!sel || !def) return false;
 		if (def.actionType === ActionType.MOVE_OR_FIRE && sel.firedThisActivation) return false;
-		if (sel.movementPointsUsed >= def.movementAllowance && sel.facingStepsUsed >= 2) return false;
+		if (sel.movementPointsUsed >= def.movementAllowance) return false;
 		if (def.actionType === ActionType.MOVE_OR_FIRE && store.actionMode === 'fire') return false;
 		return true;
 	});
@@ -25,18 +25,8 @@
 		if (def.firingRange === 0) return false;
 		if (sel.firedThisActivation) return false;
 		if (def.actionType === ActionType.MOVE_OR_FIRE) {
-			if (sel.movementPointsUsed > 0 || sel.facingStepsUsed > 0) return false;
-			if (store.actionMode === 'move' || store.actionMode === 'rotate') return false;
-		}
-		return true;
-	});
-
-	const rotateEnabled = $derived.by(() => {
-		if (!sel || !def || !def.hasFacing) return false;
-		if (sel.facingStepsUsed >= 2) return false;
-		if (def.actionType === ActionType.MOVE_OR_FIRE) {
-			if (sel.firedThisActivation) return false;
-			if (store.actionMode === 'fire') return false;
+			if (sel.movementPointsUsed > 0) return false;
+			if (store.actionMode === 'move') return false;
 		}
 		return true;
 	});
@@ -80,8 +70,6 @@
 				{unit}
 				pos={pos!}
 				fireTarget={fireTargetIds.has(unit.id)}
-				rotateMode={store.actionMode === 'rotate' && unit.selected}
-				changeFacing={(facing) => store.changeFacing(facing)}
 				onClick={() => {
 					if (unit.player === store.activePlayer) {
 						store.selectUnit(unit);
@@ -106,8 +94,7 @@
 		<div class="action-zone">
 			{#if sel && def}
 				<div class="unit-readout">
-					<span class="unit-label"
-						>{store.activeUnitId === sel.id ? 'Activating' : 'Selected'}</span
+					<span class="unit-label">{store.activeUnitId === sel.id ? 'Activating' : 'Selected'}</span
 					>
 					<span class="unit-name">{sel.type.toLowerCase().replace(/_/g, ' ')}</span>
 				</div>
@@ -118,13 +105,6 @@
 					{#if def.firingRange > 0}
 						<button class="branch" disabled={!fireEnabled} onclick={() => store.beginAction('fire')}
 							>Fire</button
-						>
-					{/if}
-					{#if def.hasFacing}
-						<button
-							class="branch"
-							disabled={!rotateEnabled}
-							onclick={() => store.beginAction('rotate')}>Rotate</button
 						>
 					{/if}
 				</div>

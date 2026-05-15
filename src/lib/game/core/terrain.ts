@@ -7,7 +7,6 @@ export type TerrainDefinition = {
 	readonly isElevated: boolean;
 	readonly isDifficultTerrain: boolean;
 	readonly isRoad: boolean;
-	readonly grantAllAroundFacing: boolean;
 	// null = all units may enter; array = only these unit types may enter
 	readonly allowedUnitTypes: readonly UnitType[] | null;
 };
@@ -20,7 +19,6 @@ export const terrainDefinitions: Readonly<Record<TerrainType, TerrainDefinition>
 		isElevated: false,
 		isDifficultTerrain: false,
 		isRoad: false,
-		grantAllAroundFacing: false,
 		allowedUnitTypes: null
 	},
 	[TerrainType.WOODS]: {
@@ -30,7 +28,6 @@ export const terrainDefinitions: Readonly<Record<TerrainType, TerrainDefinition>
 		isElevated: false,
 		isDifficultTerrain: false,
 		isRoad: false,
-		grantAllAroundFacing: false,
 		allowedUnitTypes: [UnitType.LIGHT_INFANTRY]
 	},
 	[TerrainType.TOWN]: {
@@ -40,7 +37,6 @@ export const terrainDefinitions: Readonly<Record<TerrainType, TerrainDefinition>
 		isElevated: false,
 		isDifficultTerrain: false,
 		isRoad: false,
-		grantAllAroundFacing: true,
 		allowedUnitTypes: [UnitType.LINE_INFANTRY, UnitType.LIGHT_INFANTRY]
 	},
 	[TerrainType.MARSH]: {
@@ -50,7 +46,6 @@ export const terrainDefinitions: Readonly<Record<TerrainType, TerrainDefinition>
 		isElevated: false,
 		isDifficultTerrain: false,
 		isRoad: false,
-		grantAllAroundFacing: false,
 		allowedUnitTypes: null
 	},
 	[TerrainType.LAKE]: {
@@ -60,7 +55,6 @@ export const terrainDefinitions: Readonly<Record<TerrainType, TerrainDefinition>
 		isElevated: false,
 		isDifficultTerrain: false,
 		isRoad: false,
-		grantAllAroundFacing: false,
 		allowedUnitTypes: null
 	},
 	[TerrainType.RIVER]: {
@@ -70,7 +64,6 @@ export const terrainDefinitions: Readonly<Record<TerrainType, TerrainDefinition>
 		isElevated: false,
 		isDifficultTerrain: false,
 		isRoad: false,
-		grantAllAroundFacing: false,
 		allowedUnitTypes: null
 	},
 	[TerrainType.FORD]: {
@@ -80,7 +73,6 @@ export const terrainDefinitions: Readonly<Record<TerrainType, TerrainDefinition>
 		isElevated: false,
 		isDifficultTerrain: false,
 		isRoad: false,
-		grantAllAroundFacing: false,
 		allowedUnitTypes: null
 	},
 	[TerrainType.BRIDGE]: {
@@ -90,7 +82,6 @@ export const terrainDefinitions: Readonly<Record<TerrainType, TerrainDefinition>
 		isElevated: false,
 		isDifficultTerrain: false,
 		isRoad: false,
-		grantAllAroundFacing: false,
 		allowedUnitTypes: null
 	},
 	[TerrainType.ROAD]: {
@@ -100,7 +91,6 @@ export const terrainDefinitions: Readonly<Record<TerrainType, TerrainDefinition>
 		isElevated: false,
 		isDifficultTerrain: false,
 		isRoad: true,
-		grantAllAroundFacing: false,
 		allowedUnitTypes: null
 	},
 	[TerrainType.HILLTOP]: {
@@ -110,7 +100,6 @@ export const terrainDefinitions: Readonly<Record<TerrainType, TerrainDefinition>
 		isElevated: true,
 		isDifficultTerrain: true,
 		isRoad: false,
-		grantAllAroundFacing: false,
 		allowedUnitTypes: null
 	}
 };

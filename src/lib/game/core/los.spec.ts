@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { Grid, type OffsetCoordinates } from 'honeycomb-grid';
 import { hasLineOfSight } from './los';
 import { HexCell, directions } from './hex';
-import { HexFacing, TerrainType, UnitType, type Player, type Unit } from './types';
+import { TerrainType, UnitType, type Player, type Unit } from './types';
 import { unitDefinitions } from './unitDefinitions';
 
 // --- Test fixtures & helpers ---
@@ -47,25 +47,17 @@ function setTerrainAt(layout: Layout[], coord: OffsetCoordinates, terrain: Terra
 	if (cell) cell.terrain = terrain;
 }
 
-function unit(
-	id: string,
-	type: UnitType,
-	player: Player,
-	coordinates: OffsetCoordinates,
-	facing: HexFacing = HexFacing.N
-): Unit {
+function unit(id: string, type: UnitType, player: Player, coordinates: OffsetCoordinates): Unit {
 	const def = unitDefinitions[type];
 	return {
 		id,
 		type,
 		player,
 		coordinates,
-		facing,
 		strengthPoints: def.defaultStrengthPoints,
 		maxStrengthPoints: def.defaultStrengthPoints,
 		selected: false,
 		movementPointsUsed: 0,
-		facingStepsUsed: 0,
 		firedThisActivation: false,
 		activated: false
 	};

@@ -20,7 +20,7 @@ Hexes may contain terrain features that affect movement, combat, and line of sig
 
 - **Open**: No effect. The default terrain.
 - **Woods**: Block line of sight. Only Light Infantry may enter. Provide cover.
-- **Town**: Block line of sight. Only Infantry and Light Infantry may enter. Provide cover. Units in a town have all-around facing (no flanks or rear). A town hex is a strongpoint, reflecting the fortified urban positions that dominated Horse and Musket battles.
+- **Town**: Block line of sight. Only Infantry and Light Infantry may enter. Provide cover. A town hex is a strongpoint, reflecting the fortified urban positions that dominated Horse and Musket battles.
 - **Hill**: Elevated terrain. Units on a hill can see and fire over adjacent lower-elevation units or terrain. Do not block LOS for units on the same elevation. Defenders on a hill receive a defensive bonus in charge combat.
 - **Marsh/Lake**: Impassable to all units.
 - **River**: Impassable except at bridge or ford hexes.
@@ -43,7 +43,6 @@ The backbone of any Horse and Musket army. Close-order foot soldiers armed with 
 | Attribute         | Value                 |
 | ----------------- | --------------------- |
 | Movement          | 1 hex                 |
-| Facing            | Yes                   |
 | Actions           | Move OR Fire          |
 | Firing Range      | 2 hexes               |
 | Base Hit Chance   | High (65%)            |
@@ -57,14 +56,13 @@ Jaegers, riflemen, irregulars, and skirmishers operating in dispersed formation.
 | Attribute         | Value                           |
 | ----------------- | ------------------------------- |
 | Movement          | 1 hex                           |
-| Facing            | No (all-around)                 |
 | Actions           | Fire AND Move, or Move AND Fire |
 | Firing Range      | 2 hexes                         |
 | Base Hit Chance   | Moderate (50%)                  |
 | May Charge        | No                              |
 | Difficult Terrain | No check required               |
 
-Light Infantry ignore facing rules entirely: they may fire and move in any direction. They are the only unit type that may move through a hex occupied by a friendly unit (but may never end their move in an occupied hex). They are the only unit type that may enter Woods hexes.
+Light Infantry are the only unit type that may move through a hex occupied by a friendly unit (but may never end their move in an occupied hex). They are the only unit type that may enter Woods hexes.
 
 ### 3.3 Dragoons
 
@@ -73,7 +71,6 @@ Mounted infantry who can fight on horseback or dismount to deliver fire. When mo
 | Attribute         | Value          |
 | ----------------- | -------------- |
 | Movement          | 2 hexes        |
-| Facing            | Yes            |
 | Actions           | Move OR Fire   |
 | Firing Range      | 2 hexes        |
 | Base Hit Chance   | Moderate (50%) |
@@ -87,7 +84,6 @@ Hussars, irregular cavalry, and light screening horsemen. Fast and maneuverable,
 | Attribute         | Value      |
 | ----------------- | ---------- |
 | Movement          | 2 hexes    |
-| Facing            | Yes        |
 | Actions           | Move only  |
 | Firing Range      | None       |
 | Base Hit Chance   | N/A        |
@@ -101,7 +97,6 @@ The heavy battlefield cavalry of the era. Cuirassiers, horse grenadiers, and oth
 | Attribute         | Value            |
 | ----------------- | ---------------- |
 | Movement          | 2 hexes          |
-| Facing            | Yes              |
 | Actions           | Move only        |
 | Firing Range      | None             |
 | Base Hit Chance   | N/A              |
@@ -115,7 +110,6 @@ Batteries of field guns and their limbers. Artillery has the longest range on th
 | Attribute         | Value          |
 | ----------------- | -------------- |
 | Movement          | 1 hex          |
-| Facing            | Yes            |
 | Actions           | Move OR Fire   |
 | Firing Range      | 4 hexes        |
 | Base Hit Chance   | Moderate (50%) |
@@ -132,24 +126,6 @@ Scenarios may adjust individual unit stats to represent historical variation:
 - **Firing Modifier**: +1 tier for units with superior fire discipline (e.g., platoon firing). -1 tier for units with poor musketry or those that rely on cold steel.
 - **Charge Modifier**: +1 for shock troops or hard-charging cavalry. -1 for reluctant or poorly trained units.
 - **Morale Modifier**: +1 for elite or veteran units. -1 for green or demoralized troops.
-
----
-
-## 4. Facing and Orientation
-
-Units with a facing requirement must always **face a hexside** of their hex. This divides the six surrounding hexsides into two zones:
-
-- **Front**: The faced hexside and the two hexsides adjacent to it (a 180° forward arc). Units may only move forward, fire, and advance through their front hexsides.
-- **Rear**: The three hexsides on the opposite side of the unit (a 180° rear arc). Units are most vulnerable here. Retreats are made through rear hexsides.
-
-**Changing facing** counts as a movement action:
-
-- A unit that moves may also rotate its facing by **one hexside** (60 degrees) as part of that move.
-- A unit that remains stationary may rotate its facing by up to **two hexsides** (120 degrees) as its move action. This still counts as having used the movement action (the unit may not fire that activation if it is a "Move OR Fire" unit).
-
-**Units without facing** (Light Infantry): These units have no front or rear. They may move and fire in any direction.
-
-**Units in Towns**: Gain all-around facing. They have no rear while occupying the town hex. If forced to retreat, they retreat away from the source of the attack.
 
 ---
 
@@ -180,9 +156,9 @@ Each unit type has a permitted set of actions, as defined in Section 3. The core
 
 ### 6.1 Move
 
-The unit moves up to its movement allowance in hexes, traveling through its front hexsides. It may change facing by one hexside during the move. A unit that only changes facing (without physically moving to a new hex) has still used its movement action.
+The unit moves up to its movement allowance in hexes through any combination of adjacent hexes.
 
-**Road Movement**: A unit beginning its activation in a road hex may add +1 hex to its movement if it moves entirely along the road. Road movement may not be used to move adjacent to an enemy unit. Facing requirements are suspended during road movement but must be satisfied when the unit finishes moving.
+**Road Movement**: A unit beginning its activation in a road hex may add +1 hex to its movement if it moves entirely along the road. Road movement may not be used to move adjacent to an enemy unit.
 
 **Difficult Terrain**: Units in a difficult terrain hex (as defined by scenario) that are subject to terrain checks must pass a check when attempting to leave. On failure, the unit remains in place and its movement action is spent. It may attempt again on its next activation. (Digitally: ~50% chance of being held in difficult terrain.)
 
@@ -193,7 +169,6 @@ The unit moves up to its movement allowance in hexes, traveling through its fron
 The unit fires at a single eligible target. To be eligible, the target must be:
 
 - Within the firing unit's range.
-- Within the firing unit's arc of fire (front three hexsides for units with facing; any hexside for units without facing or units in towns).
 - Connected by an unblocked **line of sight** (see Section 7).
 
 When a unit fires, the system resolves whether a hit is scored based on the unit's base hit chance, modified by circumstances:
@@ -218,7 +193,6 @@ A unit eligible to charge may use its move action to enter a hex adjacent to an 
 
 The attacker's score is calculated from a base value plus the attacker's current SP, modified by:
 
-- **Rear attack** (target hit from outside its front hexsides): +1
 - **Horse (heavy cavalry) charging**: +1
 - **Defender in difficult terrain**: -1
 
@@ -232,7 +206,7 @@ The system compares the two scores and applies results:
 | Attacker exceeds Defender by 1-2     | Defender takes 1 hit and retreats 1 hex (may hold position if in difficult terrain). |
 | Attacker exceeds Defender by 3+      | Defender takes 2 hits and must retreat 1 hex (even from difficult terrain).          |
 
-After a charge is resolved, the attacking unit ends its activation. If the attacker was repulsed, it retreats facing the defender. Cavalry that fail to destroy their target always retreat after combat, reflecting the brief and violent nature of Horse and Musket era charges.
+After a charge is resolved, the attacking unit ends its activation. Cavalry that fail to destroy their target always retreat after combat, reflecting the brief and violent nature of Horse and Musket era charges.
 
 ---
 
@@ -270,7 +244,7 @@ A unit is **In Command** if it is within the command radius of any friendly Lead
 **Out-of-Command units** must pass a **command check** at the start of their activation before they can act. The check has a base ~50% chance of success, with a -1 penalty (roughly -15%) if the unit is more than double the distance from the nearest Leader's command radius.
 
 - **Pass**: The unit acts normally this activation.
-- **Fail**: The unit may only change facing in its current hex. It may not move, fire, or charge.
+- **Fail**: The activation is wasted — the unit may not move, fire, or charge this activation.
 
 ### 8.3 Leader Casualties
 
@@ -300,15 +274,14 @@ The morale check compares the unit's accumulated damage against a threshold. The
 **Modifiers to the morale check**:
 
 - **Elite / Veteran unit** (scenario-designated): +1 to morale (easier to pass)
-- **Attacked from the rear** (hit from outside front arc): -1 to morale (harder to pass)
 - **Out of Command**: -1 to morale (harder to pass)
 - **Unit has a Leader attached**: +1 to morale (easier to pass)
 
 ### 9.3 Morale Check Results
 
 - **Pass**: The unit holds its position. No additional effect.
-- **Fail**: The unit **retreats 1 hex** through one of its rear hexsides and takes **1 additional hit** (representing stragglers, deserters, and the chaos of a forced withdrawal). This additional hit does not trigger a further morale check.
-- **Fail and cannot retreat** (both rear hexes blocked or off-map): The unit takes **1 additional hit** instead of retreating (representing the desperate chaos of a trapped unit). If this reduces the unit to 0 SP, it is eliminated.
+- **Fail**: The unit **retreats 1 hex** away from the source of the attack and takes **1 additional hit** (representing stragglers, deserters, and the chaos of a forced withdrawal). This additional hit does not trigger a further morale check.
+- **Fail and cannot retreat** (no valid retreat hex available): The unit takes **1 additional hit** instead of retreating (representing the desperate chaos of a trapped unit). If this reduces the unit to 0 SP, it is eliminated.
 
 ---
 
@@ -337,7 +310,7 @@ Games are played for a set number of turns as specified by the scenario, typical
 | ---------- | ----------------------------- | ------------------------- | --------- | ------------------------ |
 | Open       | None                          | None                      | Clear     | All                      |
 | Woods      | Light Infantry only           | Cover (-15% hit chance)   | Blocked   | Light Infantry only      |
-| Town       | None                          | Cover; all-around facing  | Blocked   | Infantry, Light Infantry |
+| Town       | None                          | Cover                     | Blocked   | Infantry, Light Infantry |
 | Hill       | None                          | Defender bonus in charges | See rules | All                      |
 | Marsh/Lake | Impassable                    | N/A                       | Blocked   | None                     |
 | River      | Only at bridge/ford           | None                      | Clear     | All (at crossing)        |
@@ -347,14 +320,14 @@ Games are played for a set number of turns as specified by the scenario, typical
 
 ## 13. Unit Summary Table
 
-| Unit Type      | Move | Facing | Actions                | Range | Hit Chance | Charge           | Terrain Check |
-| -------------- | ---- | ------ | ---------------------- | ----- | ---------- | ---------------- | ------------- |
-| Line Infantry  | 1    | Yes    | Move OR Fire           | 2     | 65%        | Yes (not vs Cav) | Yes           |
-| Light Infantry | 1    | No     | Fire+Move or Move+Fire | 2     | 50%        | No               | No            |
-| Dragoons       | 2    | Yes    | Move OR Fire           | 2     | 50%        | Yes              | Yes           |
-| Light Horse    | 2    | Yes    | Move                   | -     | -          | Yes              | Yes           |
-| Horse          | 2    | Yes    | Move                   | -     | -          | Yes (+1)         | Yes           |
-| Artillery      | 1    | Yes    | Move OR Fire           | 4     | 50%        | No               | Yes           |
+| Unit Type      | Move | Actions                | Range | Hit Chance | Charge           | Terrain Check |
+| -------------- | ---- | ---------------------- | ----- | ---------- | ---------------- | ------------- |
+| Line Infantry  | 1    | Move OR Fire           | 2     | 65%        | Yes (not vs Cav) | Yes           |
+| Light Infantry | 1    | Fire+Move or Move+Fire | 2     | 50%        | No               | No            |
+| Dragoons       | 2    | Move OR Fire           | 2     | 50%        | Yes              | Yes           |
+| Light Horse    | 2    | Move                   | -     | -          | Yes              | Yes           |
+| Horse          | 2    | Move                   | -     | -          | Yes (+1)         | Yes           |
+| Artillery      | 1    | Move OR Fire           | 4     | 50%        | No               | Yes           |
 
 ---
 
@@ -367,8 +340,8 @@ These notes are for reference when translating rules to TypeScript. They do not 
 - **Charge Resolution**: The opposed check can be implemented as: each side generates a random value (e.g., 1-6) and adds their current SP plus modifiers. Compare totals and apply the results table from Section 6.3.
 - **LOS Calculation**: Hex-based LOS can be computed using cube coordinates. Trace a line from center to center and check all hexes the line passes through for blocking terrain or units.
 - **Activation Tracking**: Each unit has an `activated` flag that resets at the start of each player turn. The UI should clearly indicate which units have yet to act.
-- **State Management**: Each unit's state includes: type, current SP, max SP, hex position, facing direction, activated flag, attached leader (if any), and any scenario-specific quality modifiers.
-- **Retreat Logic**: When a unit must retreat, the system should automatically determine the best available rear hex. If multiple rear hexes are available, prefer the one that moves the unit away from the attacker and toward friendly units. If no rear hex is available, apply the "cannot retreat" penalty.
+- **State Management**: Each unit's state includes: type, current SP, max SP, hex position, activated flag, attached leader (if any), and any scenario-specific quality modifiers.
+- **Retreat Logic**: When a unit must retreat, the system should automatically determine the best available retreat hex (one moving the unit away from the attacker and ideally toward friendly units). If no retreat hex is available, apply the "cannot retreat" penalty.
 
 ---
 

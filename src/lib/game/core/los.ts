@@ -82,7 +82,7 @@ function hexBlocks(
 
 /**
  * Returns true if there is line of sight from `from` to `to` per rules §7.
- * Pure geometry: facing arcs are NOT considered (combat module composes those).
+ * Pure geometry — only terrain, intervening units, and hilltop elevation.
  *
  * Blocks: Woods, Town, intervening units, and Hilltops between two
  * lower-elevation endpoints. Hexside ties are blocked if either candidate

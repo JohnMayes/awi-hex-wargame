@@ -7,8 +7,7 @@ import {
 	type MoveTarget
 } from './movement';
 import { HexCell, coordsEqual, directions } from './hex';
-import { getFrontHexsides } from './facing';
-import { HexFacing, TerrainType, UnitType, type Player, type Unit } from './types';
+import { TerrainType, UnitType, type Player, type Unit } from './types';
 import { unitDefinitions } from './unitDefinitions';
 
 // --- Test fixtures & helpers ---
@@ -47,25 +46,17 @@ function neighborOffset(
 	return cubeMap.get(`${hex.q + dq},${hex.r + dr}`) ?? null;
 }
 
-function unit(
-	id: string,
-	type: UnitType,
-	player: Player,
-	coordinates: OffsetCoordinates,
-	facing: HexFacing = HexFacing.N
-): Unit {
+function unit(id: string, type: UnitType, player: Player, coordinates: OffsetCoordinates): Unit {
 	const def = unitDefinitions[type];
 	return {
 		id,
 		type,
 		player,
 		coordinates,
-		facing,
 		strengthPoints: def.defaultStrengthPoints,
 		maxStrengthPoints: def.defaultStrengthPoints,
 		selected: false,
 		movementPointsUsed: 0,
-		facingStepsUsed: 0,
 		firedThisActivation: false,
 		activated: false
 	};
@@ -82,19 +73,18 @@ function includesCoord(list: OffsetCoordinates[], c: OffsetCoordinates): boolean
 // --- Tests ---
 
 describe('getValidMoveTargets — range by unit type', () => {
-	it('Line Infantry (allowance 1) reaches its 3 front neighbors on open ground', () => {
-		expect.assertions(4);
+	it('Line Infantry (allowance 1) reaches all 6 neighbors on open ground', () => {
+		expect.assertions(7);
 		const grid = buildGrid(openRect(5, 5));
-		const u = unit('u', UnitType.LINE_INFANTRY, 0, { col: 2, row: 2 }, HexFacing.N);
+		const u = unit('u', UnitType.LINE_INFANTRY, 0, { col: 2, row: 2 });
 		const targets = coordsOf(getValidMoveTargets(u, grid, [u]));
-		const expected = [0, 1, 5].map((d) => neighborOffset(grid, u.coordinates, d)!);
-		expect(targets).toHaveLength(3);
-		expect(includesCoord(targets, expected[0])).toBe(true);
-		expect(includesCoord(targets, expected[1])).toBe(true);
-		expect(includesCoord(targets, expected[2])).toBe(true);
+		expect(targets).toHaveLength(6);
+		for (let d = 0; d < 6; d++) {
+			expect(includesCoord(targets, neighborOffset(grid, u.coordinates, d)!)).toBe(true);
+		}
 	});
 
-	it('Light Infantry (allowance 1, no facing) reaches all 6 neighbors', () => {
+	it('Light Infantry (allowance 1) reaches all 6 neighbors', () => {
 		expect.assertions(7);
 		const grid = buildGrid(openRect(5, 5));
 		const u = unit('u', UnitType.LIGHT_INFANTRY, 0, { col: 2, row: 2 });
@@ -105,15 +95,13 @@ describe('getValidMoveTargets — range by unit type', () => {
 		}
 	});
 
-	it('Dragoons (allowance 2, facing N) reach ring-1 front + ring-2 cone', () => {
+	it('Dragoons (allowance 2) reach all hexes within cube-distance 2', () => {
 		expect.assertions(2);
 		const grid = buildGrid(openRect(7, 7));
-		const u = unit('u', UnitType.DRAGOONS, 0, { col: 3, row: 3 }, HexFacing.N);
+		const u = unit('u', UnitType.DRAGOONS, 0, { col: 3, row: 3 });
 		const targets = coordsOf(getValidMoveTargets(u, grid, [u]));
-		// BFS cone size for 2-step front-arc expansion from center of open ground = 8
-		// (3 at ring-1, 5 at ring-2 reachable via front dirs only)
-		expect(targets.length).toBeGreaterThan(3);
-		// All reachable targets are cube-distance ≤ 2 from the start
+		// 6 ring-1 + 12 ring-2 = 18 hexes within distance 2 from interior position
+		expect(targets.length).toBeGreaterThan(6);
 		const startHex = grid.getHex(u.coordinates)!;
 		const allWithinRange = targets.every((c) => {
 			const h = grid.getHex(c)!;
@@ -127,78 +115,26 @@ describe('getValidMoveTargets — range by unit type', () => {
 		expect(allWithinRange).toBe(true);
 	});
 
-	it('Light Horse (allowance 2) same range characteristics as Dragoons', () => {
+	it('Light Horse (allowance 2) reaches more than 6 hexes', () => {
 		expect.assertions(1);
 		const grid = buildGrid(openRect(7, 7));
-		const u = unit('u', UnitType.LIGHT_HORSE, 0, { col: 3, row: 3 }, HexFacing.N);
+		const u = unit('u', UnitType.LIGHT_HORSE, 0, { col: 3, row: 3 });
 		const targets = getValidMoveTargets(u, grid, [u]);
-		expect(targets.length).toBeGreaterThan(3);
+		expect(targets.length).toBeGreaterThan(6);
 	});
 
-	it('Horse (allowance 2) same range characteristics', () => {
+	it('Horse (allowance 2) reaches more than 6 hexes', () => {
 		expect.assertions(1);
 		const grid = buildGrid(openRect(7, 7));
-		const u = unit('u', UnitType.HORSE, 0, { col: 3, row: 3 }, HexFacing.N);
+		const u = unit('u', UnitType.HORSE, 0, { col: 3, row: 3 });
 		const targets = getValidMoveTargets(u, grid, [u]);
-		expect(targets.length).toBeGreaterThan(3);
+		expect(targets.length).toBeGreaterThan(6);
 	});
 
-	it('Artillery (allowance 1) reaches 3 front neighbors', () => {
+	it('Artillery (allowance 1) reaches all 6 neighbors', () => {
 		expect.assertions(1);
 		const grid = buildGrid(openRect(5, 5));
-		const u = unit('u', UnitType.ARTILLERY, 0, { col: 2, row: 2 }, HexFacing.N);
-		const targets = getValidMoveTargets(u, grid, [u]);
-		expect(targets).toHaveLength(3);
-	});
-});
-
-describe('getValidMoveTargets — facing arc', () => {
-	const facings: HexFacing[] = [
-		HexFacing.N,
-		HexFacing.NE,
-		HexFacing.SE,
-		HexFacing.S,
-		HexFacing.SW,
-		HexFacing.NW
-	];
-
-	for (const f of facings) {
-		it(`Line Infantry facing ${HexFacing[f]} reaches its 3 front neighbors, no rear`, () => {
-			expect.assertions(7);
-			const grid = buildGrid(openRect(5, 5));
-			const u = unit('u', UnitType.LINE_INFANTRY, 0, { col: 2, row: 2 }, f);
-			const targets = coordsOf(getValidMoveTargets(u, grid, [u]));
-			expect(targets).toHaveLength(3);
-			const frontIdxs = getFrontHexsides(f).map((x) => x / 60);
-			for (const d of frontIdxs) {
-				const n = neighborOffset(grid, u.coordinates, d)!;
-				expect(includesCoord(targets, n)).toBe(true);
-			}
-			const rearIdxs = [0, 1, 2, 3, 4, 5].filter((i) => !frontIdxs.includes(i));
-			for (const d of rearIdxs) {
-				const n = neighborOffset(grid, u.coordinates, d)!;
-				expect(includesCoord(targets, n)).toBe(false);
-			}
-		});
-	}
-});
-
-describe('getValidMoveTargets — all-around overrides', () => {
-	it('Light Infantry facing N still reaches all 6 neighbors', () => {
-		expect.assertions(1);
-		const grid = buildGrid(openRect(5, 5));
-		const u = unit('u', UnitType.LIGHT_INFANTRY, 0, { col: 2, row: 2 }, HexFacing.N);
-		const targets = getValidMoveTargets(u, grid, [u]);
-		expect(targets).toHaveLength(6);
-	});
-
-	it('Line Infantry on a TOWN hex has all-around facing (6 neighbors)', () => {
-		expect.assertions(1);
-		const layout = openRect(5, 5);
-		const center = layout.find((c) => c.col === 2 && c.row === 2)!;
-		center.terrain = TerrainType.TOWN;
-		const grid = buildGrid(layout);
-		const u = unit('u', UnitType.LINE_INFANTRY, 0, { col: 2, row: 2 }, HexFacing.N);
+		const u = unit('u', UnitType.ARTILLERY, 0, { col: 2, row: 2 });
 		const targets = getValidMoveTargets(u, grid, [u]);
 		expect(targets).toHaveLength(6);
 	});
@@ -211,7 +147,7 @@ describe('getValidMoveTargets — terrain entry', () => {
 		// Make every neighbor of (1,1) a WOODS hex
 		for (const c of layout) if (!(c.col === 1 && c.row === 1)) c.terrain = TerrainType.WOODS;
 		const grid = buildGrid(layout);
-		const u = unit('u', UnitType.LINE_INFANTRY, 0, { col: 1, row: 1 }, HexFacing.N);
+		const u = unit('u', UnitType.LINE_INFANTRY, 0, { col: 1, row: 1 });
 		const targets = getValidMoveTargets(u, grid, [u]);
 		expect(targets).toHaveLength(0);
 	});
@@ -234,7 +170,7 @@ describe('getValidMoveTargets — terrain entry', () => {
 			if (c.col === 1 && c.row === 0) c.terrain = TerrainType.TOWN;
 		}
 		const grid = buildGrid(layout);
-		const u = unit('u', UnitType.DRAGOONS, 0, { col: 1, row: 1 }, HexFacing.N);
+		const u = unit('u', UnitType.DRAGOONS, 0, { col: 1, row: 1 });
 		const targets = coordsOf(getValidMoveTargets(u, grid, [u]));
 		expect(includesCoord(targets, { col: 0, row: 1 })).toBe(false);
 	});
@@ -244,7 +180,7 @@ describe('getValidMoveTargets — terrain entry', () => {
 		const layout = openRect(3, 3);
 		for (const c of layout) if (!(c.col === 1 && c.row === 1)) c.terrain = TerrainType.WOODS;
 		const grid = buildGrid(layout);
-		const u = unit('u', UnitType.ARTILLERY, 0, { col: 1, row: 1 }, HexFacing.N);
+		const u = unit('u', UnitType.ARTILLERY, 0, { col: 1, row: 1 });
 		expect(getValidMoveTargets(u, grid, [u])).toHaveLength(0);
 		for (const c of layout) if (!(c.col === 1 && c.row === 1)) c.terrain = TerrainType.TOWN;
 		const grid2 = buildGrid(layout);
@@ -256,7 +192,7 @@ describe('getValidMoveTargets — terrain entry', () => {
 		const layout = openRect(3, 3);
 		for (const c of layout) if (!(c.col === 1 && c.row === 1)) c.terrain = TerrainType.TOWN;
 		const grid = buildGrid(layout);
-		const u = unit('u', UnitType.LINE_INFANTRY, 0, { col: 1, row: 1 }, HexFacing.N);
+		const u = unit('u', UnitType.LINE_INFANTRY, 0, { col: 1, row: 1 });
 		const targets = getValidMoveTargets(u, grid, [u]);
 		expect(targets.length).toBeGreaterThan(0);
 	});
@@ -291,7 +227,7 @@ describe('getValidMoveTargets — terrain entry', () => {
 		const layout = openRect(3, 3);
 		for (const c of layout) if (!(c.col === 1 && c.row === 1)) c.terrain = TerrainType.HILLTOP;
 		const grid = buildGrid(layout);
-		const u = unit('u', UnitType.DRAGOONS, 0, { col: 1, row: 1 }, HexFacing.N);
+		const u = unit('u', UnitType.DRAGOONS, 0, { col: 1, row: 1 });
 		expect(getValidMoveTargets(u, grid, [u]).length).toBeGreaterThan(0);
 	});
 });
@@ -314,7 +250,7 @@ describe('getValidMoveTargets — stacking', () => {
 	it('Adjacent friendly blocks Line Infantry endpoint', () => {
 		expect.assertions(1);
 		const grid = buildGrid(openRect(5, 5));
-		const mover = unit('m', UnitType.LINE_INFANTRY, 0, { col: 2, row: 2 }, HexFacing.N);
+		const mover = unit('m', UnitType.LINE_INFANTRY, 0, { col: 2, row: 2 });
 		const friendlyCoord = neighborOffset(grid, mover.coordinates, 0)!; // N neighbor
 		const friendly = unit('f', UnitType.LINE_INFANTRY, 0, friendlyCoord);
 		const targets = coordsOf(getValidMoveTargets(mover, grid, [mover, friendly]));
@@ -324,7 +260,7 @@ describe('getValidMoveTargets — stacking', () => {
 	it('Friendly blocks Dragoons ring-2 path when it sits on the only route', () => {
 		expect.assertions(2);
 		const grid = buildGrid(openRect(5, 5));
-		const mover = unit('m', UnitType.DRAGOONS, 0, { col: 2, row: 2 }, HexFacing.N);
+		const mover = unit('m', UnitType.DRAGOONS, 0, { col: 2, row: 2 });
 		const blockerCoord = neighborOffset(grid, mover.coordinates, 0)!; // N neighbor
 		const blocker = unit('b', UnitType.LINE_INFANTRY, 0, blockerCoord);
 		// ring-2 hex via two N-steps:
@@ -383,7 +319,7 @@ describe('getValidMoveTargets — adjacency to enemy', () => {
 	it('Dragoons cannot end adjacent to an enemy', () => {
 		expect.assertions(1);
 		const grid = buildGrid(openRect(7, 7));
-		const mover = unit('m', UnitType.DRAGOONS, 0, { col: 3, row: 3 }, HexFacing.N);
+		const mover = unit('m', UnitType.DRAGOONS, 0, { col: 3, row: 3 });
 		// Place enemy such that one ring-2 target sits adjacent to it.
 		// Take ring-2 hex via direction N twice from (3,3). Enemy on one of that hex's neighbors.
 		const startHex = grid.getHex(mover.coordinates)!;
@@ -409,7 +345,7 @@ describe('getValidMoveTargets — adjacency to enemy', () => {
 	it('Horse (charge-capable) is also excluded from enemy-adjacent hexes in M5', () => {
 		expect.assertions(1);
 		const grid = buildGrid(openRect(5, 5));
-		const mover = unit('m', UnitType.HORSE, 0, { col: 2, row: 2 }, HexFacing.N);
+		const mover = unit('m', UnitType.HORSE, 0, { col: 2, row: 2 });
 		const enemyCoord = neighborOffset(grid, mover.coordinates, 0)!;
 		const enemy = unit('e', UnitType.LINE_INFANTRY, 1, enemyCoord);
 		const targets = coordsOf(getValidMoveTargets(mover, grid, [mover, enemy]));
@@ -438,7 +374,7 @@ describe('getValidMoveTargets — road bonus', () => {
 				c.terrain = TerrainType.ROAD;
 		}
 		const grid = buildGrid(layout);
-		const u = unit('u', UnitType.LINE_INFANTRY, 0, { col: 2, row: 2 }, HexFacing.N);
+		const u = unit('u', UnitType.LINE_INFANTRY, 0, { col: 2, row: 2 });
 		const targets = getValidMoveTargets(u, grid, [u]);
 		const match = targets.find((t) => coordsEqual(t.coordinates, step2));
 		expect(match).toBeDefined();
@@ -459,7 +395,7 @@ describe('getValidMoveTargets — road bonus', () => {
 			// step2 left as OPEN on purpose
 		}
 		const grid = buildGrid(layout);
-		const u = unit('u', UnitType.LINE_INFANTRY, 0, { col: 2, row: 2 }, HexFacing.N);
+		const u = unit('u', UnitType.LINE_INFANTRY, 0, { col: 2, row: 2 });
 		const targets = getValidMoveTargets(u, grid, [u]);
 		// step2 unreachable: normal allowance exhausted at 1, road-path can't extend off-road
 		if (step2) expect(includesCoord(coordsOf(targets), step2)).toBe(false);
@@ -492,7 +428,7 @@ describe('getValidMoveTargets — road bonus', () => {
 			return;
 		}
 		const enemy = unit('e', UnitType.LINE_INFANTRY, 1, eCube);
-		const u = unit('u', UnitType.LINE_INFANTRY, 0, { col: 2, row: 2 }, HexFacing.N);
+		const u = unit('u', UnitType.LINE_INFANTRY, 0, { col: 2, row: 2 });
 		const targets = getValidMoveTargets(u, grid, [u, enemy]);
 		expect(includesCoord(coordsOf(targets), step2)).toBe(false);
 	});

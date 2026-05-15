@@ -22,10 +22,6 @@ describe('unitDefinitions', () => {
 			expect.assertions(1);
 			expect(def.movementAllowance).toBe(1);
 		});
-		it('has facing', () => {
-			expect.assertions(1);
-			expect(def.hasFacing).toBe(true);
-		});
 		it('uses MOVE_OR_FIRE', () => {
 			expect.assertions(1);
 			expect(def.actionType).toBe(ActionType.MOVE_OR_FIRE);
@@ -72,10 +68,6 @@ describe('unitDefinitions', () => {
 			expect.assertions(1);
 			expect(def.movementAllowance).toBe(1);
 		});
-		it('has NO facing', () => {
-			expect.assertions(1);
-			expect(def.hasFacing).toBe(false);
-		});
 		it('uses FIRE_AND_MOVE', () => {
 			expect.assertions(1);
 			expect(def.actionType).toBe(ActionType.FIRE_AND_MOVE);
@@ -116,10 +108,6 @@ describe('unitDefinitions', () => {
 		it('has movement 2', () => {
 			expect.assertions(1);
 			expect(def.movementAllowance).toBe(2);
-		});
-		it('has facing', () => {
-			expect.assertions(1);
-			expect(def.hasFacing).toBe(true);
 		});
 		it('uses MOVE_OR_FIRE', () => {
 			expect.assertions(1);
