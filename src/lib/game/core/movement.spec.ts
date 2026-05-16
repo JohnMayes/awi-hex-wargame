@@ -58,7 +58,8 @@ function unit(id: string, type: UnitType, player: Player, coordinates: OffsetCoo
 		selected: false,
 		movementPointsUsed: 0,
 		firedThisActivation: false,
-		activated: false
+		activated: false,
+		elite: false
 	};
 }
 

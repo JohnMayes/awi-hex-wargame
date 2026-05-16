@@ -68,4 +68,5 @@ export type Unit = {
 	movementPointsUsed: number;
 	firedThisActivation: boolean;
 	activated: boolean;
+	elite: boolean;
 };

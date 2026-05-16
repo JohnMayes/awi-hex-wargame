@@ -15,7 +15,8 @@ export const TEST_UNITS: Unit[] = [
 		selected: false,
 		movementPointsUsed: 0,
 		firedThisActivation: false,
-		activated: false
+		activated: false,
+		elite: false
 	},
 	{
 		id: 'blue-light-inf',
@@ -27,7 +28,8 @@ export const TEST_UNITS: Unit[] = [
 		selected: false,
 		movementPointsUsed: 0,
 		firedThisActivation: false,
-		activated: false
+		activated: false,
+		elite: false
 	},
 	{
 		id: 'blue-dragoons',
@@ -39,7 +41,8 @@ export const TEST_UNITS: Unit[] = [
 		selected: false,
 		movementPointsUsed: 0,
 		firedThisActivation: false,
-		activated: false
+		activated: false,
+		elite: false
 	},
 	{
 		id: 'red-light-horse',
@@ -51,7 +54,8 @@ export const TEST_UNITS: Unit[] = [
 		selected: false,
 		movementPointsUsed: 0,
 		firedThisActivation: false,
-		activated: false
+		activated: false,
+		elite: false
 	},
 	{
 		id: 'red-horse',
@@ -63,7 +67,8 @@ export const TEST_UNITS: Unit[] = [
 		selected: false,
 		movementPointsUsed: 0,
 		firedThisActivation: false,
-		activated: false
+		activated: false,
+		elite: false
 	},
 	{
 		id: 'red-artillery',
@@ -75,6 +80,7 @@ export const TEST_UNITS: Unit[] = [
 		selected: false,
 		movementPointsUsed: 0,
 		firedThisActivation: false,
-		activated: false
+		activated: false,
+		elite: false
 	}
 ];

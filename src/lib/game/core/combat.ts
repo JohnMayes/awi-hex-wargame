@@ -1,6 +1,7 @@
 import type { Grid } from 'honeycomb-grid';
 import { HexCell, hexDistance } from './hex';
 import { hasLineOfSight } from './los';
+import type { MoraleResult } from './morale';
 import { getTerrainCoverModifier } from './terrain';
 import { getUnitDefinition } from './unitDefinitions';
 import { UnitType, type Unit } from './types';
@@ -14,6 +15,7 @@ export type FireResult = {
 	coverModifier: number;
 	longRangeModifier: number;
 	finalHitChance: number;
+	morale: MoraleResult | null;
 };
 
 const ARTILLERY_LONG_RANGE_PENALTY = -0.15;
@@ -92,6 +94,7 @@ export function resolveFireAction(
 		baseHitChance,
 		coverModifier,
 		longRangeModifier,
-		finalHitChance
+		finalHitChance,
+		morale: null
 	};
 }

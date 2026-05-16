@@ -9,6 +9,7 @@ import {
 } from '../core/movement';
 import { getValidFireTargets, resolveFireAction, type FireResult } from '../core/combat';
 import { getValidChargeTargets, resolveCharge, type ChargeResult } from '../core/charge';
+import { checkMorale, type MoraleResult } from '../core/morale';
 import { ActionType, ActivationStep, type Player, type Unit } from '../core/types';
 import { getUnitDefinition } from '../core/unitDefinitions';
 
@@ -240,14 +241,42 @@ export class GameStore {
 
 		const result = resolveFireAction(this.selectedUnit, target, this.grid, rng);
 		const activeId = this.activeUnitId;
+		const attackerOrigin = this.selectedUnit.coordinates;
+
+		let morale: MoraleResult | null = null;
+		if (result.damage > 0) {
+			const postHitSP = Math.max(0, target.strengthPoints - result.damage);
+			if (postHitSP > 0) {
+				const projectedUnits = this.units.map((u) =>
+					u.id === targetId ? { ...u, strengthPoints: postHitSP } : u
+				);
+				const projectedTarget = { ...target, strengthPoints: postHitSP };
+				morale = checkMorale(
+					projectedTarget,
+					attackerOrigin,
+					this.grid,
+					projectedUnits,
+					{ leaderAttached: false, outOfCommand: false },
+					rng
+				);
+			}
+		}
+
+		const totalDamage = result.damage + (morale && !morale.passed ? morale.additionalDamage : 0);
+		const moraleRetreat = morale && !morale.passed ? morale.retreatTo : null;
+
 		this.units = this.units.map((u) => {
 			if (u.id === activeId) return { ...u, firedThisActivation: true };
-			if (u.id === targetId && result.damage > 0) {
-				return { ...u, strengthPoints: Math.max(0, u.strengthPoints - result.damage) };
+			if (u.id === targetId && totalDamage > 0) {
+				return {
+					...u,
+					strengthPoints: Math.max(0, u.strengthPoints - totalDamage),
+					coordinates: moraleRetreat ?? u.coordinates
+				};
 			}
 			return u;
 		});
-		return result;
+		return { ...result, morale };
 	}
 
 	// -- Charge --
@@ -286,7 +315,47 @@ export class GameStore {
 		const attackerNewCoords: OffsetCoordinates = result.attackerAdvances
 			? target.coordinates
 			: attackerOrigin;
-		const defenderNewCoords: OffsetCoordinates = result.defenderRetreatTo ?? target.coordinates;
+		const defenderPostChargeCoords: OffsetCoordinates =
+			result.defenderRetreatTo ?? target.coordinates;
+		const defenderPostChargeSP = Math.max(0, target.strengthPoints - result.defenderDamage);
+
+		let morale: MoraleResult | null = null;
+		const moraleEligible =
+			result.defenderDamage > 0 &&
+			defenderPostChargeSP > 0 &&
+			(result.outcome === 'defender_retreats' || result.outcome === 'defender_holds');
+
+		if (moraleEligible) {
+			const projectedUnits = this.units.map((u) => {
+				if (u.id === attackerId) return { ...u, coordinates: attackerNewCoords };
+				if (u.id === defenderId) {
+					return {
+						...u,
+						strengthPoints: defenderPostChargeSP,
+						coordinates: defenderPostChargeCoords
+					};
+				}
+				return u;
+			});
+			const projectedDefender: Unit = {
+				...target,
+				strengthPoints: defenderPostChargeSP,
+				coordinates: defenderPostChargeCoords
+			};
+			morale = checkMorale(
+				projectedDefender,
+				attackerNewCoords,
+				this.grid,
+				projectedUnits,
+				{ leaderAttached: false, outOfCommand: false },
+				rng
+			);
+		}
+
+		const defenderTotalDamage =
+			result.defenderDamage + (morale && !morale.passed ? morale.additionalDamage : 0);
+		const defenderFinalCoords: OffsetCoordinates =
+			morale && !morale.passed && morale.retreatTo ? morale.retreatTo : defenderPostChargeCoords;
 
 		this.units = this.units
 			.map((u) => {
@@ -301,8 +370,8 @@ export class GameStore {
 				if (u.id === defenderId) {
 					return {
 						...u,
-						strengthPoints: Math.max(0, u.strengthPoints - result.defenderDamage),
-						coordinates: defenderNewCoords
+						strengthPoints: Math.max(0, u.strengthPoints - defenderTotalDamage),
+						coordinates: defenderFinalCoords
 					};
 				}
 				return u;
@@ -310,7 +379,7 @@ export class GameStore {
 			.filter((u) => u.strengthPoints > 0);
 
 		this.#finishActivation();
-		return result;
+		return { ...result, morale };
 	}
 
 	// -- Activation lifecycle --

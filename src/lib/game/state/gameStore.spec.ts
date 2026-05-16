@@ -678,12 +678,13 @@ const makeLineInfFireStore = () => {
 };
 
 describe('fireAt — outcomes (M7)', () => {
-	it('reduces target SP by 1 on a normal hit', () => {
+	it('reduces target SP by 1 on a normal hit (morale passes)', () => {
 		expect.assertions(2);
 		const store = makeLightInfFireStore();
 		store.activateUnit('blue-light-inf');
 		const before = store.units.find((u) => u.id === 'red-light-horse')!.strengthPoints;
-		const seq = [0, 0.5];
+		// seq: hit(0) + no-double(0.5) + morale-pass(0)
+		const seq = [0, 0.5, 0];
 		let i = 0;
 		const result = store.fireAt('red-light-horse', () => seq[i++]);
 		const after = store.units.find((u) => u.id === 'red-light-horse')!.strengthPoints;
@@ -691,12 +692,13 @@ describe('fireAt — outcomes (M7)', () => {
 		expect(after).toBe(before - 1);
 	});
 
-	it('reduces target SP by 2 on a double-damage hit', () => {
+	it('reduces target SP by 2 on a double-damage hit (morale passes)', () => {
 		expect.assertions(2);
 		const store = makeLightInfFireStore();
 		store.activateUnit('blue-light-inf');
 		const before = store.units.find((u) => u.id === 'red-light-horse')!.strengthPoints;
-		const seq = [0, 0.1];
+		// seq: hit(0) + double-damage(0.1) + morale-pass(0)
+		const seq = [0, 0.1, 0];
 		let i = 0;
 		const result = store.fireAt('red-light-horse', () => seq[i++]);
 		const after = store.units.find((u) => u.id === 'red-light-horse')!.strengthPoints;
@@ -1043,5 +1045,145 @@ describe('player coverage sanity', () => {
 		const store = makeStore();
 		const reds = store.units.filter((u) => u.player === 1).map((u) => u.id);
 		expect(reds).toEqual(RED_IDS);
+	});
+});
+
+// --- M9: Morale integration ---
+
+describe('fireAt — morale integration (M9)', () => {
+	it('miss → result.morale is null and target unchanged', () => {
+		expect.assertions(2);
+		const store = makeLightInfFireStore();
+		store.activateUnit('blue-light-inf');
+		const before = store.units.find((u) => u.id === 'red-light-horse')!;
+		const result = store.fireAt('red-light-horse', () => 0.999);
+		const after = store.units.find((u) => u.id === 'red-light-horse')!;
+		expect(result?.morale).toBeNull();
+		expect(after.strengthPoints).toBe(before.strengthPoints);
+	});
+
+	it('1 damage + morale pass → SP -1, coords unchanged', () => {
+		expect.assertions(3);
+		const store = makeLightInfFireStore();
+		store.activateUnit('blue-light-inf');
+		const before = store.units.find((u) => u.id === 'red-light-horse')!;
+		// hit(0) + no-double(0.5) + morale-pass(0): basePass = 3/4 = 0.75
+		const result = store.fireAt('red-light-horse', seqRngFactory([0, 0.5, 0]));
+		const after = store.units.find((u) => u.id === 'red-light-horse')!;
+		expect(result?.morale?.passed).toBe(true);
+		expect(after.strengthPoints).toBe(before.strengthPoints - 1);
+		expect(after.coordinates).toEqual(before.coordinates);
+	});
+
+	it('1 damage + morale fail with retreat → SP -2 and coords = retreat hex', () => {
+		expect.assertions(3);
+		const store = makeLightInfFireStore();
+		store.activateUnit('blue-light-inf');
+		const before = store.units.find((u) => u.id === 'red-light-horse')!;
+		// hit(0) + no-double(0.5) + morale-fail(0.99): basePass 0.75, roll 0.99 fails
+		const result = store.fireAt('red-light-horse', seqRngFactory([0, 0.5, 0.99]));
+		const after = store.units.find((u) => u.id === 'red-light-horse')!;
+		expect(result?.morale?.passed).toBe(false);
+		expect(after.strengthPoints).toBe(before.strengthPoints - 2);
+		expect(after.coordinates).not.toEqual(before.coordinates);
+	});
+
+	it('damage that eliminates → result.morale is null, no extra hit', () => {
+		expect.assertions(2);
+		const units = structuredClone(TEST_UNITS) as Unit[];
+		const lightInf = units.find((u) => u.id === 'blue-light-inf')!;
+		lightInf.coordinates = { col: 4, row: 0 };
+		const lightHorse = units.find((u) => u.id === 'red-light-horse')!;
+		lightHorse.strengthPoints = 2;
+		const store = new GameStore(units, TEST_MAP);
+		store.activateUnit('blue-light-inf');
+		// hit(0) + double(0.1): damage 2 → postHitSP = 0
+		const result = store.fireAt('red-light-horse', seqRngFactory([0, 0.1]));
+		const after = store.units.find((u) => u.id === 'red-light-horse')!;
+		expect(result?.morale).toBeNull();
+		expect(after.strengthPoints).toBe(0);
+	});
+
+	it('no cascade: only 3 rng draws consumed for hit+morale-fail', () => {
+		expect.assertions(2);
+		const store = makeLightInfFireStore();
+		store.activateUnit('blue-light-inf');
+		// hit(0) + no-double(0.5) + morale-fail(0.99)
+		// A 4th draw would be required if morale's extra hit triggered another check;
+		// the rng array has only 3 entries — a cascade would consume undefined.
+		const draws: number[] = [];
+		const seq = [0, 0.5, 0.99];
+		let i = 0;
+		const rng = () => {
+			const v = seq[i++];
+			draws.push(v);
+			return v;
+		};
+		const result = store.fireAt('red-light-horse', rng);
+		expect(draws).toHaveLength(3);
+		expect(result?.morale?.passed).toBe(false);
+	});
+});
+
+describe('chargeAt — morale integration (M9)', () => {
+	const makeStoreAttacksArt = () => {
+		const units = structuredClone(TEST_UNITS) as Unit[];
+		const dragoons = units.find((u) => u.id === 'blue-dragoons')!;
+		dragoons.coordinates = { col: 3, row: 1 };
+		const art = units.find((u) => u.id === 'red-artillery')!;
+		art.coordinates = { col: 4, row: 1 };
+		return new GameStore(units, TEST_MAP);
+	};
+
+	it('attacker_repulsed → result.morale is null', () => {
+		expect.assertions(2);
+		const store = makeStoreAttacksArt();
+		store.activateUnit('blue-dragoons');
+		// rng [0, 0] → both roll 1 → attacker 1+4=5, defender 1+4=5, delta=0 → repulsed
+		const r = store.chargeAt('red-artillery', seqRngFactory([0, 0]));
+		expect(r?.outcome).toBe('attacker_repulsed');
+		expect(r?.morale).toBeNull();
+	});
+
+	it('defender_eliminated → result.morale is null', () => {
+		expect.assertions(2);
+		const store = makeStoreAttacksArt();
+		store.units = store.units.map((u) =>
+			u.id === 'red-artillery' ? { ...u, strengthPoints: 1 } : u
+		);
+		store.activateUnit('blue-dragoons');
+		// delta >= 3 → 2 hits eliminates SP-1 artillery
+		const r = store.chargeAt('red-artillery', seqRngFactory([4 / 6, 0]));
+		expect(r?.outcome).toBe('defender_eliminated');
+		expect(r?.morale).toBeNull();
+	});
+
+	it('defender_retreats with morale fail → defender coords overridden by morale retreat', () => {
+		expect.assertions(3);
+		const store = makeStoreAttacksArt();
+		store.activateUnit('blue-dragoons');
+		// rng [0.2, 0]: attacker 2+4=6, defender 1+4=5, delta=1 → defender_retreats (1 hit)
+		// Defender at (4,1) post-charge retreats east to (5,1).
+		// Morale roll (3rd draw) = 0.99: basePass 3/4=0.75, fails.
+		// Attacker post-resolution: Dragoons (cavalry) bounces back to (3,1).
+		// Morale-induced retreat from (5,1) away from (3,1) → likely off-grid/impassable → no retreat hex.
+		const r = store.chargeAt('red-artillery', seqRngFactory([0.2, 0, 0.99]));
+		const art = store.units.find((u) => u.id === 'red-artillery')!;
+		expect(r?.outcome).toBe('defender_retreats');
+		expect(r?.morale?.passed).toBe(false);
+		// Charge dealt 1 hit, morale adds 1 → SP went 4 → 2
+		expect(art.strengthPoints).toBe(2);
+	});
+
+	it('defender_retreats with morale pass → defender stops at charge retreat hex, SP -charge dmg only', () => {
+		expect.assertions(3);
+		const store = makeStoreAttacksArt();
+		store.activateUnit('blue-dragoons');
+		// rng [0.2, 0, 0]: charge as above, morale roll 0 vs basePass 0.75 → passes
+		const r = store.chargeAt('red-artillery', seqRngFactory([0.2, 0, 0]));
+		const art = store.units.find((u) => u.id === 'red-artillery')!;
+		expect(r?.outcome).toBe('defender_retreats');
+		expect(r?.morale?.passed).toBe(true);
+		expect(art.strengthPoints).toBe(3); // 4 - 1 charge hit, no morale bonus
 	});
 });

@@ -1,5 +1,6 @@
 import type { Grid, OffsetCoordinates } from 'honeycomb-grid';
 import { HexCell, directions } from './hex';
+import type { MoraleResult } from './morale';
 import { canUnitEnterTerrain, terrainDefinitions } from './terrain';
 import { getUnitDefinition } from './unitDefinitions';
 import { getRetreatHex } from './retreat';
@@ -21,6 +22,7 @@ export type ChargeResult = {
 	outcome: ChargeOutcome;
 	defenderRetreatTo: OffsetCoordinates | null;
 	attackerAdvances: boolean;
+	morale: MoraleResult | null;
 };
 
 const CAVALRY_TYPES: ReadonlySet<UnitType> = new Set([
@@ -188,7 +190,12 @@ export function resolveCharge(
 
 	const base: Omit<
 		ChargeResult,
-		'attackerDamage' | 'defenderDamage' | 'outcome' | 'defenderRetreatTo' | 'attackerAdvances'
+		| 'attackerDamage'
+		| 'defenderDamage'
+		| 'outcome'
+		| 'defenderRetreatTo'
+		| 'attackerAdvances'
+		| 'morale'
 	> = {
 		attackerId: attacker.id,
 		defenderId: defender.id,
@@ -203,7 +210,8 @@ export function resolveCharge(
 			defenderDamage: 0,
 			outcome: 'attacker_repulsed',
 			defenderRetreatTo: null,
-			attackerAdvances: false
+			attackerAdvances: false,
+			morale: null
 		};
 	}
 
@@ -218,7 +226,8 @@ export function resolveCharge(
 			defenderDamage: hitsFromTable,
 			outcome: defenderEliminated ? 'defender_eliminated' : 'defender_holds',
 			defenderRetreatTo: null,
-			attackerAdvances: defenderEliminated && !isCavalry(attacker.type)
+			attackerAdvances: defenderEliminated && !isCavalry(attacker.type),
+			morale: null
 		};
 	}
 
@@ -232,7 +241,8 @@ export function resolveCharge(
 			defenderDamage: hitsFromTable,
 			outcome: defenderEliminated ? 'defender_eliminated' : 'defender_retreats',
 			defenderRetreatTo: defenderEliminated ? null : retreatHex,
-			attackerAdvances: !isCavalry(attacker.type) || defenderEliminated
+			attackerAdvances: !isCavalry(attacker.type) || defenderEliminated,
+			morale: null
 		};
 	}
 
@@ -246,6 +256,7 @@ export function resolveCharge(
 		defenderDamage: totalHits,
 		outcome: defenderEliminated ? 'defender_eliminated' : 'defender_holds',
 		defenderRetreatTo: null,
-		attackerAdvances: defenderEliminated && !isCavalry(attacker.type)
+		attackerAdvances: defenderEliminated && !isCavalry(attacker.type),
+		morale: null
 	};
 }
