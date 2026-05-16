@@ -1,4 +1,5 @@
 import type { Grid } from 'honeycomb-grid';
+import type { LeaderCasualtyResult } from './command';
 import { HexCell, hexDistance } from './hex';
 import { hasLineOfSight } from './los';
 import type { MoraleResult } from './morale';
@@ -15,6 +16,7 @@ export type FireResult = {
 	coverModifier: number;
 	longRangeModifier: number;
 	finalHitChance: number;
+	leaderCasualty: LeaderCasualtyResult | null;
 	morale: MoraleResult | null;
 };
 
@@ -95,6 +97,7 @@ export function resolveFireAction(
 		coverModifier,
 		longRangeModifier,
 		finalHitChance,
+		leaderCasualty: null,
 		morale: null
 	};
 }

@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { GameStore, type ActionMode } from './gameStore.svelte';
 import { ActivationStep, type Unit } from '../core/types';
-import { TEST_UNITS } from '../data/scenarios';
+import type { Leader } from '../core/command';
+import { TEST_LEADERS, TEST_UNITS } from '../data/scenarios';
 import { TEST_MAP } from '../data/maps';
 import { getUnitDefinition } from '../core/unitDefinitions';
 
-const makeStore = () => new GameStore(structuredClone(TEST_UNITS), TEST_MAP);
+const makeStore = () =>
+	new GameStore(structuredClone(TEST_UNITS), TEST_MAP, structuredClone(TEST_LEADERS));
 
 const select = (store: GameStore, id: string) => {
 	const unit = store.units.find((u) => u.id === id);
@@ -571,7 +573,7 @@ describe('moveUnit — difficult terrain check (M5)', () => {
 		const units = structuredClone(TEST_UNITS) as Unit[];
 		const lineInf = units.find((u) => u.id === 'blue-line-inf')!;
 		lineInf.coordinates = { col: 2, row: 2 };
-		return new GameStore(units, TEST_MAP);
+		return new GameStore(units, TEST_MAP, structuredClone(TEST_LEADERS));
 	};
 
 	it('Line Infantry on HILLTOP escapes when RNG ≥ 0.5', () => {
@@ -601,7 +603,7 @@ describe('moveUnit — difficult terrain check (M5)', () => {
 		const units = structuredClone(TEST_UNITS) as Unit[];
 		const lightInf = units.find((u) => u.id === 'blue-light-inf')!;
 		lightInf.coordinates = { col: 2, row: 2 };
-		const store = new GameStore(units, TEST_MAP);
+		const store = new GameStore(units, TEST_MAP, structuredClone(TEST_LEADERS));
 		store.activateUnit('blue-light-inf');
 		const target = store.validMoveTargets[0];
 		store.moveUnit(target.coordinates, () => 0.01);
@@ -617,7 +619,7 @@ describe('moveUnit — multi-step movement (M5)', () => {
 		const units = structuredClone(TEST_UNITS) as Unit[];
 		const dragoons = units.find((u) => u.id === 'blue-dragoons')!;
 		dragoons.coordinates = { col: 1, row: 1 };
-		return new GameStore(units, TEST_MAP);
+		return new GameStore(units, TEST_MAP, structuredClone(TEST_LEADERS));
 	};
 
 	it('Dragoon validMoveTargets is non-empty after moving 1 of 2 hexes', () => {
@@ -664,7 +666,7 @@ const makeLightInfFireStore = (col = 4, row = 0) => {
 	const units = structuredClone(TEST_UNITS) as Unit[];
 	const lightInf = units.find((u) => u.id === 'blue-light-inf')!;
 	lightInf.coordinates = { col, row };
-	return new GameStore(units, TEST_MAP);
+	return new GameStore(units, TEST_MAP, structuredClone(TEST_LEADERS));
 };
 
 // Place blue-line-inf at (3,1). It can see red-light-horse(5,0) at dist 2
@@ -674,7 +676,7 @@ const makeLineInfFireStore = () => {
 	const units = structuredClone(TEST_UNITS) as Unit[];
 	const lineInf = units.find((u) => u.id === 'blue-line-inf')!;
 	lineInf.coordinates = { col: 3, row: 1 };
-	return new GameStore(units, TEST_MAP);
+	return new GameStore(units, TEST_MAP, structuredClone(TEST_LEADERS));
 };
 
 describe('fireAt — outcomes (M7)', () => {
@@ -742,7 +744,7 @@ describe('fireAt — outcomes (M7)', () => {
 		lightInf.coordinates = { col: 4, row: 0 };
 		const lightHorse = units.find((u) => u.id === 'red-light-horse')!;
 		lightHorse.strengthPoints = 1;
-		const store = new GameStore(units, TEST_MAP);
+		const store = new GameStore(units, TEST_MAP, structuredClone(TEST_LEADERS));
 		store.activateUnit('blue-light-inf');
 		// RNG [0, 0.1] → double-damage hit (would be -1 without clamp)
 		const seq = [0, 0.1];
@@ -862,7 +864,7 @@ const makeChargeStore = () => {
 	lineInf.coordinates = { col: 3, row: 1 };
 	const lightHorse = units.find((u) => u.id === 'red-light-horse')!;
 	lightHorse.coordinates = { col: 4, row: 1 };
-	return new GameStore(units, TEST_MAP);
+	return new GameStore(units, TEST_MAP, structuredClone(TEST_LEADERS));
 };
 
 describe('validChargeTargets — gating (M8)', () => {
@@ -879,7 +881,7 @@ describe('validChargeTargets — gating (M8)', () => {
 		li.coordinates = { col: 3, row: 1 };
 		const art = units.find((u) => u.id === 'red-artillery')!;
 		art.coordinates = { col: 4, row: 1 };
-		const store = new GameStore(units, TEST_MAP);
+		const store = new GameStore(units, TEST_MAP, structuredClone(TEST_LEADERS));
 		store.activateUnit('blue-line-inf');
 		expect(store.validChargeTargets.map((u) => u.id)).toContain('red-artillery');
 	});
@@ -891,7 +893,7 @@ describe('validChargeTargets — gating (M8)', () => {
 		li.coordinates = { col: 3, row: 1 };
 		const lh = units.find((u) => u.id === 'red-light-horse')!;
 		lh.coordinates = { col: 4, row: 1 };
-		const store = new GameStore(units, TEST_MAP);
+		const store = new GameStore(units, TEST_MAP, structuredClone(TEST_LEADERS));
 		store.activateUnit('blue-light-inf');
 		expect(store.validChargeTargets).toEqual([]);
 	});
@@ -939,7 +941,7 @@ describe('chargeAt — outcomes (M8)', () => {
 		dragoons.coordinates = { col: 3, row: 1 };
 		const art = units.find((u) => u.id === 'red-artillery')!;
 		art.coordinates = { col: 4, row: 1 };
-		return new GameStore(units, TEST_MAP);
+		return new GameStore(units, TEST_MAP, structuredClone(TEST_LEADERS));
 	};
 
 	it('Dragoons (cavalry) bounces to origin on a winning non-eliminating charge', () => {
@@ -1017,7 +1019,7 @@ describe('chargeAt — Line Infantry advances on win (M8)', () => {
 		li.coordinates = { col: 3, row: 1 };
 		const art = units.find((u) => u.id === 'red-artillery')!;
 		art.coordinates = { col: 4, row: 1 };
-		const store = new GameStore(units, TEST_MAP);
+		const store = new GameStore(units, TEST_MAP, structuredClone(TEST_LEADERS));
 		store.activateUnit('blue-line-inf');
 		// delta=1 → defender_retreats; Line Infantry is non-cavalry → advances
 		const r = store.chargeAt('red-artillery', seqRngFactory([0.2, 0]));
@@ -1095,7 +1097,7 @@ describe('fireAt — morale integration (M9)', () => {
 		lightInf.coordinates = { col: 4, row: 0 };
 		const lightHorse = units.find((u) => u.id === 'red-light-horse')!;
 		lightHorse.strengthPoints = 2;
-		const store = new GameStore(units, TEST_MAP);
+		const store = new GameStore(units, TEST_MAP, structuredClone(TEST_LEADERS));
 		store.activateUnit('blue-light-inf');
 		// hit(0) + double(0.1): damage 2 → postHitSP = 0
 		const result = store.fireAt('red-light-horse', seqRngFactory([0, 0.1]));
@@ -1132,7 +1134,7 @@ describe('chargeAt — morale integration (M9)', () => {
 		dragoons.coordinates = { col: 3, row: 1 };
 		const art = units.find((u) => u.id === 'red-artillery')!;
 		art.coordinates = { col: 4, row: 1 };
-		return new GameStore(units, TEST_MAP);
+		return new GameStore(units, TEST_MAP, structuredClone(TEST_LEADERS));
 	};
 
 	it('attacker_repulsed → result.morale is null', () => {
@@ -1185,5 +1187,213 @@ describe('chargeAt — morale integration (M9)', () => {
 		expect(r?.outcome).toBe('defender_retreats');
 		expect(r?.morale?.passed).toBe(true);
 		expect(art.strengthPoints).toBe(3); // 4 - 1 charge hit, no morale bonus
+	});
+});
+
+// --- M10: Command & Control ---
+
+describe('#activate — command check (M10)', () => {
+	// Construct a store with NO leaders, forcing every unit to be out of command.
+	const makeNoLeadersStore = () => new GameStore(structuredClone(TEST_UNITS), TEST_MAP, []);
+
+	it('in command (covered by TEST_LEADERS) → transitions to ACTION normally', () => {
+		expect.assertions(2);
+		const store = makeStore();
+		store.activateUnit('blue-line-inf');
+		expect(store.activationStep).toBe(ActivationStep.ACTION);
+		expect(store.lastCommandCheck?.inCommand).toBe(true);
+	});
+
+	it('out of command, check passes → transitions to ACTION', () => {
+		expect.assertions(3);
+		const store = makeNoLeadersStore();
+		// rng 0 < 0.5 → passes
+		store.activateUnit('blue-line-inf', () => 0);
+		expect(store.activationStep).toBe(ActivationStep.ACTION);
+		expect(store.lastCommandCheck?.inCommand).toBe(false);
+		expect(store.lastCommandCheck?.passed).toBe(true);
+	});
+
+	it('out of command, check fails → activation immediately finishes; unit activated', () => {
+		expect.assertions(4);
+		const store = makeNoLeadersStore();
+		// rng 0.6 >= 0.5 → fails
+		store.activateUnit('blue-line-inf', () => 0.6);
+		expect(store.activeUnitId).toBeNull();
+		expect(store.activationStep).toBe(ActivationStep.AWAITING_ACTIVATION);
+		const unit = store.units.find((u) => u.id === 'blue-line-inf')!;
+		expect(unit.activated).toBe(true);
+		expect(store.lastCommandCheck?.passed).toBe(false);
+	});
+
+	it('unit activated by failed command check cannot be activated again same turn', () => {
+		expect.assertions(1);
+		const store = makeNoLeadersStore();
+		store.activateUnit('blue-line-inf', () => 0.6);
+		store.activateUnit('blue-line-inf', () => 0); // second attempt: rng 0 would pass
+		expect(store.activeUnitId).toBeNull();
+	});
+
+	it('game turn rollover clears activated flag from failed command check', () => {
+		expect.assertions(1);
+		const store = makeNoLeadersStore();
+		store.activateUnit('blue-line-inf', () => 0.6);
+		store.endPlayerTurn(); // → player 1
+		store.endPlayerTurn(); // → player 0, new turn, clears flags
+		const unit = store.units.find((u) => u.id === 'blue-line-inf')!;
+		expect(unit.activated).toBe(false);
+	});
+
+	it('far-out-of-command (>2×R) penalty: -0.15 applied', () => {
+		expect.assertions(2);
+		const units = structuredClone(TEST_UNITS) as Unit[];
+		const lineInf = units.find((u) => u.id === 'blue-line-inf')!;
+		lineInf.coordinates = { col: 0, row: 0 };
+		const lightInf = units.find((u) => u.id === 'blue-light-inf')!;
+		lightInf.coordinates = { col: 5, row: 3 }; // distance > 2×1 from line-inf
+		const leaders: Leader[] = [{ id: 'L', attachedToUnitId: 'blue-line-inf', commandRadius: 1 }];
+		const store = new GameStore(units, TEST_MAP, leaders);
+		store.activateUnit('blue-light-inf', () => 0);
+		expect(store.lastCommandCheck?.farPenalty).toBeCloseTo(-0.15);
+		expect(store.lastCommandCheck?.finalPassChance).toBeCloseTo(0.35);
+	});
+});
+
+describe('fireAt — leader casualty + outOfCommand (M10)', () => {
+	it('attacks target with no attached leader → leaderCasualty null, no extra rng draw', () => {
+		expect.assertions(2);
+		// blue-light-inf at (4,0) fires at red-light-horse at (5,0). Red leader is on
+		// red-horse, so red-light-horse has no attached leader.
+		const store = makeLightInfFireStore();
+		store.activateUnit('blue-light-inf');
+		// rng draws: hit, double, morale (no casualty draw)
+		const result = store.fireAt('red-light-horse', seqRngFactory([0, 0.5, 0]));
+		expect(result?.leaderCasualty).toBeNull();
+		expect(result?.morale?.passed).toBe(true);
+	});
+
+	it('attacks target with attached leader, casualty roll passes → leader killed and replaced', () => {
+		expect.assertions(4);
+		// Move blue-light-inf adjacent to red-horse (the leader's host).
+		const units = structuredClone(TEST_UNITS) as Unit[];
+		const lightInf = units.find((u) => u.id === 'blue-light-inf')!;
+		lightInf.coordinates = { col: 4, row: 1 };
+		const horse = units.find((u) => u.id === 'red-horse')!;
+		horse.coordinates = { col: 5, row: 1 };
+		const store = new GameStore(units, TEST_MAP, structuredClone(TEST_LEADERS));
+		store.activateUnit('blue-light-inf');
+		// rng draws: hit(0) + no-double(0.5) + casualty(0.05<0.15 → kill) + morale(0 → pass)
+		const result = store.fireAt('red-horse', seqRngFactory([0, 0.5, 0.05, 0]));
+		expect(result?.leaderCasualty?.casualty).toBe(true);
+		expect(result?.leaderCasualty?.leaderId).toBe('red-leader-1');
+		// Replacement attached to nearest leaderless friendly unit: artillery or light-horse
+		expect(result?.leaderCasualty?.replacementLeaderId).toBe('red-leader-1-r1');
+		// Original removed from leaders state
+		expect(store.leaders.find((l) => l.id === 'red-leader-1')).toBeUndefined();
+	});
+
+	it('attacks target with attached leader, casualty roll fails → leaders unchanged', () => {
+		expect.assertions(2);
+		const units = structuredClone(TEST_UNITS) as Unit[];
+		const lightInf = units.find((u) => u.id === 'blue-light-inf')!;
+		lightInf.coordinates = { col: 4, row: 1 };
+		const horse = units.find((u) => u.id === 'red-horse')!;
+		horse.coordinates = { col: 5, row: 1 };
+		const store = new GameStore(units, TEST_MAP, structuredClone(TEST_LEADERS));
+		store.activateUnit('blue-light-inf');
+		// casualty roll 0.5 ≥ 0.15 → survives
+		const result = store.fireAt('red-horse', seqRngFactory([0, 0.5, 0.5, 0]));
+		expect(result?.leaderCasualty?.casualty).toBe(false);
+		expect(store.leaders.find((l) => l.id === 'red-leader-1')).toBeDefined();
+	});
+
+	it('fire eliminating the target → no leader casualty, no morale, no extra rng draws', () => {
+		expect.assertions(3);
+		const units = structuredClone(TEST_UNITS) as Unit[];
+		const lightInf = units.find((u) => u.id === 'blue-light-inf')!;
+		lightInf.coordinates = { col: 4, row: 1 };
+		const horse = units.find((u) => u.id === 'red-horse')!;
+		horse.coordinates = { col: 5, row: 1 };
+		horse.strengthPoints = 2;
+		const store = new GameStore(units, TEST_MAP, structuredClone(TEST_LEADERS));
+		store.activateUnit('blue-light-inf');
+		// hit(0) + double(0.1) → 2 damage = lethal. Only 2 rng draws should be consumed.
+		const result = store.fireAt('red-horse', seqRngFactory([0, 0.1]));
+		expect(result?.leaderCasualty).toBeNull();
+		expect(result?.morale).toBeNull();
+		const after = store.units.find((u) => u.id === 'red-horse')!;
+		expect(after.strengthPoints).toBe(0);
+	});
+
+	it('out-of-command target propagates outOfCommand into morale modifiers', () => {
+		expect.assertions(1);
+		// red-light-horse with NO friendly leaders → out of command.
+		const units = structuredClone(TEST_UNITS) as Unit[];
+		const lightInf = units.find((u) => u.id === 'blue-light-inf')!;
+		lightInf.coordinates = { col: 4, row: 0 };
+		const store = new GameStore(units, TEST_MAP, []);
+		// activate via rng pass to skip command check failure
+		store.activateUnit('blue-light-inf', () => 0);
+		// hit(0) + no-double(0.5) + morale(0.5)
+		const result = store.fireAt('red-light-horse', seqRngFactory([0, 0.5, 0.5]));
+		expect(result?.morale?.outOfCommandModifier).toBeCloseTo(-0.15);
+	});
+});
+
+describe('chargeAt — leader casualty + orphan cleanup (M10)', () => {
+	it('charge against target with leader, casualty rolled → leader replaced atomically', () => {
+		expect.assertions(2);
+		const units = structuredClone(TEST_UNITS) as Unit[];
+		const dragoons = units.find((u) => u.id === 'blue-dragoons')!;
+		dragoons.coordinates = { col: 4, row: 1 };
+		const horse = units.find((u) => u.id === 'red-horse')!;
+		horse.coordinates = { col: 5, row: 1 };
+		const store = new GameStore(units, TEST_MAP, structuredClone(TEST_LEADERS));
+		store.activateUnit('blue-dragoons');
+		// rng: attackerRoll(0.2 → 2), defenderRoll(0 → 1) → delta = (2+4) - (1+4) = 1 → defender_retreats
+		// then defenderCasualty(0.05 → kill), then morale(0 → pass)
+		const r = store.chargeAt('red-horse', seqRngFactory([0.2, 0, 0.05, 0]));
+		expect(r?.defenderLeaderCasualty?.casualty).toBe(true);
+		expect(store.leaders.find((l) => l.id === 'red-leader-1')).toBeUndefined();
+	});
+
+	it('charge eliminating a unit with attached leader → leader removed without replacement (orphan cleanup)', () => {
+		expect.assertions(2);
+		const units = structuredClone(TEST_UNITS) as Unit[];
+		const dragoons = units.find((u) => u.id === 'blue-dragoons')!;
+		dragoons.coordinates = { col: 4, row: 1 };
+		const horse = units.find((u) => u.id === 'red-horse')!;
+		horse.coordinates = { col: 5, row: 1 };
+		horse.strengthPoints = 1;
+		const store = new GameStore(units, TEST_MAP, structuredClone(TEST_LEADERS));
+		store.activateUnit('blue-dragoons');
+		// rng: attackerRoll(4/6 → 5), defenderRoll(0 → 1) → delta ≥ 3 → 2 hits, defender eliminated
+		// No casualty roll (defender at 0 SP). No morale (eliminated).
+		const r = store.chargeAt('red-horse', seqRngFactory([4 / 6, 0]));
+		expect(r?.outcome).toBe('defender_eliminated');
+		// red-leader-1 was attached to red-horse; with red-horse eliminated, the leader is dropped
+		// (no replacement per §10 — distinct from casualty replacement).
+		expect(store.leaders.find((l) => l.id === 'red-leader-1')).toBeUndefined();
+	});
+
+	it('attacker_repulsed against attacker with leader → attacker casualty rolled', () => {
+		expect.assertions(2);
+		// Attach blue leader to blue-dragoons specifically.
+		const units = structuredClone(TEST_UNITS) as Unit[];
+		const dragoons = units.find((u) => u.id === 'blue-dragoons')!;
+		dragoons.coordinates = { col: 4, row: 1 };
+		const art = units.find((u) => u.id === 'red-artillery')!;
+		art.coordinates = { col: 5, row: 1 };
+		const leaders: Leader[] = [
+			{ id: 'blue-leader-1', attachedToUnitId: 'blue-dragoons', commandRadius: 10 },
+			{ id: 'red-leader-1', attachedToUnitId: 'red-horse', commandRadius: 10 }
+		];
+		const store = new GameStore(units, TEST_MAP, leaders);
+		store.activateUnit('blue-dragoons');
+		// rng: attackerRoll(0 → 1), defenderRoll(0 → 1) → delta=0 → attacker_repulsed (attacker takes 1 hit)
+		// attackerCasualty(0.05 → kill blue-leader-1). No defender casualty, no morale.
+		const r = store.chargeAt('red-artillery', seqRngFactory([0, 0, 0.05]));
+		expect(r?.outcome).toBe('attacker_repulsed');
+		expect(r?.attackerLeaderCasualty?.casualty).toBe(true);
 	});
 });

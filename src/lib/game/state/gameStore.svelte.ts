@@ -9,6 +9,15 @@ import {
 } from '../core/movement';
 import { getValidFireTargets, resolveFireAction, type FireResult } from '../core/combat';
 import { getValidChargeTargets, resolveCharge, type ChargeResult } from '../core/charge';
+import {
+	getAttachedLeader,
+	isInCommand,
+	resolveCommandCheck,
+	resolveLeaderCasualty,
+	type CommandCheckResult,
+	type Leader,
+	type LeaderCasualtyResult
+} from '../core/command';
 import { checkMorale, type MoraleResult } from '../core/morale';
 import { ActionType, ActivationStep, type Player, type Unit } from '../core/types';
 import { getUnitDefinition } from '../core/unitDefinitions';
@@ -17,12 +26,14 @@ export type ActionMode = 'move' | 'fire';
 
 export class GameStore {
 	units: Unit[] = $state([]);
+	leaders: Leader[] = $state([]);
 	grid: Grid<HexCell> | undefined = $state();
 	activePlayer: Player = $state(0);
 	activationStep: ActivationStep = $state(ActivationStep.AWAITING_ACTIVATION);
 	activeUnitId: string | null = $state(null);
 	actionMode: ActionMode | null = $state(null);
 	turn: number = $state(1);
+	lastCommandCheck: CommandCheckResult | null = $state(null);
 	selectedUnit = $derived(this.units.find((u) => u.selected === true));
 	validMoveTargets: MoveTarget[] = $derived.by(() => {
 		if (this.activeUnitId === null) return [];
@@ -62,7 +73,7 @@ export class GameStore {
 		return getValidChargeTargets(active, this.grid, this.units);
 	});
 
-	constructor(units: Unit[], map: MapDefinition) {
+	constructor(units: Unit[], map: MapDefinition, leaders: Leader[]) {
 		const newGrid = new Grid(
 			HexCell,
 			map.map((cell) => HexCell.create({ col: cell.col, row: cell.row, terrain: cell.terrain }))
@@ -70,6 +81,7 @@ export class GameStore {
 
 		this.grid = newGrid;
 		this.units = units;
+		this.leaders = leaders;
 	}
 
 	// -- Helpers --
@@ -107,14 +119,26 @@ export class GameStore {
 		}));
 	}
 
-	#activate(id: string) {
+	#activate(id: string, rng: () => number = Math.random) {
+		if (!this.grid) return;
+		const unit = this.units.find((u) => u.id === id);
+		if (!unit) return;
+
 		this.activeUnitId = id;
-		this.units = this.units.map((u) => ({
-			...u,
-			selected: u.id === id
-		}));
+		this.units = this.units.map((u) => ({ ...u, selected: u.id === id }));
 		this.activationStep = ActivationStep.COMMAND_CHECK;
-		// Stub: command check auto-passes
+
+		const check = resolveCommandCheck(unit, this.leaders, this.units, this.grid, rng);
+		this.lastCommandCheck = check;
+
+		if (!check.passed) {
+			// Wasted activation: the unit cannot move/fire/charge this game turn.
+			// Flow through the remaining lifecycle steps so observers see the
+			// transition and the activated flag gets set.
+			this.#finishActivation();
+			return;
+		}
+
 		this.activationStep = ActivationStep.ACTION;
 	}
 
@@ -159,7 +183,7 @@ export class GameStore {
 		}));
 	}
 
-	beginAction(mode: ActionMode) {
+	beginAction(mode: ActionMode, rng: () => number = Math.random) {
 		const sel = this.selectedUnit;
 		if (!sel) return;
 		if (sel.player !== this.activePlayer) return;
@@ -189,7 +213,9 @@ export class GameStore {
 
 		// Activate if not yet
 		if (this.activeUnitId !== sel.id) {
-			this.#activate(sel.id);
+			this.#activate(sel.id, rng);
+			// A failed command check ends the activation immediately.
+			if (this.activeUnitId === null) return;
 		}
 		this.actionMode = mode;
 	}
@@ -243,7 +269,10 @@ export class GameStore {
 		const activeId = this.activeUnitId;
 		const attackerOrigin = this.selectedUnit.coordinates;
 
+		let leaderCasualty: LeaderCasualtyResult | null = null;
+		let postCasualtyLeaders: Leader[] = this.leaders;
 		let morale: MoraleResult | null = null;
+
 		if (result.damage > 0) {
 			const postHitSP = Math.max(0, target.strengthPoints - result.damage);
 			if (postHitSP > 0) {
@@ -251,12 +280,32 @@ export class GameStore {
 					u.id === targetId ? { ...u, strengthPoints: postHitSP } : u
 				);
 				const projectedTarget = { ...target, strengthPoints: postHitSP };
+
+				// Leader casualty fires BEFORE morale; morale sees post-casualty state.
+				const casualty = resolveLeaderCasualty(
+					targetId,
+					this.leaders,
+					projectedUnits,
+					this.grid,
+					rng
+				);
+				leaderCasualty = casualty.result;
+				postCasualtyLeaders = casualty.leaders;
+
 				morale = checkMorale(
 					projectedTarget,
 					attackerOrigin,
 					this.grid,
 					projectedUnits,
-					{ leaderAttached: false, outOfCommand: false },
+					{
+						leaderAttached: getAttachedLeader(targetId, postCasualtyLeaders) !== null,
+						outOfCommand: !isInCommand(
+							projectedTarget,
+							postCasualtyLeaders,
+							projectedUnits,
+							this.grid
+						)
+					},
 					rng
 				);
 			}
@@ -276,7 +325,8 @@ export class GameStore {
 			}
 			return u;
 		});
-		return { ...result, morale };
+		this.leaders = postCasualtyLeaders;
+		return { ...result, leaderCasualty, morale };
 	}
 
 	// -- Charge --
@@ -318,6 +368,53 @@ export class GameStore {
 		const defenderPostChargeCoords: OffsetCoordinates =
 			result.defenderRetreatTo ?? target.coordinates;
 		const defenderPostChargeSP = Math.max(0, target.strengthPoints - result.defenderDamage);
+		const attackerPostChargeSP = Math.max(0, attacker.strengthPoints - result.attackerDamage);
+
+		// Project post-charge state once; reused by casualty rolls and morale.
+		const projectedUnits = this.units.map((u) => {
+			if (u.id === attackerId) {
+				return { ...u, strengthPoints: attackerPostChargeSP, coordinates: attackerNewCoords };
+			}
+			if (u.id === defenderId) {
+				return {
+					...u,
+					strengthPoints: defenderPostChargeSP,
+					coordinates: defenderPostChargeCoords
+				};
+			}
+			return u;
+		});
+
+		let leadersAfterCasualty: Leader[] = this.leaders;
+		let defenderLeaderCasualty: LeaderCasualtyResult | null = null;
+		let attackerLeaderCasualty: LeaderCasualtyResult | null = null;
+
+		// Defender casualty: only if defender took hits and survives.
+		if (result.defenderDamage > 0 && defenderPostChargeSP > 0) {
+			const out = resolveLeaderCasualty(
+				defenderId,
+				leadersAfterCasualty,
+				projectedUnits,
+				this.grid,
+				rng
+			);
+			defenderLeaderCasualty = out.result;
+			leadersAfterCasualty = out.leaders;
+		}
+
+		// Attacker casualty: only on attacker_repulsed (attacker_damage>0 ⇒ attacker survives in
+		// current rules, since attacker SP is at most reduced by 1 from full).
+		if (result.attackerDamage > 0 && attackerPostChargeSP > 0) {
+			const out = resolveLeaderCasualty(
+				attackerId,
+				leadersAfterCasualty,
+				projectedUnits,
+				this.grid,
+				rng
+			);
+			attackerLeaderCasualty = out.result;
+			leadersAfterCasualty = out.leaders;
+		}
 
 		let morale: MoraleResult | null = null;
 		const moraleEligible =
@@ -326,17 +423,6 @@ export class GameStore {
 			(result.outcome === 'defender_retreats' || result.outcome === 'defender_holds');
 
 		if (moraleEligible) {
-			const projectedUnits = this.units.map((u) => {
-				if (u.id === attackerId) return { ...u, coordinates: attackerNewCoords };
-				if (u.id === defenderId) {
-					return {
-						...u,
-						strengthPoints: defenderPostChargeSP,
-						coordinates: defenderPostChargeCoords
-					};
-				}
-				return u;
-			});
 			const projectedDefender: Unit = {
 				...target,
 				strengthPoints: defenderPostChargeSP,
@@ -347,7 +433,15 @@ export class GameStore {
 				attackerNewCoords,
 				this.grid,
 				projectedUnits,
-				{ leaderAttached: false, outOfCommand: false },
+				{
+					leaderAttached: getAttachedLeader(defenderId, leadersAfterCasualty) !== null,
+					outOfCommand: !isInCommand(
+						projectedDefender,
+						leadersAfterCasualty,
+						projectedUnits,
+						this.grid
+					)
+				},
 				rng
 			);
 		}
@@ -378,18 +472,22 @@ export class GameStore {
 			})
 			.filter((u) => u.strengthPoints > 0);
 
+		// Drop any leader whose host was just eliminated (no replacement per §10).
+		const survivingIds = new Set(this.units.map((u) => u.id));
+		this.leaders = leadersAfterCasualty.filter((l) => survivingIds.has(l.attachedToUnitId));
+
 		this.#finishActivation();
-		return { ...result, morale };
+		return { ...result, attackerLeaderCasualty, defenderLeaderCasualty, morale };
 	}
 
 	// -- Activation lifecycle --
 
-	activateUnit(id: string) {
+	activateUnit(id: string, rng: () => number = Math.random) {
 		if (this.activeUnitId !== null) return;
 		const unit = this.#getUnit(id);
 		if (unit.player !== this.activePlayer) return;
 		if (unit.activated) return;
-		this.#activate(id);
+		this.#activate(id, rng);
 	}
 
 	endActivation() {
@@ -413,12 +511,12 @@ export class GameStore {
 
 let gameStore: GameStore | null = null;
 
-export function initGameStore(units: Unit[], map: MapDefinition) {
+export function initGameStore(units: Unit[], map: MapDefinition, leaders: Leader[]) {
 	if (!gameStore) {
-		if (!units || !map) {
-			throw new Error('GameStore must be initialized with units and map.');
+		if (!units || !map || !leaders) {
+			throw new Error('GameStore must be initialized with units, map, and leaders.');
 		}
-		gameStore = new GameStore(units, map);
+		gameStore = new GameStore(units, map, leaders);
 	}
 
 	return gameStore;

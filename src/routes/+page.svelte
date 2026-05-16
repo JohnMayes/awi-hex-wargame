@@ -3,11 +3,11 @@
 	import HexTile from '$lib/game/ui/HexTile.svelte';
 	import UnitCounter from '$lib/game/ui/UnitCounter.svelte';
 	import { TEST_MAP } from '$lib/game/data/maps';
-	import { TEST_UNITS } from '$lib/game/data/scenarios';
+	import { TEST_LEADERS, TEST_UNITS } from '$lib/game/data/scenarios';
 	import { ActionType } from '$lib/game/core/types';
 	import { getUnitDefinition } from '$lib/game/core/unitDefinitions';
 
-	const store = initGameStore(TEST_UNITS, TEST_MAP);
+	const store = initGameStore(TEST_UNITS, TEST_MAP, TEST_LEADERS);
 
 	const sel = $derived(store.selectedUnit);
 	const def = $derived(sel ? getUnitDefinition(sel.type) : null);

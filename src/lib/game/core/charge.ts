@@ -1,4 +1,5 @@
 import type { Grid, OffsetCoordinates } from 'honeycomb-grid';
+import type { LeaderCasualtyResult } from './command';
 import { HexCell, directions } from './hex';
 import type { MoraleResult } from './morale';
 import { canUnitEnterTerrain, terrainDefinitions } from './terrain';
@@ -22,6 +23,8 @@ export type ChargeResult = {
 	outcome: ChargeOutcome;
 	defenderRetreatTo: OffsetCoordinates | null;
 	attackerAdvances: boolean;
+	attackerLeaderCasualty: LeaderCasualtyResult | null;
+	defenderLeaderCasualty: LeaderCasualtyResult | null;
 	morale: MoraleResult | null;
 };
 
@@ -195,6 +198,8 @@ export function resolveCharge(
 		| 'outcome'
 		| 'defenderRetreatTo'
 		| 'attackerAdvances'
+		| 'attackerLeaderCasualty'
+		| 'defenderLeaderCasualty'
 		| 'morale'
 	> = {
 		attackerId: attacker.id,
@@ -211,6 +216,8 @@ export function resolveCharge(
 			outcome: 'attacker_repulsed',
 			defenderRetreatTo: null,
 			attackerAdvances: false,
+			attackerLeaderCasualty: null,
+			defenderLeaderCasualty: null,
 			morale: null
 		};
 	}
@@ -227,6 +234,8 @@ export function resolveCharge(
 			outcome: defenderEliminated ? 'defender_eliminated' : 'defender_holds',
 			defenderRetreatTo: null,
 			attackerAdvances: defenderEliminated && !isCavalry(attacker.type),
+			attackerLeaderCasualty: null,
+			defenderLeaderCasualty: null,
 			morale: null
 		};
 	}
@@ -242,6 +251,8 @@ export function resolveCharge(
 			outcome: defenderEliminated ? 'defender_eliminated' : 'defender_retreats',
 			defenderRetreatTo: defenderEliminated ? null : retreatHex,
 			attackerAdvances: !isCavalry(attacker.type) || defenderEliminated,
+			attackerLeaderCasualty: null,
+			defenderLeaderCasualty: null,
 			morale: null
 		};
 	}
@@ -257,6 +268,8 @@ export function resolveCharge(
 		outcome: defenderEliminated ? 'defender_eliminated' : 'defender_holds',
 		defenderRetreatTo: null,
 		attackerAdvances: defenderEliminated && !isCavalry(attacker.type),
+		attackerLeaderCasualty: null,
+		defenderLeaderCasualty: null,
 		morale: null
 	};
 }

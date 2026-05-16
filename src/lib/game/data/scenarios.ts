@@ -1,4 +1,5 @@
 // TODO: scenario special rules system
+import type { Leader } from '../core/command';
 import { UnitType, type Unit, type Player } from '../core/types';
 import { unitDefinitions } from '../core/unitDefinitions';
 
@@ -83,4 +84,14 @@ export const TEST_UNITS: Unit[] = [
 		activated: false,
 		elite: false
 	}
+];
+
+// One leader per side (1 per 2 units rounded down, minimum 1). Radius 10
+// trivially covers the 6×4 TEST_MAP so every unit stays in-command, keeping
+// pre-M10 tests stable without rng-sequence changes. Red leader is on
+// red-horse (rarely a fire/charge target) so casualty rolls don't shift the
+// rng order in existing combat tests.
+export const TEST_LEADERS: Leader[] = [
+	{ id: 'blue-leader-1', attachedToUnitId: 'blue-line-inf', commandRadius: 10 },
+	{ id: 'red-leader-1', attachedToUnitId: 'red-horse', commandRadius: 10 }
 ];

@@ -119,41 +119,29 @@ Facing was implemented at this milestone and later removed in the **facing refac
 
 ---
 
-### M9: Morale
+### ~~M9: Morale~~ COMPLETE
 
-Implement morale checks triggered when a unit takes hits, per rules §9. Retreat selection (`core/retreat.ts`) already shipped with M8.
-
-**New `core/morale.ts`:**
-
-- `checkMorale(unit, modifiers)` → `MoraleResult` (pass/fail)
-- Base pass chance scales with remaining SP / max SP
-- Modifiers: elite/veteran +1, out of command −1, leader attached +1
-- Pass: hold position. Fail: retreat 1 hex via the existing `getRetreatHex` + 1 additional SP damage. Cannot retreat: 1 SP damage instead.
-- **No cascading:** additional hit from failed morale does not trigger another check
-
-**Depends on:** M7/M8 (combat triggers morale)
-**Files:** new `core/morale.ts`, `gameStore.svelte.ts`
-**Tests:** Morale at various SP ratios. All modifier combos. Blocked retreat penalty. No cascade.
+- Created `core/morale.ts` with `checkMorale(unit, attackerOrigin, grid, units, { leaderAttached, outOfCommand }, rng)` → transparent `MoraleResult` (base/final pass chance, per-modifier breakdown, roll, passed, retreatTo, additionalDamage)
+- Pass chance formula: `clamp(remainingSP / maxSP + 0.15·elite + 0.15·leaderAttached − 0.15·outOfCommand, 0, 1)` — `±0.15` step mirrors the cover/long-range modifiers in `combat.ts`. Pass test is strict `roll < finalPassChance` so a clamped-to-0 chance never passes
+- Fail behavior: retreat 1 hex via `getRetreatHex` (M8) AND take +1 SP; if no legal retreat hex, take +1 SP without moving. **No cascade** — the failed-morale extra hit never triggers another check
+- Added `elite: boolean` to `Unit` (default `false` on all TEST_UNITS); `outOfCommand` and `leaderAttached` are wired to `false` from the store until M10 lands
+- `FireResult` and `ChargeResult` extended with `morale: MoraleResult | null`. Morale runs immediately inside `fireAt`/`chargeAt`, folded into the same atomic `units.map(...)` that applies the triggering damage — observers never see an intermediate state. `ActivationStep.MORALE_CHECK` remains a transient pass-through in `#finishActivation()`
+- Charge gating: morale fires on any damaging non-eliminating charge (`defender_retreats` and `defender_holds`). `attacker_repulsed` (no defender hit) and `defender_eliminated` (post-charge SP 0) skip morale. On `defender_retreats` + morale-fail, the second forced retreat originates from the defender's post-charge hex with source = attacker's post-resolution coords (per literal §9.1)
+- 12 tests in `morale.spec.ts` (SP ratios, modifier stacking, ±-clamp at 0/1, retreat direction, no-legal-retreat, determinism, transparency); 9 new tests in `gameStore.spec.ts` covering the fire path (miss / 1-dmg + morale pass / 1-dmg + morale fail with retreat / eliminating-damage skips morale / no-cascade rng count) and the charge path (attacker_repulsed, defender_eliminated, defender_retreats with morale fail overriding coords, defender_retreats with morale pass)
 
 ---
 
-### M10: Command & Control
+### ~~M10: Command & Control~~ COMPLETE
 
-Implement leaders, command radius, and command checks per rules §8.
-
-**New `core/command.ts`:**
-
-- `Leader` type: id, attachedToUnitId, commandRadius (default 2)
-- `isInCommand(unit, leaders, grid)` → boolean (within any friendly leader's radius)
-- `resolveCommandCheck(unit, leaders)` → boolean (50% base, −15% if far out of range)
-- Fail: the activation is wasted — the unit may not move, fire, or charge
-- Leader casualty: ~15% chance when attached unit takes hits → replacement leader with radius −1
-
-**Leader allocation:** 1 per 2 units (rounded down, minimum 1), assigned at scenario setup.
-
-**Depends on:** M4 (COMMAND_CHECK activation step)
-**Files:** new `core/command.ts`, `types.ts` (Leader type), `gameStore.svelte.ts`, `scenarios.ts`
-**Tests:** Command radius. In/out of command. Check resolution. Casualty and replacement. Degrading radius.
+- Created `core/command.ts` with `Leader` type (`id`, `attachedToUnitId`, `commandRadius`), `getAttachedLeader`, `isInCommand`, and transparent resolvers `resolveCommandCheck` → `CommandCheckResult` and `resolveLeaderCasualty` → `{ result: LeaderCasualtyResult | null, leaders: Leader[] }`. Reuses `hexDistance` from `hex.ts:42` for radius and nearest-leader lookups; same-side filter via the host unit's `player`
+- Command check formula (§8.2): in-command units skip the roll (`roll: 0`, `finalPassChance: 1`); out-of-command units roll vs. base 50%, with a −15% `farPenalty` when distance to nearest friendly leader > 2× that leader's radius. Pass test is strict `roll < finalPassChance`. Boundary is inclusive (`D ≤ R` = in command)
+- Leader casualty (§8.3): ~15% chance per hit. On casualty, the original leader is removed and a replacement is attached to the nearest leaderless friendly unit (excluding the dying leader's own host); tie-break by lowest unit id. Replacement radius = `max(0, original − 1)`. Replacement ids carry a `-r{n}` suffix for traceable lineage. If no leaderless friendly unit exists, the leader vanishes with no replacement
+- Added `leaders: Leader[]` state and `lastCommandCheck: CommandCheckResult | null` to `GameStore`. Constructor signature is now `new GameStore(units, map, leaders)` — required; `initGameStore` and `+page.svelte` updated accordingly
+- `#activate(id, rng)` now runs the real check. On fail, the unit's `activated` flag is set and the activation immediately finishes through CHARGE_RESOLUTION → MORALE_CHECK → ACTIVATION_COMPLETE — no movement, fire, or charge possible. `activateUnit(id, rng?)` and `beginAction(mode, rng?)` thread the rng through; `beginAction` early-returns after a failed command check
+- `fireAt`/`chargeAt` order on damage: **leader casualty first, then morale** (per design choice). Morale's `leaderAttached` and `outOfCommand` inputs reflect post-casualty state. `FireResult.leaderCasualty` and `ChargeResult.{attackerLeaderCasualty, defenderLeaderCasualty}` expose the rolls. Attacker casualty is only rolled on `attacker_repulsed`; defender casualty only when the defender survives the hit
+- Orphan leader cleanup: after `chargeAt`'s `.filter(u => u.strengthPoints > 0)`, leaders whose host was just eliminated are also dropped (no replacement, per §10 — distinct from the §8.3 casualty replacement). M11 will formalize the elimination trigger
+- `TEST_LEADERS` in `scenarios.ts`: one per side (1 per 2 units rounded down, min 1). Blue leader on `blue-line-inf`, red leader on `red-horse` (rarely a fire/charge target — keeps casualty rolls out of pre-M10 rng sequences). Both with `commandRadius: 10` to cover the 6×4 TEST_MAP, so existing tests stay in-command and skip the roll
+- 19 tests in `command.spec.ts` (isInCommand boundary, multi-leader pick-nearest, enemy filter; command check pass/fail with and without far penalty, no-leader fallback; casualty no-leader/fail/pass, radius-1-to-0 degrade, no-candidate path, `-r1/-r2` id chain). 14 new tests in `gameStore.spec.ts` covering in-command/out-of-command activation, wasted activation, turn rollover clearing the activated flag, far-penalty propagation, fire+casualty+replacement, casualty failure no-op, eliminating fire skips casualty/morale, outOfCommand propagation into morale modifiers, charge+defender casualty, charge eliminating leader-host triggers orphan cleanup, and attacker_repulsed triggers attacker casualty
 
 ---
 
