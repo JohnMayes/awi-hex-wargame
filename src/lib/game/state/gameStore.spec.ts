@@ -1503,3 +1503,181 @@ describe('chargeAt — elimination (M11)', () => {
 		expect(store.leaders.find((l) => l.id === 'blue-leader-1')).toBeUndefined();
 	});
 });
+
+// --- Game log ---
+
+describe('log — event emission', () => {
+	it('fresh GameStore has empty log', () => {
+		expect.assertions(1);
+		const store = makeStore();
+		expect(store.log).toEqual([]);
+	});
+
+	it('activateUnit (in-command) emits one activation_started with passed:true', () => {
+		expect.assertions(4);
+		const store = makeStore();
+		store.activateUnit('blue-line-inf');
+		expect(store.log).toHaveLength(1);
+		const ev = store.log[0];
+		expect(ev.kind).toBe('activation_started');
+		if (ev.kind !== 'activation_started') throw new Error();
+		expect(ev.unitId).toBe('blue-line-inf');
+		expect(ev.commandCheck.passed).toBe(true);
+	});
+
+	it('activateUnit out-of-command, fails → activation_started + activation_ended in order', () => {
+		expect.assertions(4);
+		const store = new GameStore(structuredClone(TEST_UNITS), TEST_MAP, []);
+		store.activateUnit('blue-line-inf', () => 0.6); // out of command + fail
+		expect(store.log).toHaveLength(2);
+		expect(store.log[0].kind).toBe('activation_started');
+		expect(store.log[1].kind).toBe('activation_ended');
+		if (store.log[0].kind !== 'activation_started') throw new Error();
+		expect(store.log[0].commandCheck.passed).toBe(false);
+	});
+
+	it('successful moveUnit emits one move_action with moved:true and from/to/cost', () => {
+		expect.assertions(5);
+		const store = makeStore();
+		store.activateUnit('blue-line-inf');
+		store.clearLog();
+		store.moveUnit({ col: 1, row: 0 });
+		expect(store.log).toHaveLength(1);
+		const ev = store.log[0];
+		expect(ev.kind).toBe('move_action');
+		if (ev.kind !== 'move_action') throw new Error();
+		expect(ev.result.moved).toBe(true);
+		expect(ev.result.to).toEqual({ col: 1, row: 0 });
+		expect(ev.result.difficultTerrainCheck).toBeNull();
+	});
+
+	it('multi-step Dragoon move emits two move_action events in order', () => {
+		expect.assertions(3);
+		const units = structuredClone(TEST_UNITS) as Unit[];
+		const dragoons = units.find((u) => u.id === 'blue-dragoons')!;
+		dragoons.coordinates = { col: 1, row: 1 };
+		const store = new GameStore(units, TEST_MAP, structuredClone(TEST_LEADERS));
+		store.activateUnit('blue-dragoons');
+		store.clearLog();
+		store.moveUnit({ col: 1, row: 0 });
+		store.moveUnit({ col: 2, row: 1 });
+		expect(store.log).toHaveLength(2);
+		expect(store.log[0].kind).toBe('move_action');
+		expect(store.log[1].kind).toBe('move_action');
+	});
+
+	it('moveUnit blocked by DT failure emits move_action with moved:false', () => {
+		expect.assertions(4);
+		// Line Infantry on a HILLTOP (difficult terrain, requires check)
+		const units = structuredClone(TEST_UNITS) as Unit[];
+		const lineInf = units.find((u) => u.id === 'blue-line-inf')!;
+		lineInf.coordinates = { col: 2, row: 2 }; // HILLTOP
+		const store = new GameStore(units, TEST_MAP, structuredClone(TEST_LEADERS));
+		store.activateUnit('blue-line-inf');
+		store.clearLog();
+		store.moveUnit({ col: 2, row: 1 }, () => 0); // 0 < 0.5 → DT fails
+		expect(store.log).toHaveLength(1);
+		const ev = store.log[0];
+		if (ev.kind !== 'move_action') throw new Error();
+		expect(ev.result.moved).toBe(false);
+		expect(ev.result.cost).toBe(0);
+		expect(ev.result.difficultTerrainCheck).toEqual({ passed: false });
+	});
+
+	it('non-lethal fireAt emits one fire_action with the full FireResult', () => {
+		expect.assertions(4);
+		const store = makeLightInfFireStore();
+		store.activateUnit('blue-light-inf');
+		store.clearLog();
+		store.fireAt('red-light-horse', seqRngFactory([0, 0.5, 0]));
+		expect(store.log).toHaveLength(1);
+		const ev = store.log[0];
+		expect(ev.kind).toBe('fire_action');
+		if (ev.kind !== 'fire_action') throw new Error();
+		expect(ev.result.hit).toBe(true);
+		expect(ev.result.eliminatedUnitIds).toEqual([]);
+	});
+
+	it('fireAt eliminating a leader host emits fire_action with eliminated ids populated', () => {
+		expect.assertions(3);
+		const units = structuredClone(TEST_UNITS) as Unit[];
+		const lightInf = units.find((u) => u.id === 'blue-light-inf')!;
+		lightInf.coordinates = { col: 4, row: 1 };
+		const horse = units.find((u) => u.id === 'red-horse')!;
+		horse.coordinates = { col: 5, row: 1 };
+		horse.strengthPoints = 2;
+		const store = new GameStore(units, TEST_MAP, structuredClone(TEST_LEADERS));
+		store.activateUnit('blue-light-inf');
+		store.clearLog();
+		store.fireAt('red-horse', seqRngFactory([0, 0.1])); // double damage lethal
+		expect(store.log).toHaveLength(1);
+		const ev = store.log[0];
+		if (ev.kind !== 'fire_action') throw new Error();
+		expect(ev.result.eliminatedUnitIds).toEqual(['red-horse']);
+		expect(ev.result.eliminatedLeaderIds).toEqual(['red-leader-1']);
+	});
+
+	it('chargeAt emits charge_action whose result.morale reflects defender state', () => {
+		expect.assertions(3);
+		const units = structuredClone(TEST_UNITS) as Unit[];
+		const dragoons = units.find((u) => u.id === 'blue-dragoons')!;
+		dragoons.coordinates = { col: 3, row: 1 };
+		const art = units.find((u) => u.id === 'red-artillery')!;
+		art.coordinates = { col: 4, row: 1 };
+		const store = new GameStore(units, TEST_MAP, structuredClone(TEST_LEADERS));
+		store.activateUnit('blue-dragoons');
+		store.clearLog();
+		// delta=1 → defender_retreats; morale roll 0.99 → fail
+		store.chargeAt('red-artillery', seqRngFactory([0.2, 0, 0.99]));
+		const chargeEvent = store.log.find((e) => e.kind === 'charge_action');
+		expect(chargeEvent).toBeDefined();
+		if (!chargeEvent || chargeEvent.kind !== 'charge_action') throw new Error();
+		expect(chargeEvent.result.outcome).toBe('defender_retreats');
+		expect(chargeEvent.result.morale?.passed).toBe(false);
+	});
+
+	it('activate → fire → endActivation emits exactly three events in order', () => {
+		expect.assertions(4);
+		const store = makeLightInfFireStore();
+		store.activateUnit('blue-light-inf');
+		store.fireAt('red-light-horse', seqRngFactory([0, 0.5, 0]));
+		store.endActivation();
+		expect(store.log).toHaveLength(3);
+		expect(store.log[0].kind).toBe('activation_started');
+		expect(store.log[1].kind).toBe('fire_action');
+		expect(store.log[2].kind).toBe('activation_ended');
+	});
+
+	it('endPlayerTurn 0 → 1 mid-game-turn emits player_turn_ended with same turn number', () => {
+		expect.assertions(4);
+		const store = makeStore();
+		store.endPlayerTurn();
+		const ev = store.log.at(-1);
+		expect(ev?.kind).toBe('player_turn_ended');
+		if (!ev || ev.kind !== 'player_turn_ended') throw new Error();
+		expect(ev.player).toBe(0);
+		expect(ev.nextPlayer).toBe(1);
+		expect(ev.nextTurn).toBe(ev.turn);
+	});
+
+	it('endPlayerTurn 1 → 0 (rollover) bumps nextTurn', () => {
+		expect.assertions(3);
+		const store = makeStore();
+		store.endPlayerTurn(); // 0 → 1
+		store.endPlayerTurn(); // 1 → 0 with turn++
+		const ev = store.log.at(-1);
+		if (!ev || ev.kind !== 'player_turn_ended') throw new Error();
+		expect(ev.player).toBe(1);
+		expect(ev.nextPlayer).toBe(0);
+		expect(ev.nextTurn).toBe(ev.turn + 1);
+	});
+
+	it('clearLog empties the log', () => {
+		expect.assertions(2);
+		const store = makeStore();
+		store.activateUnit('blue-line-inf');
+		expect(store.log.length).toBeGreaterThan(0);
+		store.clearLog();
+		expect(store.log).toEqual([]);
+	});
+});

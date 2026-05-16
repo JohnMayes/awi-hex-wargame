@@ -8,6 +8,7 @@
 	import { getUnitDefinition } from '$lib/game/core/unitDefinitions';
 
 	const store = initGameStore(TEST_UNITS, TEST_MAP, TEST_LEADERS);
+	$inspect(store.log);
 
 	const sel = $derived(store.selectedUnit);
 	const def = $derived(sel ? getUnitDefinition(sel.type) : null);

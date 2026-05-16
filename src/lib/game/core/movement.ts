@@ -10,6 +10,15 @@ export type MoveTarget = {
 	usesRoad: boolean;
 };
 
+export type MoveResult = {
+	unitId: string;
+	from: OffsetCoordinates;
+	to: OffsetCoordinates;
+	cost: number;
+	moved: boolean;
+	difficultTerrainCheck: { passed: boolean } | null;
+};
+
 type Mode = 'NORMAL' | 'ROAD_ONLY';
 
 const cubeKey = (q: number, r: number) => `${q},${r}`;

@@ -1,10 +1,12 @@
 import type { MapDefinition } from '../data/maps';
 import { Grid, type OffsetCoordinates } from 'honeycomb-grid';
 import { HexCell, coordsEqual } from '../core/hex';
+import type { LogEvent } from '../core/log';
 import {
 	getValidMoveTargets,
 	requiresDifficultTerrainCheck,
 	rollDifficultTerrainCheck,
+	type MoveResult,
 	type MoveTarget
 } from '../core/movement';
 import { getValidFireTargets, resolveFireAction, type FireResult } from '../core/combat';
@@ -35,6 +37,7 @@ export class GameStore {
 	actionMode: ActionMode | null = $state(null);
 	turn: number = $state(1);
 	lastCommandCheck: CommandCheckResult | null = $state(null);
+	log: LogEvent[] = $state([]);
 	selectedUnit = $derived(this.units.find((u) => u.selected === true));
 	validMoveTargets: MoveTarget[] = $derived.by(() => {
 		if (this.activeUnitId === null) return [];
@@ -110,6 +113,14 @@ export class GameStore {
 		return u;
 	}
 
+	#emit(event: LogEvent) {
+		this.log = [...this.log, event];
+	}
+
+	clearLog() {
+		this.log = [];
+	}
+
 	#clearActivatedFlags() {
 		this.units = this.units.map((u) => ({
 			...u,
@@ -131,6 +142,13 @@ export class GameStore {
 
 		const check = resolveCommandCheck(unit, this.leaders, this.units, this.grid, rng);
 		this.lastCommandCheck = check;
+		this.#emit({
+			kind: 'activation_started',
+			turn: this.turn,
+			player: this.activePlayer,
+			unitId: id,
+			commandCheck: check
+		});
 
 		if (!check.passed) {
 			// Wasted activation: the unit cannot move/fire/charge this game turn.
@@ -161,6 +179,12 @@ export class GameStore {
 		this.activeUnitId = null;
 		this.actionMode = null;
 		this.activationStep = ActivationStep.AWAITING_ACTIVATION;
+		this.#emit({
+			kind: 'activation_ended',
+			turn: this.turn,
+			player: this.activePlayer,
+			unitId: activeId
+		});
 	}
 
 	// -- Selection / activation --
@@ -223,35 +247,61 @@ export class GameStore {
 
 	// -- Movement --
 
-	moveUnit(newCords: OffsetCoordinates, rng: () => number = Math.random) {
-		if (this.activeUnitId === null) return;
-		if (this.activationStep !== ActivationStep.ACTION) return;
-		if (this.selectedUnit?.id !== this.activeUnitId) return;
-		if (this.selectedUnit.player !== this.activePlayer) return;
-		if (!this.grid) return;
+	moveUnit(newCords: OffsetCoordinates, rng: () => number = Math.random): MoveResult | null {
+		if (this.activeUnitId === null) return null;
+		if (this.activationStep !== ActivationStep.ACTION) return null;
+		if (this.selectedUnit?.id !== this.activeUnitId) return null;
+		if (this.selectedUnit.player !== this.activePlayer) return null;
+		if (!this.grid) return null;
 
 		const target = this.validMoveTargets.find((t) => coordsEqual(t.coordinates, newCords));
-		if (!target) return;
+		if (!target) return null;
 
 		const def = getUnitDefinition(this.selectedUnit.type);
 		const activeId = this.activeUnitId;
+		const from = this.selectedUnit.coordinates;
+
+		let dtCheck: { passed: boolean } | null = null;
+		let to: OffsetCoordinates = newCords;
+		let cost = target.cost;
+		let moved = true;
 
 		if (requiresDifficultTerrainCheck(this.selectedUnit, this.grid)) {
 			const passed = rollDifficultTerrainCheck(rng);
+			dtCheck = { passed };
 			if (!passed) {
+				to = from;
+				cost = 0;
+				moved = false;
 				this.units = this.units.map((u) =>
 					u.id === activeId ? { ...u, movementPointsUsed: def.movementAllowance } : u
 				);
-				return;
 			}
 		}
 
-		this.units = this.units.map((u) => ({
-			...u,
-			coordinates: u.id === activeId ? newCords : u.coordinates,
-			movementPointsUsed:
-				u.id === activeId ? u.movementPointsUsed + target.cost : u.movementPointsUsed
-		}));
+		if (moved) {
+			this.units = this.units.map((u) => ({
+				...u,
+				coordinates: u.id === activeId ? to : u.coordinates,
+				movementPointsUsed: u.id === activeId ? u.movementPointsUsed + cost : u.movementPointsUsed
+			}));
+		}
+
+		const result: MoveResult = {
+			unitId: activeId,
+			from,
+			to,
+			cost,
+			moved,
+			difficultTerrainCheck: dtCheck
+		};
+		this.#emit({
+			kind: 'move_action',
+			turn: this.turn,
+			player: this.activePlayer,
+			result
+		});
+		return result;
 	}
 
 	// -- Firing --
@@ -329,13 +379,20 @@ export class GameStore {
 		const elim = applyEliminations(updated, postCasualtyLeaders);
 		this.units = elim.units;
 		this.leaders = elim.leaders;
-		return {
+		const fireResult: FireResult = {
 			...result,
 			leaderCasualty,
 			morale,
 			eliminatedUnitIds: elim.result.eliminatedUnitIds,
 			eliminatedLeaderIds: elim.result.eliminatedLeaderIds
 		};
+		this.#emit({
+			kind: 'fire_action',
+			turn: this.turn,
+			player: this.activePlayer,
+			result: fireResult
+		});
+		return fireResult;
 	}
 
 	// -- Charge --
@@ -484,8 +541,7 @@ export class GameStore {
 		this.units = elim.units;
 		this.leaders = elim.leaders;
 
-		this.#finishActivation();
-		return {
+		const chargeResult: ChargeResult = {
 			...result,
 			attackerLeaderCasualty,
 			defenderLeaderCasualty,
@@ -493,6 +549,14 @@ export class GameStore {
 			eliminatedUnitIds: elim.result.eliminatedUnitIds,
 			eliminatedLeaderIds: elim.result.eliminatedLeaderIds
 		};
+		this.#emit({
+			kind: 'charge_action',
+			turn: this.turn,
+			player: this.activePlayer,
+			result: chargeResult
+		});
+		this.#finishActivation();
+		return chargeResult;
 	}
 
 	// -- Activation lifecycle --
@@ -514,6 +578,9 @@ export class GameStore {
 			this.#finishActivation();
 		}
 
+		const prevTurn = this.turn;
+		const prevPlayer = this.activePlayer;
+
 		if (this.activePlayer === 0) {
 			this.activePlayer = 1;
 		} else {
@@ -521,6 +588,14 @@ export class GameStore {
 			this.turn = this.turn + 1;
 			this.#clearActivatedFlags();
 		}
+
+		this.#emit({
+			kind: 'player_turn_ended',
+			turn: prevTurn,
+			player: prevPlayer,
+			nextTurn: this.turn,
+			nextPlayer: this.activePlayer
+		});
 	}
 }
 
