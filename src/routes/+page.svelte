@@ -55,6 +55,17 @@
 </script>
 
 <div class="container">
+	<header class="top-bar">
+		<div class="meta">
+			<span class="meta-label">Turn</span>
+			<span class="meta-value">{store.turn}</span>
+			<span class="player-chip" data-player={store.activePlayer}
+				>{store.activePlayer === 0 ? 'Blue' : 'Red'}</span
+			>
+		</div>
+		<button class="end-turn" onclick={() => store.endPlayerTurn()}>End Turn</button>
+	</header>
+
 	<svg
 		viewBox={`${minX - padding} ${minY - padding} ${width + padding * 2} ${height + padding * 2}`}
 		preserveAspectRatio="xMidYMid meet"
@@ -85,42 +96,26 @@
 			/>
 		{/each}
 	</svg>
-	<footer class="action-bar">
-		<div class="meta">
-			<span class="meta-label">Turn</span>
-			<span class="meta-value">{store.turn}</span>
-			<span class="meta-divider"></span>
-			<span class="meta-label">Player</span>
-			<span class="player-chip" data-player={store.activePlayer}
-				>{store.activePlayer === 0 ? 'Blue' : 'Red'}</span
-			>
-		</div>
 
-		<div class="action-zone">
-			{#if sel && def}
-				<div class="unit-readout">
-					<span class="unit-label">{store.activeUnitId === sel.id ? 'Activating' : 'Selected'}</span
+	<footer class="bottom-bar">
+		{#if sel && def}
+			<div class="unit-readout">
+				<span class="unit-label">{store.activeUnitId === sel.id ? 'Activating' : 'Selected'}</span>
+				<span class="unit-name">{sel.type.toLowerCase().replace(/_/g, ' ')}</span>
+			</div>
+			<div class="actions">
+				<button class="action" disabled={!moveEnabled} onclick={() => store.beginAction('move')}
+					>Move</button
+				>
+				{#if def.firingRange > 0}
+					<button class="action" disabled={!fireEnabled} onclick={() => store.beginAction('fire')}
+						>Fire</button
 					>
-					<span class="unit-name">{sel.type.toLowerCase().replace(/_/g, ' ')}</span>
-				</div>
-				<div class="branches">
-					<button class="branch" disabled={!moveEnabled} onclick={() => store.beginAction('move')}
-						>Move</button
-					>
-					{#if def.firingRange > 0}
-						<button class="branch" disabled={!fireEnabled} onclick={() => store.beginAction('fire')}
-							>Fire</button
-						>
-					{/if}
-				</div>
-			{:else}
-				<span class="prompt">Click a unit to select</span>
-			{/if}
-		</div>
-
-		<div class="end-turn-zone">
-			<button class="end-turn" onclick={() => store.endPlayerTurn()}>End Turn</button>
-		</div>
+				{/if}
+			</div>
+		{:else}
+			<span class="prompt">Tap a unit to select</span>
+		{/if}
 	</footer>
 </div>
 
@@ -134,7 +129,8 @@
 		display: flex;
 		flex-direction: column;
 		width: 100vw;
-		height: 100vh;
+		height: 100vh; /* fallback for older browsers */
+		height: 100dvh; /* preferred: avoids iOS Safari URL-bar layout thrash */
 	}
 
 	svg {
@@ -142,26 +138,29 @@
 		display: block;
 		background-color: cadetblue;
 		min-height: 0; /* required so flex shrinks correctly */
+		touch-action: manipulation; /* drop the 300ms iOS tap delay */
 	}
 
-	.action-bar {
-		display: grid;
-		grid-template-columns: 1fr auto 1fr;
+	/* --- top bar (status + end turn) --- */
+	.top-bar {
+		display: flex;
 		align-items: center;
-		gap: 2rem;
-		padding: 0.75rem 1.5rem;
+		justify-content: space-between;
+		gap: 1rem;
+		padding: 0.625rem 1rem;
+		padding-top: calc(0.625rem + env(safe-area-inset-top));
 		background: #15181c;
 		color: #e8e1d1;
-		border-top: 1px solid #3a3530;
+		border-bottom: 1px solid #3a3530;
 		font-size: 0.8125rem;
+		min-height: 52px;
+		box-sizing: border-box;
 	}
 
-	/* --- meta (left) --- */
 	.meta {
 		display: flex;
 		align-items: center;
 		gap: 0.625rem;
-		justify-self: start;
 	}
 	.meta-label {
 		text-transform: uppercase;
@@ -174,12 +173,6 @@
 		font-variant-numeric: tabular-nums;
 		font-weight: 500;
 		color: #e8e1d1;
-	}
-	.meta-divider {
-		width: 1px;
-		height: 0.875rem;
-		background: #3a3530;
-		margin: 0 0.25rem;
 	}
 	.player-chip {
 		display: inline-flex;
@@ -200,18 +193,50 @@
 		color: #fff;
 	}
 
-	/* --- action zone (center) --- */
-	.action-zone {
+	.end-turn {
+		appearance: none;
+		background: #e8e1d1;
+		color: #15181c;
+		border: 1px solid #e8e1d1;
+		padding: 0.5rem 0.875rem;
+		font: inherit;
+		font-size: 0.75rem;
+		text-transform: uppercase;
+		letter-spacing: 0.1em;
+		font-weight: 600;
+		cursor: pointer;
+		border-radius: 2px;
+		min-height: 44px;
+		transition:
+			background 80ms ease,
+			color 80ms ease;
+	}
+	.end-turn:hover {
+		background: transparent;
+		color: #e8e1d1;
+	}
+
+	/* --- bottom bar (selected unit + actions) --- */
+	.bottom-bar {
 		display: flex;
 		align-items: center;
-		gap: 1.25rem;
-		justify-self: center;
+		gap: 0.75rem;
+		padding: 0.75rem 1rem;
+		padding-bottom: calc(0.75rem + env(safe-area-inset-bottom));
+		background: #15181c;
+		color: #e8e1d1;
+		border-top: 1px solid #3a3530;
+		min-height: 64px;
+		box-sizing: border-box;
 	}
+
 	.unit-readout {
 		display: flex;
 		flex-direction: column;
-		align-items: flex-end;
+		align-items: flex-start;
 		line-height: 1.1;
+		flex: 0 0 auto;
+		min-width: 0;
 	}
 	.unit-label {
 		text-transform: uppercase;
@@ -225,69 +250,57 @@
 		font-size: 0.875rem;
 		text-transform: capitalize;
 		color: #e8e1d1;
-	}
-	.prompt {
-		color: #8a8275;
-		font-style: italic;
-		font-size: 0.8125rem;
+		max-width: 14ch;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 
-	/* --- branch buttons (ghost outline) --- */
-	.branches {
+	.actions {
 		display: flex;
-		gap: 0.375rem;
+		gap: 0.5rem;
+		flex: 1;
+		justify-content: flex-end;
 	}
-	.branch {
+	.action {
 		appearance: none;
 		background: transparent;
 		color: #e8e1d1;
 		border: 1px solid #3a3530;
-		padding: 0.4375rem 0.875rem;
+		padding: 0 1rem;
 		font: inherit;
-		font-size: 0.75rem;
+		font-size: 0.8125rem;
 		text-transform: uppercase;
 		letter-spacing: 0.1em;
 		font-weight: 500;
 		cursor: pointer;
 		border-radius: 2px;
+		min-height: 48px;
+		flex: 1;
+		max-width: 7.5rem;
 		transition:
 			background 80ms ease,
 			border-color 80ms ease,
 			color 80ms ease;
 	}
-	.branch:hover:not(:disabled) {
+	.action:hover:not(:disabled) {
 		background: #e8e1d1;
 		color: #15181c;
 		border-color: #e8e1d1;
 	}
-	.branch:disabled {
+	.action:disabled {
 		opacity: 0.3;
 		cursor: not-allowed;
 	}
 
-	/* --- end turn (right) --- */
-	.end-turn-zone {
-		justify-self: end;
-	}
-	.end-turn {
-		appearance: none;
-		background: #e8e1d1;
-		color: #15181c;
-		border: 1px solid #e8e1d1;
-		padding: 0.4375rem 0.875rem;
-		font: inherit;
-		font-size: 0.75rem;
-		text-transform: uppercase;
-		letter-spacing: 0.1em;
-		font-weight: 600;
-		cursor: pointer;
-		border-radius: 2px;
-		transition:
-			background 80ms ease,
-			color 80ms ease;
-	}
-	.end-turn:hover {
-		background: transparent;
-		color: #e8e1d1;
+	.prompt {
+		color: #8a8275;
+		font-style: italic;
+		font-size: 0.8125rem;
+		/* Match the action-button row height so the bar doesn't reflow
+		   between the empty-selection and selected states. */
+		display: flex;
+		align-items: center;
+		min-height: 48px;
 	}
 </style>
