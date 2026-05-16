@@ -145,18 +145,14 @@ Facing was implemented at this milestone and later removed in the **facing refac
 
 ---
 
-### M11: Elimination & Retreat
+### ~~M11: Elimination & Retreat~~ COMPLETE
 
-Formalize unit removal and retreat finalization.
-
-- Unit eliminated when SP reaches 0 → removed from game
-- If eliminated unit had attached leader: leader removed with **no replacement** (rules §10)
-- Contrast with leader killed by casualty check (§8.3): **does** get replacement
-- Check victory conditions after elimination (M12)
-
-**Depends on:** M9 (retreat system), M10 (leader attachment)
-**Files:** `core/combat.ts` or new `core/elimination.ts`, `gameStore.svelte.ts`
-**Tests:** Elimination at 0 SP. Leader removal distinction. Victory check trigger.
+- Created `core/elimination.ts` with a pure `applyEliminations(units, leaders) → { units, leaders, result: EliminationResult }` per rules §10. Filters out units at `strengthPoints ≤ 0` and drops any leader whose `attachedToUnitId` is no longer present in the surviving set — **with no replacement** (distinct from the §8.3 casualty replacement handled by `resolveLeaderCasualty`). Defensive: also removes leaders attached to ghost ids. Pure and idempotent; iteration order preserved for deterministic test ordering
+- Both `fireAt` and `chargeAt` now call `applyEliminations` once, atomically, after the damage `units.map(...)`. `chargeAt`'s previous inline `.filter(u => u.strengthPoints > 0)` plus separate `survivingIds`-based leader orphan-cleanup was replaced with the helper. `fireAt` previously left eliminated targets at SP 0 in the array; that gap (which the morale-induced +1 SP can hit) is now closed
+- `FireResult` and `ChargeResult` gain `eliminatedUnitIds: string[]` and `eliminatedLeaderIds: string[]`, complementing the existing `leaderCasualty`/`morale` fields. Empty arrays in the common no-elimination case. All four `resolveCharge` branches and `resolveFireAction` populate `[]` by default; the store overwrites at the return site
+- The `Omit<ChargeResult, …>` base in `resolveCharge` was extended to also omit the two new fields so each branch must set them explicitly
+- M9/M10 tests that previously read SP at a dead target via `store.units.find(...)` were tightened to assert removal: three pre-existing tests ("clamps target SP at 0", "damage that eliminates → result.morale is null", "fire eliminating the target → no leader casualty/morale") now check `.find(...) === undefined` and (where applicable) that the attached leader is also gone — verifying §10's no-replacement rule on the fire path
+- 8 tests in `elimination.spec.ts` (no eliminations, single unit, unit+leader, leader on different live unit, multiple eliminations in input order, ghost-host defensive cleanup, immutability, idempotence). 6 new tests in `gameStore.spec.ts` (fire non-lethal empty arrays, fire morale-fail-eliminates, fire double-damage-eliminates, fire eliminates leader host triggers §10 cleanup, charge `defender_eliminated` surfaces leader id, charge `attacker_repulsed` at SP 1 eliminates attacker + leader without replacement)
 
 ---
 

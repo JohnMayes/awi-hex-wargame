@@ -26,6 +26,8 @@ export type ChargeResult = {
 	attackerLeaderCasualty: LeaderCasualtyResult | null;
 	defenderLeaderCasualty: LeaderCasualtyResult | null;
 	morale: MoraleResult | null;
+	eliminatedUnitIds: string[];
+	eliminatedLeaderIds: string[];
 };
 
 const CAVALRY_TYPES: ReadonlySet<UnitType> = new Set([
@@ -201,6 +203,8 @@ export function resolveCharge(
 		| 'attackerLeaderCasualty'
 		| 'defenderLeaderCasualty'
 		| 'morale'
+		| 'eliminatedUnitIds'
+		| 'eliminatedLeaderIds'
 	> = {
 		attackerId: attacker.id,
 		defenderId: defender.id,
@@ -218,7 +222,9 @@ export function resolveCharge(
 			attackerAdvances: false,
 			attackerLeaderCasualty: null,
 			defenderLeaderCasualty: null,
-			morale: null
+			morale: null,
+			eliminatedUnitIds: [],
+			eliminatedLeaderIds: []
 		};
 	}
 
@@ -236,7 +242,9 @@ export function resolveCharge(
 			attackerAdvances: defenderEliminated && !isCavalry(attacker.type),
 			attackerLeaderCasualty: null,
 			defenderLeaderCasualty: null,
-			morale: null
+			morale: null,
+			eliminatedUnitIds: [],
+			eliminatedLeaderIds: []
 		};
 	}
 
@@ -253,7 +261,9 @@ export function resolveCharge(
 			attackerAdvances: !isCavalry(attacker.type) || defenderEliminated,
 			attackerLeaderCasualty: null,
 			defenderLeaderCasualty: null,
-			morale: null
+			morale: null,
+			eliminatedUnitIds: [],
+			eliminatedLeaderIds: []
 		};
 	}
 
@@ -270,6 +280,8 @@ export function resolveCharge(
 		attackerAdvances: defenderEliminated && !isCavalry(attacker.type),
 		attackerLeaderCasualty: null,
 		defenderLeaderCasualty: null,
-		morale: null
+		morale: null,
+		eliminatedUnitIds: [],
+		eliminatedLeaderIds: []
 	};
 }

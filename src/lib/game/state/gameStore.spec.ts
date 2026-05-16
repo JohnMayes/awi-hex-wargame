@@ -737,7 +737,7 @@ describe('fireAt — outcomes (M7)', () => {
 		expect(firer.firedThisActivation).toBe(true);
 	});
 
-	it('clamps target SP at 0 (no negative SP)', () => {
+	it('eliminates target at 0 SP (M11: removed from units array)', () => {
 		expect.assertions(1);
 		const units = structuredClone(TEST_UNITS) as Unit[];
 		const lightInf = units.find((u) => u.id === 'blue-light-inf')!;
@@ -746,12 +746,11 @@ describe('fireAt — outcomes (M7)', () => {
 		lightHorse.strengthPoints = 1;
 		const store = new GameStore(units, TEST_MAP, structuredClone(TEST_LEADERS));
 		store.activateUnit('blue-light-inf');
-		// RNG [0, 0.1] → double-damage hit (would be -1 without clamp)
+		// RNG [0, 0.1] → double-damage hit drops the 1-SP target to 0 → eliminated
 		const seq = [0, 0.1];
 		let i = 0;
 		store.fireAt('red-light-horse', () => seq[i++]);
-		const after = store.units.find((u) => u.id === 'red-light-horse')!;
-		expect(after.strengthPoints).toBe(0);
+		expect(store.units.find((u) => u.id === 'red-light-horse')).toBeUndefined();
 	});
 });
 
@@ -1090,7 +1089,7 @@ describe('fireAt — morale integration (M9)', () => {
 		expect(after.coordinates).not.toEqual(before.coordinates);
 	});
 
-	it('damage that eliminates → result.morale is null, no extra hit', () => {
+	it('damage that eliminates → result.morale is null, no extra hit, target removed (M11)', () => {
 		expect.assertions(2);
 		const units = structuredClone(TEST_UNITS) as Unit[];
 		const lightInf = units.find((u) => u.id === 'blue-light-inf')!;
@@ -1099,11 +1098,10 @@ describe('fireAt — morale integration (M9)', () => {
 		lightHorse.strengthPoints = 2;
 		const store = new GameStore(units, TEST_MAP, structuredClone(TEST_LEADERS));
 		store.activateUnit('blue-light-inf');
-		// hit(0) + double(0.1): damage 2 → postHitSP = 0
+		// hit(0) + double(0.1): damage 2 → postHitSP = 0 → eliminated
 		const result = store.fireAt('red-light-horse', seqRngFactory([0, 0.1]));
-		const after = store.units.find((u) => u.id === 'red-light-horse')!;
 		expect(result?.morale).toBeNull();
-		expect(after.strengthPoints).toBe(0);
+		expect(store.units.find((u) => u.id === 'red-light-horse')).toBeUndefined();
 	});
 
 	it('no cascade: only 3 rng draws consumed for hit+morale-fail', () => {
@@ -1308,7 +1306,7 @@ describe('fireAt — leader casualty + outOfCommand (M10)', () => {
 	});
 
 	it('fire eliminating the target → no leader casualty, no morale, no extra rng draws', () => {
-		expect.assertions(3);
+		expect.assertions(4);
 		const units = structuredClone(TEST_UNITS) as Unit[];
 		const lightInf = units.find((u) => u.id === 'blue-light-inf')!;
 		lightInf.coordinates = { col: 4, row: 1 };
@@ -1321,8 +1319,9 @@ describe('fireAt — leader casualty + outOfCommand (M10)', () => {
 		const result = store.fireAt('red-horse', seqRngFactory([0, 0.1]));
 		expect(result?.leaderCasualty).toBeNull();
 		expect(result?.morale).toBeNull();
-		const after = store.units.find((u) => u.id === 'red-horse')!;
-		expect(after.strengthPoints).toBe(0);
+		// M11: target eliminated AND its attached leader removed without replacement.
+		expect(store.units.find((u) => u.id === 'red-horse')).toBeUndefined();
+		expect(store.leaders.find((l) => l.id === 'red-leader-1')).toBeUndefined();
 	});
 
 	it('out-of-command target propagates outOfCommand into morale modifiers', () => {
@@ -1395,5 +1394,112 @@ describe('chargeAt — leader casualty + orphan cleanup (M10)', () => {
 		const r = store.chargeAt('red-artillery', seqRngFactory([0, 0, 0.05]));
 		expect(r?.outcome).toBe('attacker_repulsed');
 		expect(r?.attackerLeaderCasualty?.casualty).toBe(true);
+	});
+});
+
+// --- M11: Elimination & Retreat ---
+
+describe('fireAt — elimination (M11)', () => {
+	it('non-lethal hit → empty eliminatedUnitIds / eliminatedLeaderIds', () => {
+		expect.assertions(2);
+		const store = makeLightInfFireStore();
+		store.activateUnit('blue-light-inf');
+		// hit + no-double + casualty-skip (no leader on target) + morale-pass
+		const result = store.fireAt('red-light-horse', seqRngFactory([0, 0.5, 0]));
+		expect(result?.eliminatedUnitIds).toEqual([]);
+		expect(result?.eliminatedLeaderIds).toEqual([]);
+	});
+
+	it('morale-fail brings target SP to 0 → target eliminated and surfaced', () => {
+		expect.assertions(3);
+		const units = structuredClone(TEST_UNITS) as Unit[];
+		const lightInf = units.find((u) => u.id === 'blue-light-inf')!;
+		lightInf.coordinates = { col: 4, row: 0 };
+		const lightHorse = units.find((u) => u.id === 'red-light-horse')!;
+		lightHorse.strengthPoints = 1;
+		const store = new GameStore(units, TEST_MAP, structuredClone(TEST_LEADERS));
+		store.activateUnit('blue-light-inf');
+		// hit(0) + no-double(0.5) drops SP to 0 → eliminated; morale and casualty skipped.
+		const result = store.fireAt('red-light-horse', seqRngFactory([0, 0.5]));
+		expect(result?.eliminatedUnitIds).toEqual(['red-light-horse']);
+		expect(result?.eliminatedLeaderIds).toEqual([]);
+		expect(store.units.find((u) => u.id === 'red-light-horse')).toBeUndefined();
+	});
+
+	it('lethal double-damage on low-SP target → eliminated, morale skipped, ids surfaced', () => {
+		expect.assertions(3);
+		const units = structuredClone(TEST_UNITS) as Unit[];
+		const lightInf = units.find((u) => u.id === 'blue-light-inf')!;
+		lightInf.coordinates = { col: 4, row: 0 };
+		const lightHorse = units.find((u) => u.id === 'red-light-horse')!;
+		lightHorse.strengthPoints = 2;
+		const store = new GameStore(units, TEST_MAP, structuredClone(TEST_LEADERS));
+		store.activateUnit('blue-light-inf');
+		// hit(0) + double(0.1) → 2 damage, SP 0 → eliminated
+		const result = store.fireAt('red-light-horse', seqRngFactory([0, 0.1]));
+		expect(result?.morale).toBeNull();
+		expect(result?.eliminatedUnitIds).toEqual(['red-light-horse']);
+		expect(store.units.find((u) => u.id === 'red-light-horse')).toBeUndefined();
+	});
+
+	it('eliminates a unit with attached leader → leader removed without replacement (§10)', () => {
+		expect.assertions(4);
+		const units = structuredClone(TEST_UNITS) as Unit[];
+		const lightInf = units.find((u) => u.id === 'blue-light-inf')!;
+		lightInf.coordinates = { col: 4, row: 1 };
+		const horse = units.find((u) => u.id === 'red-horse')!;
+		horse.coordinates = { col: 5, row: 1 };
+		horse.strengthPoints = 2;
+		const store = new GameStore(units, TEST_MAP, structuredClone(TEST_LEADERS));
+		store.activateUnit('blue-light-inf');
+		// hit(0) + double(0.1) → 2 damage, SP 0 → red-horse eliminated; §8.3 casualty skipped.
+		const result = store.fireAt('red-horse', seqRngFactory([0, 0.1]));
+		expect(result?.leaderCasualty).toBeNull(); // no §8.3 roll; §10 cleanup instead
+		expect(result?.eliminatedUnitIds).toEqual(['red-horse']);
+		expect(result?.eliminatedLeaderIds).toEqual(['red-leader-1']);
+		expect(store.leaders.find((l) => l.id === 'red-leader-1')).toBeUndefined();
+	});
+});
+
+describe('chargeAt — elimination (M11)', () => {
+	it('defender_eliminated outcome → eliminatedUnitIds includes defender; leader included if any', () => {
+		expect.assertions(2);
+		const units = structuredClone(TEST_UNITS) as Unit[];
+		const dragoons = units.find((u) => u.id === 'blue-dragoons')!;
+		dragoons.coordinates = { col: 4, row: 1 };
+		const horse = units.find((u) => u.id === 'red-horse')!;
+		horse.coordinates = { col: 5, row: 1 };
+		horse.strengthPoints = 1;
+		const store = new GameStore(units, TEST_MAP, structuredClone(TEST_LEADERS));
+		store.activateUnit('blue-dragoons');
+		// delta ≥ 3 → 2 hits eliminate the 1-SP defender; no casualty/morale rolls.
+		const r = store.chargeAt('red-horse', seqRngFactory([4 / 6, 0]));
+		expect(r?.eliminatedUnitIds).toEqual(['red-horse']);
+		expect(r?.eliminatedLeaderIds).toEqual(['red-leader-1']);
+	});
+
+	it('attacker_repulsed at SP 1 with attached leader → attacker + leader eliminated, no replacement', () => {
+		expect.assertions(4);
+		const units = structuredClone(TEST_UNITS) as Unit[];
+		const dragoons = units.find((u) => u.id === 'blue-dragoons')!;
+		dragoons.coordinates = { col: 4, row: 1 };
+		dragoons.strengthPoints = 1;
+		const art = units.find((u) => u.id === 'red-artillery')!;
+		art.coordinates = { col: 5, row: 1 };
+		const leaders: Leader[] = [
+			{ id: 'blue-leader-1', attachedToUnitId: 'blue-dragoons', commandRadius: 10 },
+			{ id: 'red-leader-1', attachedToUnitId: 'red-horse', commandRadius: 10 }
+		];
+		const store = new GameStore(units, TEST_MAP, leaders);
+		store.activateUnit('blue-dragoons');
+		// delta=0 → attacker_repulsed; attacker takes 1 SP (already at 1) → eliminated.
+		// rng: attackerRoll(0 → 1), defenderRoll(0 → 1) → delta = (1+1) - (1+4) < 0 → repulsed.
+		// No casualty roll on attacker (post-hit SP = 0 → skipped by gameStore guard).
+		const r = store.chargeAt('red-artillery', seqRngFactory([0, 0]));
+		expect(r?.outcome).toBe('attacker_repulsed');
+		expect(r?.eliminatedUnitIds).toEqual(['blue-dragoons']);
+		expect(r?.eliminatedLeaderIds).toEqual(['blue-leader-1']);
+		// §10 leader cleanup: no replacement.
+		expect(store.leaders.find((l) => l.id === 'blue-leader-1')).toBeUndefined();
 	});
 });

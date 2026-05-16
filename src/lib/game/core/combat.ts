@@ -18,6 +18,8 @@ export type FireResult = {
 	finalHitChance: number;
 	leaderCasualty: LeaderCasualtyResult | null;
 	morale: MoraleResult | null;
+	eliminatedUnitIds: string[];
+	eliminatedLeaderIds: string[];
 };
 
 const ARTILLERY_LONG_RANGE_PENALTY = -0.15;
@@ -98,6 +100,8 @@ export function resolveFireAction(
 		longRangeModifier,
 		finalHitChance,
 		leaderCasualty: null,
-		morale: null
+		morale: null,
+		eliminatedUnitIds: [],
+		eliminatedLeaderIds: []
 	};
 }

@@ -18,6 +18,7 @@ import {
 	type Leader,
 	type LeaderCasualtyResult
 } from '../core/command';
+import { applyEliminations } from '../core/elimination';
 import { checkMorale, type MoraleResult } from '../core/morale';
 import { ActionType, ActivationStep, type Player, type Unit } from '../core/types';
 import { getUnitDefinition } from '../core/unitDefinitions';
@@ -314,7 +315,7 @@ export class GameStore {
 		const totalDamage = result.damage + (morale && !morale.passed ? morale.additionalDamage : 0);
 		const moraleRetreat = morale && !morale.passed ? morale.retreatTo : null;
 
-		this.units = this.units.map((u) => {
+		const updated = this.units.map((u) => {
 			if (u.id === activeId) return { ...u, firedThisActivation: true };
 			if (u.id === targetId && totalDamage > 0) {
 				return {
@@ -325,8 +326,16 @@ export class GameStore {
 			}
 			return u;
 		});
-		this.leaders = postCasualtyLeaders;
-		return { ...result, leaderCasualty, morale };
+		const elim = applyEliminations(updated, postCasualtyLeaders);
+		this.units = elim.units;
+		this.leaders = elim.leaders;
+		return {
+			...result,
+			leaderCasualty,
+			morale,
+			eliminatedUnitIds: elim.result.eliminatedUnitIds,
+			eliminatedLeaderIds: elim.result.eliminatedLeaderIds
+		};
 	}
 
 	// -- Charge --
@@ -451,33 +460,39 @@ export class GameStore {
 		const defenderFinalCoords: OffsetCoordinates =
 			morale && !morale.passed && morale.retreatTo ? morale.retreatTo : defenderPostChargeCoords;
 
-		this.units = this.units
-			.map((u) => {
-				if (u.id === attackerId) {
-					return {
-						...u,
-						strengthPoints: Math.max(0, u.strengthPoints - result.attackerDamage),
-						coordinates: attackerNewCoords,
-						movementPointsUsed: def.movementAllowance
-					};
-				}
-				if (u.id === defenderId) {
-					return {
-						...u,
-						strengthPoints: Math.max(0, u.strengthPoints - defenderTotalDamage),
-						coordinates: defenderFinalCoords
-					};
-				}
-				return u;
-			})
-			.filter((u) => u.strengthPoints > 0);
+		const updated = this.units.map((u) => {
+			if (u.id === attackerId) {
+				return {
+					...u,
+					strengthPoints: Math.max(0, u.strengthPoints - result.attackerDamage),
+					coordinates: attackerNewCoords,
+					movementPointsUsed: def.movementAllowance
+				};
+			}
+			if (u.id === defenderId) {
+				return {
+					...u,
+					strengthPoints: Math.max(0, u.strengthPoints - defenderTotalDamage),
+					coordinates: defenderFinalCoords
+				};
+			}
+			return u;
+		});
 
-		// Drop any leader whose host was just eliminated (no replacement per §10).
-		const survivingIds = new Set(this.units.map((u) => u.id));
-		this.leaders = leadersAfterCasualty.filter((l) => survivingIds.has(l.attachedToUnitId));
+		// M11: §10 elimination — remove units at 0 SP and orphaned leaders (no replacement).
+		const elim = applyEliminations(updated, leadersAfterCasualty);
+		this.units = elim.units;
+		this.leaders = elim.leaders;
 
 		this.#finishActivation();
-		return { ...result, attackerLeaderCasualty, defenderLeaderCasualty, morale };
+		return {
+			...result,
+			attackerLeaderCasualty,
+			defenderLeaderCasualty,
+			morale,
+			eliminatedUnitIds: elim.result.eliminatedUnitIds,
+			eliminatedLeaderIds: elim.result.eliminatedLeaderIds
+		};
 	}
 
 	// -- Activation lifecycle --
