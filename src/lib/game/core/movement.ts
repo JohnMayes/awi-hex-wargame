@@ -20,9 +20,15 @@ const offsetKey = (col: number, row: number) => `${col},${row}`;
  * the current grid and unit positions. Excludes the unit's current hex.
  *
  * Pathfinding is a BFS in cube space that respects: movement allowance,
- * terrain entry, stacking, Light Infantry pass-through, adjacency-to-enemy
- * exclusion, and road bonus (+1 when an all-road path is possible from a
- * road start).
+ * terrain entry, stacking, Light Infantry pass-through, and road bonus
+ * (+1 when an all-road path is possible from a road start). Any unit may
+ * voluntarily end its move adjacent to an enemy under normal movement —
+ * the old "non-chargers may not move adjacent" rule was retired with the
+ * same-hex charge model.
+ *
+ * Charges (entering an enemy's hex) are NOT covered here — see
+ * `core/charge.ts` and `gameStore.chargeAt`. Road-bonus movement (§2) still
+ * forbids ending adjacent to an enemy.
  */
 export function getValidMoveTargets(
 	unit: Unit,
@@ -65,7 +71,6 @@ export function getValidMoveTargets(
 		if (coordsEqual(hex, unit.coordinates)) return;
 		const key = offsetKey(hex.col, hex.row);
 		if (unitByKey.has(key)) return; // never end occupied (Light Infantry may pass, not end)
-		if (enemyAdjKeys.has(key)) return; // non-charging: no endpoint adjacent to enemy
 		const prev = results.get(key);
 		if (!prev || prev.cost > cost) {
 			results.set(key, { coordinates: { col: hex.col, row: hex.row }, cost, usesRoad });

@@ -35,6 +35,7 @@
 		new Set(store.validMoveTargets.map((t) => `${t.coordinates.col},${t.coordinates.row}`))
 	);
 	const fireTargetIds = $derived(new Set(store.validFireTargets.map((u) => u.id)));
+	const chargeTargetIds = $derived(new Set(store.validChargeTargets.map((u) => u.id)));
 
 	const allPoints = [...store.grid!].flatMap((hex) => hex.corners);
 
@@ -70,11 +71,14 @@
 				{unit}
 				pos={pos!}
 				fireTarget={fireTargetIds.has(unit.id)}
+				chargeTarget={chargeTargetIds.has(unit.id)}
 				onClick={() => {
 					if (unit.player === store.activePlayer) {
 						store.selectUnit(unit);
 					} else if (fireTargetIds.has(unit.id)) {
 						store.fireAt(unit.id);
+					} else if (chargeTargetIds.has(unit.id)) {
+						store.chargeAt(unit.id);
 					}
 				}}
 			/>

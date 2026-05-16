@@ -233,11 +233,12 @@ describe('getValidMoveTargets — terrain entry', () => {
 });
 
 describe('getValidMoveTargets — stacking', () => {
-	it('Adjacent enemy hex is not a valid target', () => {
+	it('mover surrounded by enemies on all 6 neighbors has no legal endpoints', () => {
 		expect.assertions(1);
 		const grid = buildGrid(openRect(5, 5));
 		const mover = unit('m', UnitType.LIGHT_INFANTRY, 0, { col: 2, row: 2 });
-		// Put an enemy on every neighbor → all excluded (both by occupation and adjacency)
+		// Every neighbor is occupied by an enemy → excluded by stacking. LI has
+		// MP=1 so ring-2 hexes are unreachable.
 		const enemies: Unit[] = [];
 		for (let d = 0; d < 6; d++) {
 			const n = neighborOffset(grid, mover.coordinates, d);
@@ -316,33 +317,30 @@ describe('getValidMoveTargets — stacking', () => {
 });
 
 describe('getValidMoveTargets — adjacency to enemy', () => {
-	it('Dragoons cannot end adjacent to an enemy', () => {
-		expect.assertions(1);
-		const grid = buildGrid(openRect(7, 7));
-		const mover = unit('m', UnitType.DRAGOONS, 0, { col: 3, row: 3 });
-		// Place enemy such that one ring-2 target sits adjacent to it.
-		// Take ring-2 hex via direction N twice from (3,3). Enemy on one of that hex's neighbors.
-		const startHex = grid.getHex(mover.coordinates)!;
-		const cubeMap = buildCubeToOffset(grid);
-		const [dq, dr] = directions[0];
-		const ring2 = cubeMap.get(`${startHex.q + 2 * dq},${startHex.r + 2 * dr}`);
-		if (!ring2) {
-			expect(true).toBe(true);
-			return;
+	it('every unit type may voluntarily end its move adjacent to an enemy', () => {
+		expect.assertions(6);
+		const allTypes = [
+			UnitType.LINE_INFANTRY,
+			UnitType.LIGHT_INFANTRY,
+			UnitType.DRAGOONS,
+			UnitType.LIGHT_HORSE,
+			UnitType.HORSE,
+			UnitType.ARTILLERY
+		];
+		for (const t of allTypes) {
+			const grid = buildGrid(openRect(5, 5));
+			const mover = unit('m', t, 0, { col: 2, row: 2 });
+			// Enemy at N neighbor; mover's NE neighbor (3,1 in honeycomb-grid topLeft)
+			// is adjacent to both mover and enemy.
+			const enemyCoord = neighborOffset(grid, mover.coordinates, 0)!;
+			const enemy = unit('e', UnitType.LINE_INFANTRY, 1, enemyCoord);
+			const adjacentToEnemyHex = neighborOffset(grid, mover.coordinates, 1)!;
+			const targets = coordsOf(getValidMoveTargets(mover, grid, [mover, enemy]));
+			expect(includesCoord(targets, adjacentToEnemyHex)).toBe(true);
 		}
-		const ring2Hex = grid.getHex(ring2)!;
-		const enemyCube = { q: ring2Hex.q + directions[1][0], r: ring2Hex.r + directions[1][1] };
-		const enemyCoord = cubeMap.get(`${enemyCube.q},${enemyCube.r}`);
-		if (!enemyCoord) {
-			expect(true).toBe(true);
-			return;
-		}
-		const enemy = unit('e', UnitType.LINE_INFANTRY, 1, enemyCoord);
-		const targets = coordsOf(getValidMoveTargets(mover, grid, [mover, enemy]));
-		expect(includesCoord(targets, ring2)).toBe(false);
 	});
 
-	it('Horse (charge-capable) is also excluded from enemy-adjacent hexes in M5', () => {
+	it("the enemy's own hex is never a valid move target (occupied)", () => {
 		expect.assertions(1);
 		const grid = buildGrid(openRect(5, 5));
 		const mover = unit('m', UnitType.HORSE, 0, { col: 2, row: 2 });

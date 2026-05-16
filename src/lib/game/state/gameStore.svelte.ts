@@ -8,6 +8,7 @@ import {
 	type MoveTarget
 } from '../core/movement';
 import { getValidFireTargets, resolveFireAction, type FireResult } from '../core/combat';
+import { getValidChargeTargets, resolveCharge, type ChargeResult } from '../core/charge';
 import { ActionType, ActivationStep, type Player, type Unit } from '../core/types';
 import { getUnitDefinition } from '../core/unitDefinitions';
 
@@ -49,6 +50,15 @@ export class GameStore {
 			if (active.movementPointsUsed > 0) return [];
 		}
 		return getValidFireTargets(active, this.grid, this.units);
+	});
+	validChargeTargets: Unit[] = $derived.by(() => {
+		if (this.activeUnitId === null) return [];
+		if (this.activationStep !== ActivationStep.ACTION) return [];
+		if (this.actionMode === 'fire') return [];
+		if (!this.grid) return [];
+		const active = this.units.find((u) => u.id === this.activeUnitId);
+		if (!active) return [];
+		return getValidChargeTargets(active, this.grid, this.units);
 	});
 
 	constructor(units: Unit[], map: MapDefinition) {
@@ -237,6 +247,69 @@ export class GameStore {
 			}
 			return u;
 		});
+		return result;
+	}
+
+	// -- Charge --
+
+	chargeAt(targetId: string, rng: () => number = Math.random): ChargeResult | null {
+		if (this.activeUnitId === null) return null;
+		if (this.activationStep !== ActivationStep.ACTION) return null;
+		if (this.selectedUnit?.id !== this.activeUnitId) return null;
+		if (this.selectedUnit.player !== this.activePlayer) return null;
+		if (!this.grid) return null;
+
+		const target = this.validChargeTargets.find((u) => u.id === targetId);
+		if (!target) return null;
+
+		const attacker = this.selectedUnit;
+		const attackerOrigin = attacker.coordinates;
+		const def = getUnitDefinition(attacker.type);
+
+		// Difficult-terrain check on leaving the attacker's hex, parity with moveUnit.
+		if (requiresDifficultTerrainCheck(attacker, this.grid)) {
+			const passed = rollDifficultTerrainCheck(rng);
+			if (!passed) {
+				const activeId = this.activeUnitId;
+				this.units = this.units.map((u) =>
+					u.id === activeId ? { ...u, movementPointsUsed: def.movementAllowance } : u
+				);
+				this.#finishActivation();
+				return null;
+			}
+		}
+
+		const result = resolveCharge(attacker, target, attackerOrigin, this.grid, this.units, rng);
+
+		const attackerId = attacker.id;
+		const defenderId = target.id;
+		const attackerNewCoords: OffsetCoordinates = result.attackerAdvances
+			? target.coordinates
+			: attackerOrigin;
+		const defenderNewCoords: OffsetCoordinates = result.defenderRetreatTo ?? target.coordinates;
+
+		this.units = this.units
+			.map((u) => {
+				if (u.id === attackerId) {
+					return {
+						...u,
+						strengthPoints: Math.max(0, u.strengthPoints - result.attackerDamage),
+						coordinates: attackerNewCoords,
+						movementPointsUsed: def.movementAllowance
+					};
+				}
+				if (u.id === defenderId) {
+					return {
+						...u,
+						strengthPoints: Math.max(0, u.strengthPoints - result.defenderDamage),
+						coordinates: defenderNewCoords
+					};
+				}
+				return u;
+			})
+			.filter((u) => u.strengthPoints > 0);
+
+		this.#finishActivation();
 		return result;
 	}
 

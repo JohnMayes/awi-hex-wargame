@@ -180,14 +180,13 @@ A successful hit inflicts **1 SP of damage** to the target. An exceptionally eff
 
 ### 6.3 Charge
 
-A unit eligible to charge may use its move action to enter a hex adjacent to an enemy unit, initiating close combat. This represents a cavalry charge, an infantry bayonet assault, or dragoons riding into contact.
+A unit eligible to charge spends its movement to enter the **defender's hex**, initiating close combat. This represents a cavalry charge, an infantry bayonet assault, or dragoons riding into contact. The charge cost in movement points equals the path distance to the defender (e.g., a 2-MP cavalry unit may charge a defender up to 2 hexes away if the path is legal). The stacking rule is suspended only during charge resolution — exactly one unit remains in the contested hex once the charge resolves.
 
 **Restrictions on charging**:
 
 - Only units marked "May Charge" in their unit type definition may charge.
 - Line Infantry may charge, but **not against Cavalry** units (any cavalry type). Infantry would only press home a bayonet charge against a wavering foe, not against horsemen.
 - A unit may not charge into a hex it could not normally enter by movement (prohibited terrain). It may charge a defender in a difficult terrain hex.
-- Units that are **not eligible to charge may not voluntarily move adjacent to an enemy unit**.
 
 **Charge Resolution** is handled as an opposed contest:
 
@@ -200,13 +199,15 @@ The defender's score is calculated from a base value plus the defender's current
 
 The system compares the two scores and applies results:
 
-| Result                               | Outcome                                                                              |
-| ------------------------------------ | ------------------------------------------------------------------------------------ |
-| Attacker's score <= Defender's score | Attacker takes 1 hit and retreats 1 hex directly away from the defender.             |
-| Attacker exceeds Defender by 1-2     | Defender takes 1 hit and retreats 1 hex (may hold position if in difficult terrain). |
-| Attacker exceeds Defender by 3+      | Defender takes 2 hits and must retreat 1 hex (even from difficult terrain).          |
+| Result                               | Outcome                                                                                |
+| ------------------------------------ | -------------------------------------------------------------------------------------- |
+| Attacker's score <= Defender's score | Attacker takes 1 hit and returns to its starting hex. Defender holds.                  |
+| Attacker exceeds Defender by 1-2     | Defender takes 1 hit and retreats 1 hex (auto-holds in place if in difficult terrain). |
+| Attacker exceeds Defender by 3+      | Defender takes 2 hits and must retreat 1 hex (even from difficult terrain).            |
 
-After a charge is resolved, the attacking unit ends its activation. Cavalry that fail to destroy their target always retreat after combat, reflecting the brief and violent nature of Horse and Musket era charges.
+**Spatial resolution**: when the defender retreats, it moves to the legal hex most aligned with the push direction (away from the attacker's starting hex). If no legal retreat hex exists (all 6 neighbors off-map, impassable, or occupied), the defender takes one additional hit instead of moving; if this reduces the defender to 0 SP, it is eliminated.
+
+After a charge is resolved, the attacking unit ends its activation. **Cavalry** (Dragoons, Light Horse, Horse) that fail to _destroy_ their target always return to their starting hex regardless of contest outcome, reflecting the brief and violent nature of Horse and Musket era charges — only on defender elimination does cavalry advance into the vacated hex. Line Infantry advances into the defender's hex on any winning charge.
 
 ---
 

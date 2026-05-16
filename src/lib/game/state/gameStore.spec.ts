@@ -850,6 +850,186 @@ describe('endActivation — clears firedThisActivation (M7)', () => {
 	});
 });
 
+// --- M8: Charge combat ---
+
+// Place blue-line-inf at (3,1) and red-light-horse at (4,1) — adjacent OPEN
+// hexes for clean charge resolution.
+const makeChargeStore = () => {
+	const units = structuredClone(TEST_UNITS) as Unit[];
+	const lineInf = units.find((u) => u.id === 'blue-line-inf')!;
+	lineInf.coordinates = { col: 3, row: 1 };
+	const lightHorse = units.find((u) => u.id === 'red-light-horse')!;
+	lightHorse.coordinates = { col: 4, row: 1 };
+	return new GameStore(units, TEST_MAP);
+};
+
+describe('validChargeTargets — gating (M8)', () => {
+	it('is empty in AWAITING_ACTIVATION', () => {
+		expect.assertions(1);
+		const store = makeChargeStore();
+		expect(store.validChargeTargets).toHaveLength(0);
+	});
+
+	it('is non-empty for charge-capable adjacent enemy', () => {
+		expect.assertions(1);
+		const units = structuredClone(TEST_UNITS) as Unit[];
+		const li = units.find((u) => u.id === 'blue-line-inf')!;
+		li.coordinates = { col: 3, row: 1 };
+		const art = units.find((u) => u.id === 'red-artillery')!;
+		art.coordinates = { col: 4, row: 1 };
+		const store = new GameStore(units, TEST_MAP);
+		store.activateUnit('blue-line-inf');
+		expect(store.validChargeTargets.map((u) => u.id)).toContain('red-artillery');
+	});
+
+	it('is empty for Light Infantry (non-charger)', () => {
+		expect.assertions(1);
+		const units = structuredClone(TEST_UNITS) as Unit[];
+		const li = units.find((u) => u.id === 'blue-light-inf')!;
+		li.coordinates = { col: 3, row: 1 };
+		const lh = units.find((u) => u.id === 'red-light-horse')!;
+		lh.coordinates = { col: 4, row: 1 };
+		const store = new GameStore(units, TEST_MAP);
+		store.activateUnit('blue-light-inf');
+		expect(store.validChargeTargets).toEqual([]);
+	});
+
+	it('is empty when actionMode is fire', () => {
+		expect.assertions(1);
+		const store = makeChargeStore();
+		begin(store, 'blue-line-inf', 'fire');
+		expect(store.validChargeTargets).toEqual([]);
+	});
+
+	it('excludes Cavalry defenders for Line Infantry charger (rules §3.1)', () => {
+		expect.assertions(1);
+		const store = makeChargeStore();
+		store.activateUnit('blue-line-inf');
+		// red-light-horse is Cavalry — Line Infantry cannot charge it
+		expect(store.validChargeTargets.map((u) => u.id)).not.toContain('red-light-horse');
+	});
+});
+
+describe('chargeAt — gating (M8)', () => {
+	it('rejects when target is not in validChargeTargets', () => {
+		expect.assertions(1);
+		const store = makeChargeStore();
+		store.activateUnit('blue-line-inf');
+		// red-light-horse is Cavalry; Line Infantry cannot charge it
+		const r = store.chargeAt('red-light-horse', () => 0);
+		expect(r).toBeNull();
+	});
+
+	it('rejects when not in ACTION step', () => {
+		expect.assertions(1);
+		const store = makeChargeStore();
+		const r = store.chargeAt('red-light-horse', () => 0);
+		expect(r).toBeNull();
+	});
+});
+
+describe('chargeAt — outcomes (M8)', () => {
+	// Setup: place blue-dragoons at (3,1) adjacent to red-artillery at (4,1)
+	// (Artillery is a chargeable defender, not Cavalry-restricted).
+	const makeStoreAttacksArt = () => {
+		const units = structuredClone(TEST_UNITS) as Unit[];
+		const dragoons = units.find((u) => u.id === 'blue-dragoons')!;
+		dragoons.coordinates = { col: 3, row: 1 };
+		const art = units.find((u) => u.id === 'red-artillery')!;
+		art.coordinates = { col: 4, row: 1 };
+		return new GameStore(units, TEST_MAP);
+	};
+
+	it('Dragoons (cavalry) bounces to origin on a winning non-eliminating charge', () => {
+		expect.assertions(3);
+		const store = makeStoreAttacksArt();
+		store.activateUnit('blue-dragoons');
+		// Force delta = 1: rng [0.2, 0] → attacker=2+4=6, defender=1+4=5, delta=1
+		const r = store.chargeAt('red-artillery', seqRngFactory([0.2, 0]));
+		expect(r?.outcome).toBe('defender_retreats');
+		const dragoons = store.units.find((u) => u.id === 'blue-dragoons')!;
+		expect(dragoons.coordinates).toEqual({ col: 3, row: 1 }); // bounced back
+		const art = store.units.find((u) => u.id === 'red-artillery')!;
+		expect(art.coordinates).not.toEqual({ col: 4, row: 1 }); // retreated
+	});
+
+	it('Dragoons advances when defender is eliminated', () => {
+		expect.assertions(2);
+		const store = makeStoreAttacksArt();
+		const art = store.units.find((u) => u.id === 'red-artillery')!;
+		// Pre-damage Artillery to 1 SP so a 2-hit result eliminates it
+		store.units = store.units.map((u) =>
+			u.id === 'red-artillery' ? { ...u, strengthPoints: 1 } : u
+		);
+		void art;
+		store.activateUnit('blue-dragoons');
+		// delta >= 3: attacker roll 5 (rng 4/6), defender roll 1 → (5+4) - (1+1) = 7
+		const r = store.chargeAt('red-artillery', seqRngFactory([4 / 6, 0]));
+		expect(r?.outcome).toBe('defender_eliminated');
+		const dragoons = store.units.find((u) => u.id === 'blue-dragoons')!;
+		expect(dragoons.coordinates).toEqual({ col: 4, row: 1 }); // advanced
+	});
+
+	it('eliminated defender is removed from units array', () => {
+		expect.assertions(1);
+		const store = makeStoreAttacksArt();
+		store.units = store.units.map((u) =>
+			u.id === 'red-artillery' ? { ...u, strengthPoints: 1 } : u
+		);
+		store.activateUnit('blue-dragoons');
+		store.chargeAt('red-artillery', seqRngFactory([4 / 6, 0]));
+		expect(store.units.find((u) => u.id === 'red-artillery')).toBeUndefined();
+	});
+
+	it('failed charge bounces attacker back to origin with 1 hit', () => {
+		expect.assertions(3);
+		const store = makeStoreAttacksArt();
+		store.activateUnit('blue-dragoons');
+		const before = store.units.find((u) => u.id === 'blue-dragoons')!.strengthPoints;
+		// delta=0: both roll 1 → equal scores (4+4 vs 1+4 = … wait Dragoons charge bonus is 0)
+		// attacker score = 1+4+0 = 5, defender (Artillery SP=4) score = 1+4 = 5, delta=0 → repulse
+		const r = store.chargeAt('red-artillery', seqRngFactory([0, 0]));
+		expect(r?.outcome).toBe('attacker_repulsed');
+		const dragoons = store.units.find((u) => u.id === 'blue-dragoons')!;
+		expect(dragoons.coordinates).toEqual({ col: 3, row: 1 });
+		expect(dragoons.strengthPoints).toBe(before - 1);
+	});
+
+	it('chargeAt ends the activation', () => {
+		expect.assertions(3);
+		const store = makeStoreAttacksArt();
+		store.activateUnit('blue-dragoons');
+		store.chargeAt('red-artillery', seqRngFactory([0, 0]));
+		expect(store.activationStep).toBe(ActivationStep.AWAITING_ACTIVATION);
+		expect(store.activeUnitId).toBeNull();
+		const dragoons = store.units.find((u) => u.id === 'blue-dragoons')!;
+		expect(dragoons.activated).toBe(true);
+	});
+});
+
+describe('chargeAt — Line Infantry advances on win (M8)', () => {
+	it('Line Infantry charging Artillery advances on a winning charge', () => {
+		expect.assertions(2);
+		const units = structuredClone(TEST_UNITS) as Unit[];
+		const li = units.find((u) => u.id === 'blue-line-inf')!;
+		li.coordinates = { col: 3, row: 1 };
+		const art = units.find((u) => u.id === 'red-artillery')!;
+		art.coordinates = { col: 4, row: 1 };
+		const store = new GameStore(units, TEST_MAP);
+		store.activateUnit('blue-line-inf');
+		// delta=1 → defender_retreats; Line Infantry is non-cavalry → advances
+		const r = store.chargeAt('red-artillery', seqRngFactory([0.2, 0]));
+		expect(r?.outcome).toBe('defender_retreats');
+		const lineInf = store.units.find((u) => u.id === 'blue-line-inf')!;
+		expect(lineInf.coordinates).toEqual({ col: 4, row: 1 });
+	});
+});
+
+function seqRngFactory(values: number[]) {
+	let i = 0;
+	return () => values[i++];
+}
+
 describe('player coverage sanity', () => {
 	it('has three units for player 0', () => {
 		expect.assertions(1);

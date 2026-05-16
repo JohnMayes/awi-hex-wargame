@@ -6,9 +6,10 @@
 		pos: { x: number; y: number };
 		onClick: () => void;
 		fireTarget?: boolean;
+		chargeTarget?: boolean;
 	};
 
-	let { unit, pos, onClick, fireTarget = false }: Props = $props();
+	let { unit, pos, onClick, fireTarget = false, chargeTarget = false }: Props = $props();
 
 	const SIZE = 80;
 	const HALF = SIZE / 2;
@@ -29,6 +30,17 @@
 			cy="0"
 			fill="none"
 			stroke="#cc2222"
+			stroke-width="3"
+			pointer-events="none"
+		/>
+	{/if}
+	{#if chargeTarget}
+		<circle
+			r={SIZE * 0.78}
+			cx="0"
+			cy="0"
+			fill="none"
+			stroke="#e87722"
 			stroke-width="3"
 			pointer-events="none"
 		/>

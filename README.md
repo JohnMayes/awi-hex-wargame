@@ -105,46 +105,35 @@ Facing was implemented at this milestone and later removed in the **facing refac
 
 ---
 
-### M8: Charge Combat
+### ~~M8: Charge Combat (Same-Hex Resolution)~~ COMPLETE
 
-Implement charge action and opposed resolution per rules §6.3.
-
-**Add to `core/combat.ts`:**
-
-- `canCharge(unit, target)` → boolean (checks mayCharge, restrictions, terrain)
-- Line Infantry cannot charge Cavalry types
-- `resolveCharge(attacker, defender, grid)` → `ChargeResult`
-- Attacker score: d6 + attacker SP + modifiers (Horse +1, defender difficult terrain −1)
-- Defender score: d6 + defender SP
-- Results table: attacker ≤ defender → attacker 1 hit + retreat; exceed by 1–2 → defender 1 hit + retreat; exceed by 3+ → defender 2 hits + must retreat
-- Cavalry always retreat after combat if defender not eliminated
-
-**Depends on:** M3 (terrain), M5 (charge as movement)
-**Files:** `core/combat.ts`, `gameStore.svelte.ts`
-**Tests:** Opposed contest with controlled RNG. All modifier combos. Retreat direction. Charge restriction enforcement.
+- Created `core/charge.ts` with `canCharge(attacker, defender)`, `getValidChargeTargets(attacker, grid, units)`, and `resolveCharge(attacker, defender, attackerOrigin, grid, units, rng?)` returning a transparent `ChargeResult` (scores, damage, outcome, retreat coords, advance flag)
+- Same-hex spatial model: the attacker enters the defender's hex to resolve combat. On a winning charge the attacker advances into the (now-empty) defender hex; on a losing charge the attacker bounces back to its starting hex. Stacking is preserved everywhere except inside `chargeAt`, which applies the post-resolution state atomically — no external observer sees the transient overlap
+- MP-based charge range: BFS in cube space finds the minimum-cost path to the defender, treating the defender's hex as enterable only as the final step. Terrain entry, friendly stacking, and `firedThisActivation` gates are honored
+- Outcome table (per rules §6.3, transposed onto same-hex): `attacker_repulsed` (delta ≤ 0: 1 hit, attacker bounces, defender unchanged); `defender_retreats` (delta 1–2: 1 hit, defender retreats); `defender_holds` (delta 1–2 _and_ defender on difficult terrain → auto-hold per rules; OR no legal retreat hex → extra hit converts mandatory retreat to a hit); `defender_eliminated` (defender SP ≤ 0 after damage). Delta ≥ 3 → 2 hits + mandatory retreat (auto-hold ignored)
+- Cavalry-retreats-after-combat (rules §6.3): Dragoons, Light Horse, and Horse return to origin even on a winning non-eliminating charge. Line Infantry advances on any defender displacement
+- Pulled `core/retreat.ts` forward from M9 (was M9-scoped): `getRetreatHex(defender, attackerOrigin, grid, units)` picks the legal neighbor most aligned with the push vector via cube-coordinate dot product, ties broken by lowest direction index for determinism. Retreat is forced movement — candidates adjacent to other enemies are still legal endpoints
+- Charge UI folds into `'move'` action mode (no new action mode). `+page.svelte` adds a `chargeTargetIds` derived; the enemy-counter click handler branches `selectUnit → fireAt → chargeAt` based on which target set the unit is in. `UnitCounter.svelte` gains a `chargeTarget` prop rendering an orange ring at a distinct radius from the red fire-target ring so the two never visually collide (in practice only one set is non-empty per mode)
+- `chargeAt` in `gameStore.svelte.ts` validates against `validChargeTargets`, runs the difficult-terrain check on leaving the attacker's hex (same as `moveUnit`), calls `resolveCharge`, applies SP damage and coordinate moves atomically, filters eliminated units out, and finishes the activation regardless of outcome
+- 13 tests in `retreat.spec.ts` (direction selection per attacker position, blocking by friendly/enemy/terrain/off-map, tie-breaking); 34 tests in `charge.spec.ts` (eligibility per unit-type matrix, reachability via BFS, terrain entry, all outcome branches, Horse +1, difficult-terrain modifier and auto-hold, no-retreat extra-hits conversion); 12 new tests in `gameStore.spec.ts` covering charge gating per action mode, advance/bounce coordinate transitions, defender elimination removing the unit, attacker SP damage, and activation lifecycle reset
 
 ---
 
 ### M9: Morale
 
-Implement morale checks triggered when a unit takes hits, per rules §9.
+Implement morale checks triggered when a unit takes hits, per rules §9. Retreat selection (`core/retreat.ts`) already shipped with M8.
 
 **New `core/morale.ts`:**
 
 - `checkMorale(unit, modifiers)` → `MoraleResult` (pass/fail)
 - Base pass chance scales with remaining SP / max SP
 - Modifiers: elite/veteran +1, out of command −1, leader attached +1
-- Pass: hold position. Fail: retreat 1 hex away from the attacker + 1 additional SP damage. Cannot retreat: 1 SP damage instead.
+- Pass: hold position. Fail: retreat 1 hex via the existing `getRetreatHex` + 1 additional SP damage. Cannot retreat: 1 SP damage instead.
 - **No cascading:** additional hit from failed morale does not trigger another check
 
-**New `core/retreat.ts`:**
-
-- `getRetreatHex(unit, attackSource, grid, units)` → best retreat hex or null
-- Prefer hex away from attacker, toward friendly units
-
 **Depends on:** M7/M8 (combat triggers morale)
-**Files:** new `core/morale.ts`, new `core/retreat.ts`, `gameStore.svelte.ts`
-**Tests:** Morale at various SP ratios. All modifier combos. Retreat selection. Blocked retreat penalty. No cascade.
+**Files:** new `core/morale.ts`, `gameStore.svelte.ts`
+**Tests:** Morale at various SP ratios. All modifier combos. Blocked retreat penalty. No cascade.
 
 ---
 
