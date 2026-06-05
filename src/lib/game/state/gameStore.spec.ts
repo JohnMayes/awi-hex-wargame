@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { GameStore, type ActionMode } from './gameStore.svelte';
 import { ActivationStep, type Unit } from '../core/types';
 import type { Leader } from '../core/command';
-import { TEST_LEADERS, TEST_UNITS } from '../data/scenarios';
+import { PITCHED_BATTLE, TEST_LEADERS, TEST_UNITS } from '../data/scenarios';
 import { TEST_MAP } from '../data/maps';
 import { getUnitDefinition } from '../core/unitDefinitions';
 
@@ -1679,5 +1679,127 @@ describe('log — event emission', () => {
 		expect(store.log.length).toBeGreaterThan(0);
 		store.clearLog();
 		expect(store.log).toEqual([]);
+	});
+});
+
+describe('scenarios & victory', () => {
+	const scenarioStore = () => GameStore.fromScenario(PITCHED_BATTLE);
+
+	// Advance whole game turns (two player turns each). Victory is evaluated on
+	// the second of each pair, when player 1 hands back to player 0.
+	const advanceGameTurns = (store: GameStore, n: number) => {
+		for (let i = 0; i < n; i++) {
+			store.endPlayerTurn();
+			store.endPlayerTurn();
+		}
+	};
+
+	const setSp = (store: GameStore, id: string, sp: number) => {
+		store.units = store.units.map((u) => (u.id === id ? { ...u, strengthPoints: sp } : u));
+	};
+
+	const moveTo = (store: GameStore, id: string, col: number, row: number) => {
+		store.units = store.units.map((u) => (u.id === id ? { ...u, coordinates: { col, row } } : u));
+	};
+
+	it('fromScenario loads units, leaders, first player, turn limit, conditions', () => {
+		expect.assertions(6);
+		const store = scenarioStore();
+		expect(store.units).toHaveLength(12);
+		expect(store.leaders).toHaveLength(2);
+		expect(store.activePlayer).toBe(0);
+		expect(store.turnLimit).toBe(15);
+		expect(store.victoryConditions).toHaveLength(4);
+		expect(store.victoryOutcome).toBeNull();
+	});
+
+	it('fromScenario deep-clones so scenario data is not mutated by play', () => {
+		expect.assertions(1);
+		const store = scenarioStore();
+		setSp(store, 'red-line-1', 0);
+		expect(PITCHED_BATTLE.units.find((u) => u.id === 'red-line-1')?.strengthPoints).toBe(4);
+	});
+
+	it('no victory mid-turn before a full game turn completes', () => {
+		expect.assertions(2);
+		const store = scenarioStore();
+		['red-line-1', 'red-line-2', 'red-light-inf', 'red-artillery'].forEach((id) =>
+			setSp(store, id, 0)
+		);
+		store.endPlayerTurn(); // 0 → 1, no evaluation yet
+		expect(store.isGameOver).toBe(false);
+		store.endPlayerTurn(); // 1 → 0, full turn completes → evaluation
+		expect(store.isGameOver).toBe(true);
+	});
+
+	it('eliminating 4 enemy units wins by condition for player 0', () => {
+		expect.assertions(4);
+		const store = scenarioStore();
+		['red-line-1', 'red-line-2', 'red-light-inf', 'red-artillery'].forEach((id) =>
+			setSp(store, id, 0)
+		);
+		advanceGameTurns(store, 1);
+		expect(store.victoryOutcome?.status).toBe('won');
+		expect(store.victoryOutcome?.winner).toBe(0);
+		expect(store.victoryOutcome?.conditionId).toBe('blue-break-enemy');
+		expect(store.victoryOutcome?.reason).toBe('condition_met');
+	});
+
+	it('emits a single game_over event right after player_turn_ended', () => {
+		expect.assertions(3);
+		const store = scenarioStore();
+		['red-line-1', 'red-line-2', 'red-light-inf', 'red-artillery'].forEach((id) =>
+			setSp(store, id, 0)
+		);
+		store.clearLog();
+		advanceGameTurns(store, 1);
+		const gameOvers = store.log.filter((e) => e.kind === 'game_over');
+		expect(gameOvers).toHaveLength(1);
+		expect(store.log.at(-1)?.kind).toBe('game_over');
+		expect(store.log.at(-2)?.kind).toBe('player_turn_ended');
+	});
+
+	it('controlling the central hill at turn 15 wins by condition', () => {
+		expect.assertions(3);
+		const store = scenarioStore();
+		moveTo(store, 'blue-light-inf', 3, 4); // onto the central hill
+		advanceGameTurns(store, 14); // evaluation at turn 15
+		expect(store.turn).toBe(15);
+		expect(store.victoryOutcome?.winner).toBe(0);
+		expect(store.victoryOutcome?.conditionId).toBe('blue-hold-hill');
+	});
+
+	it('hill uncontrolled with unequal SP at turn 15 → tiebreak to the stronger army', () => {
+		expect.assertions(2);
+		const store = scenarioStore();
+		setSp(store, 'red-line-1', 1); // red is weaker, nobody on the hill
+		advanceGameTurns(store, 14);
+		expect(store.victoryOutcome?.reason).toBe('turn_limit_tiebreak');
+		expect(store.victoryOutcome?.winner).toBe(0);
+	});
+
+	it('even, undecided field at turn 15 → draw', () => {
+		expect.assertions(3);
+		const store = scenarioStore();
+		advanceGameTurns(store, 14);
+		expect(store.victoryOutcome?.status).toBe('draw');
+		expect(store.victoryOutcome?.winner).toBeNull();
+		expect(store.victoryOutcome?.reason).toBe('turn_limit_draw');
+	});
+
+	it('after the game is over, actions and turn advance are inert', () => {
+		expect.assertions(4);
+		const store = scenarioStore();
+		['red-line-1', 'red-line-2', 'red-light-inf', 'red-artillery'].forEach((id) =>
+			setSp(store, id, 0)
+		);
+		advanceGameTurns(store, 1);
+		const turnAtEnd = store.turn;
+		const logLenAtEnd = store.log.length;
+		expect(store.isGameOver).toBe(true);
+		expect(store.moveUnit({ col: 3, row: 6 })).toBeNull();
+		store.endPlayerTurn();
+		expect(store.turn).toBe(turnAtEnd);
+		expect(store.log.length).toBe(logLenAtEnd);
 	});
 });

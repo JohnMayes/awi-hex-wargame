@@ -14,7 +14,7 @@ Simplicity is the guiding principle. Each rule should earn its place by creating
 
 ## 2. The Battlefield
 
-The battlefield is a hex grid, **six columns wide by six rows deep**. The hex grain runs horizontally (flat-topped hexes with vertices pointing up and down). Each hex is equivalent to roughly 6 inches at tabletop scale.
+The battlefield is a hex grid, **seven columns wide by nine rows deep**. The hex grain runs horizontally (flat-topped hexes with vertices pointing up and down). Each hex is equivalent to roughly 6 inches at tabletop scale.
 
 Hexes may contain terrain features that affect movement, combat, and line of sight. Terrain types are defined per scenario, but the standard types are:
 

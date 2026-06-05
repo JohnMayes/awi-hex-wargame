@@ -162,7 +162,7 @@ Replace hardcoded test data with a scenario system.
 
 **`Scenario` type:**
 
-- Map definition (6×6 grid per rules §2, replacing current 5×4 test map)
+- Map definition (7×9 portrait grid per rules §2, replacing current test map)
 - Unit setup per side (type, position, SP, quality modifiers)
 - Leader assignments
 - First player, turn limit (default 15)

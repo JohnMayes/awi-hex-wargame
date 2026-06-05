@@ -3,6 +3,7 @@ import type { CommandCheckResult } from './command';
 import type { FireResult } from './combat';
 import type { MoveResult } from './movement';
 import type { Player } from './types';
+import type { VictoryOutcome } from './victory';
 
 export type ActivationStartedEvent = {
 	kind: 'activation_started';
@@ -48,10 +49,17 @@ export type PlayerTurnEndedEvent = {
 	nextPlayer: Player;
 };
 
+export type GameOverEvent = {
+	kind: 'game_over';
+	turn: number;
+	outcome: VictoryOutcome;
+};
+
 export type LogEvent =
 	| ActivationStartedEvent
 	| MoveActionEvent
 	| FireActionEvent
 	| ChargeActionEvent
 	| ActivationEndedEvent
-	| PlayerTurnEndedEvent;
+	| PlayerTurnEndedEvent
+	| GameOverEvent;

@@ -1,0 +1,452 @@
+import { describe, expect, it } from 'vitest';
+import {
+	boundsFromCoords,
+	edgeOf,
+	emptyVictoryProgress,
+	evaluateVictory,
+	type VictoryCondition,
+	type VictoryProgress,
+	type VictorySnapshot
+} from './victory';
+import type { Player } from './types';
+
+// --- Test fixtures & helpers ---
+
+type SnapUnit = {
+	id: string;
+	player: Player;
+	strengthPoints: number;
+	coordinates: { col: number; row: number };
+};
+
+const u = (id: string, player: Player, sp: number, col: number, row: number): SnapUnit => ({
+	id,
+	player,
+	strengthPoints: sp,
+	coordinates: { col, row }
+});
+
+function snapshot(opts: {
+	turn: number;
+	turnLimit?: number | null;
+	units: SnapUnit[];
+	starting?: Record<Player, number>;
+	bounds?: VictorySnapshot['bounds'];
+	exitedThisTurn?: VictorySnapshot['exitedThisTurn'];
+}): VictorySnapshot {
+	const starting =
+		opts.starting ??
+		({
+			0: opts.units.filter((x) => x.player === 0).length,
+			1: opts.units.filter((x) => x.player === 1).length
+		} as Record<Player, number>);
+	return {
+		turn: opts.turn,
+		turnLimit: opts.turnLimit ?? null,
+		units: opts.units,
+		startingUnitsByPlayer: starting,
+		bounds: opts.bounds ?? { minCol: 0, maxCol: 6, minRow: 0, maxRow: 8 },
+		exitedThisTurn: opts.exitedThisTurn ?? []
+	};
+}
+
+const progress = (p?: Partial<VictoryProgress>): VictoryProgress => ({
+	...emptyVictoryProgress(),
+	...p
+});
+
+// --- Helpers ---
+
+describe('boundsFromCoords', () => {
+	it('computes min/max col & row over a 7×9 field', () => {
+		expect.assertions(1);
+		const coords = [];
+		for (let col = 0; col < 7; col++) for (let row = 0; row < 9; row++) coords.push({ col, row });
+		expect(boundsFromCoords(coords)).toEqual({ minCol: 0, maxCol: 6, minRow: 0, maxRow: 8 });
+	});
+});
+
+describe('edgeOf', () => {
+	const bounds = { minCol: 0, maxCol: 6, minRow: 0, maxRow: 8 };
+	it('classifies the four edges and interior', () => {
+		expect.assertions(5);
+		expect(edgeOf({ col: 3, row: 0 }, bounds)).toBe('north');
+		expect(edgeOf({ col: 3, row: 8 }, bounds)).toBe('south');
+		expect(edgeOf({ col: 0, row: 4 }, bounds)).toBe('west');
+		expect(edgeOf({ col: 6, row: 4 }, bounds)).toBe('east');
+		expect(edgeOf({ col: 3, row: 4 }, bounds)).toBeNull();
+	});
+});
+
+// --- No-op contract ---
+
+describe('evaluateVictory — no-op', () => {
+	it('no conditions + no turn limit → progress unchanged, outcome null', () => {
+		expect.assertions(2);
+		const prog = progress();
+		const r = evaluateVictory([], snapshot({ turn: 99, units: [u('a', 0, 4, 0, 0)] }), prog);
+		expect(r.outcome).toBeNull();
+		expect(r.progress).toBe(prog);
+	});
+});
+
+// --- eliminate_units ---
+
+describe('evaluateVictory — eliminate_units', () => {
+	const cond: VictoryCondition = {
+		kind: 'eliminate_units',
+		id: 'elim-0',
+		player: 0,
+		description: 'kill 2',
+		count: 2
+	};
+	const starting = { 0: 2, 1: 2 } as Record<Player, number>;
+
+	it('below threshold → no outcome', () => {
+		expect.assertions(1);
+		const units = [u('a', 0, 4, 0, 0), u('b', 0, 4, 0, 1), u('e1', 1, 4, 5, 0)]; // 1 enemy gone
+		const r = evaluateVictory(
+			[cond],
+			snapshot({ turn: 3, units, starting, turnLimit: 15 }),
+			progress()
+		);
+		expect(r.outcome).toBeNull();
+	});
+
+	it('at threshold → player 0 wins by condition', () => {
+		expect.assertions(3);
+		const units = [u('a', 0, 4, 0, 0), u('b', 0, 4, 0, 1)]; // both enemies gone
+		const r = evaluateVictory(
+			[cond],
+			snapshot({ turn: 3, units, starting, turnLimit: 15 }),
+			progress()
+		);
+		expect(r.outcome?.status).toBe('won');
+		expect(r.outcome?.winner).toBe(0);
+		expect(r.outcome?.conditionId).toBe('elim-0');
+	});
+
+	it('above threshold still wins', () => {
+		expect.assertions(1);
+		const units = [u('a', 0, 4, 0, 0)];
+		const r = evaluateVictory(
+			[cond],
+			snapshot({ turn: 5, units, starting, turnLimit: 15 }),
+			progress()
+		);
+		expect(r.outcome?.winner).toBe(0);
+	});
+
+	it('eliminated = SP at 0 (still in array) counts as destroyed', () => {
+		expect.assertions(1);
+		const units = [
+			u('a', 0, 4, 0, 0),
+			u('b', 0, 4, 0, 1),
+			u('e1', 1, 0, 5, 0),
+			u('e2', 1, 0, 5, 1)
+		];
+		const r = evaluateVictory(
+			[cond],
+			snapshot({ turn: 3, units, starting, turnLimit: 15 }),
+			progress()
+		);
+		expect(r.outcome?.winner).toBe(0);
+	});
+});
+
+// --- control_hexes ---
+
+describe('evaluateVictory — control_hexes (atTurn null)', () => {
+	const base = {
+		kind: 'control_hexes' as const,
+		id: 'ctrl-0',
+		player: 0 as Player,
+		description: 'hold',
+		atTurn: null
+	};
+
+	it('friendly unit on the hex → win', () => {
+		expect.assertions(2);
+		const cond: VictoryCondition = { ...base, hexes: [{ col: 3, row: 4 }], requireAll: true };
+		const units = [u('a', 0, 4, 3, 4)];
+		const r = evaluateVictory([cond], snapshot({ turn: 2, units, turnLimit: 15 }), progress());
+		expect(r.outcome?.status).toBe('won');
+		expect(r.outcome?.winner).toBe(0);
+	});
+
+	it('enemy on the hex → no control', () => {
+		expect.assertions(1);
+		const cond: VictoryCondition = { ...base, hexes: [{ col: 3, row: 4 }], requireAll: true };
+		const units = [u('e', 1, 4, 3, 4)];
+		const r = evaluateVictory([cond], snapshot({ turn: 2, units, turnLimit: 15 }), progress());
+		expect(r.outcome).toBeNull();
+	});
+
+	it('empty hex → no control', () => {
+		expect.assertions(1);
+		const cond: VictoryCondition = { ...base, hexes: [{ col: 3, row: 4 }], requireAll: true };
+		const units = [u('a', 0, 4, 0, 0)];
+		const r = evaluateVictory([cond], snapshot({ turn: 2, units, turnLimit: 15 }), progress());
+		expect(r.outcome).toBeNull();
+	});
+
+	it('requireAll true → needs every hex', () => {
+		expect.assertions(2);
+		const cond: VictoryCondition = {
+			...base,
+			hexes: [
+				{ col: 3, row: 4 },
+				{ col: 4, row: 4 }
+			],
+			requireAll: true
+		};
+		const partial = [u('a', 0, 4, 3, 4)];
+		expect(
+			evaluateVictory([cond], snapshot({ turn: 2, units: partial, turnLimit: 15 }), progress())
+				.outcome
+		).toBeNull();
+		const both = [u('a', 0, 4, 3, 4), u('b', 0, 4, 4, 4)];
+		expect(
+			evaluateVictory([cond], snapshot({ turn: 2, units: both, turnLimit: 15 }), progress()).outcome
+				?.winner
+		).toBe(0);
+	});
+
+	it('requireAll false → any hex suffices', () => {
+		expect.assertions(1);
+		const cond: VictoryCondition = {
+			...base,
+			hexes: [
+				{ col: 3, row: 4 },
+				{ col: 4, row: 4 }
+			],
+			requireAll: false
+		};
+		const units = [u('a', 0, 4, 4, 4)];
+		expect(
+			evaluateVictory([cond], snapshot({ turn: 2, units, turnLimit: 15 }), progress()).outcome
+				?.winner
+		).toBe(0);
+	});
+});
+
+describe('evaluateVictory — control_hexes (atTurn 15)', () => {
+	const cond: VictoryCondition = {
+		kind: 'control_hexes',
+		id: 'ctrl-0',
+		player: 0,
+		description: 'hold at 15',
+		hexes: [{ col: 3, row: 4 }],
+		requireAll: true,
+		atTurn: 15
+	};
+
+	it('controlled but before the target turn → not decisive', () => {
+		expect.assertions(1);
+		const units = [u('a', 0, 4, 3, 4)];
+		const r = evaluateVictory([cond], snapshot({ turn: 14, units, turnLimit: 15 }), progress());
+		expect(r.outcome).toBeNull();
+	});
+
+	it('controlled at the target turn → win', () => {
+		expect.assertions(2);
+		const units = [u('a', 0, 4, 3, 4)];
+		const r = evaluateVictory([cond], snapshot({ turn: 15, units, turnLimit: 15 }), progress());
+		expect(r.outcome?.reason).toBe('condition_met');
+		expect(r.outcome?.winner).toBe(0);
+	});
+});
+
+// --- hold_hexes ---
+
+describe('evaluateVictory — hold_hexes', () => {
+	const cond: VictoryCondition = {
+		kind: 'hold_hexes',
+		id: 'hold-0',
+		player: 0,
+		description: 'hold 3 turns',
+		hexes: [{ col: 3, row: 4 }],
+		requireAll: true,
+		consecutiveTurns: 3
+	};
+	const held = [u('a', 0, 4, 3, 4)];
+	const lost = [u('a', 0, 4, 0, 0)];
+
+	it('streak increments while controlled, no win before threshold', () => {
+		expect.assertions(2);
+		const r1 = evaluateVictory(
+			[cond],
+			snapshot({ turn: 1, units: held, turnLimit: 15 }),
+			progress()
+		);
+		expect(r1.progress.holdStreaks['hold-0']).toBe(1);
+		const r2 = evaluateVictory(
+			[cond],
+			snapshot({ turn: 2, units: held, turnLimit: 15 }),
+			r1.progress
+		);
+		expect(r2.outcome).toBeNull();
+	});
+
+	it('resets on a gap', () => {
+		expect.assertions(1);
+		const r1 = evaluateVictory(
+			[cond],
+			snapshot({ turn: 1, units: held, turnLimit: 15 }),
+			progress()
+		);
+		const r2 = evaluateVictory(
+			[cond],
+			snapshot({ turn: 2, units: lost, turnLimit: 15 }),
+			r1.progress
+		);
+		expect(r2.progress.holdStreaks['hold-0']).toBe(0);
+	});
+
+	it('wins on the third consecutive held turn', () => {
+		expect.assertions(2);
+		let prog = progress();
+		let last;
+		for (let turn = 1; turn <= 3; turn++) {
+			last = evaluateVictory([cond], snapshot({ turn, units: held, turnLimit: 15 }), prog);
+			prog = last.progress;
+		}
+		expect(last!.outcome?.winner).toBe(0);
+		expect(last!.progress.holdStreaks['hold-0']).toBe(3);
+	});
+});
+
+// --- exit_units ---
+
+describe('evaluateVictory — exit_units', () => {
+	const cond: VictoryCondition = {
+		kind: 'exit_units',
+		id: 'exit-0',
+		player: 0,
+		description: 'exit 2 east',
+		edge: 'east',
+		count: 2
+	};
+
+	it('accumulates exits across turns and wins at the count', () => {
+		expect.assertions(3);
+		const r1 = evaluateVictory(
+			[cond],
+			snapshot({
+				turn: 1,
+				units: [],
+				turnLimit: 15,
+				exitedThisTurn: [{ unitId: 'a', player: 0, edge: 'east' }]
+			}),
+			progress()
+		);
+		expect(r1.progress.exitedCounts['exit-0']).toBe(1);
+		expect(r1.outcome).toBeNull();
+		const r2 = evaluateVictory(
+			[cond],
+			snapshot({
+				turn: 2,
+				units: [],
+				turnLimit: 15,
+				exitedThisTurn: [{ unitId: 'b', player: 0, edge: 'east' }]
+			}),
+			r1.progress
+		);
+		expect(r2.outcome?.winner).toBe(0);
+	});
+
+	it('ignores exits by the wrong player or wrong edge', () => {
+		expect.assertions(1);
+		const r = evaluateVictory(
+			[cond],
+			snapshot({
+				turn: 1,
+				units: [],
+				turnLimit: 15,
+				exitedThisTurn: [
+					{ unitId: 'x', player: 1, edge: 'east' },
+					{ unitId: 'y', player: 0, edge: 'west' }
+				]
+			}),
+			progress()
+		);
+		expect(r.progress.exitedCounts['exit-0']).toBe(0);
+	});
+});
+
+// --- turn-limit tiebreak ---
+
+describe('evaluateVictory — turn-limit tiebreak', () => {
+	const cond: VictoryCondition = {
+		kind: 'eliminate_units',
+		id: 'elim-0',
+		player: 0,
+		description: 'kill 6',
+		count: 6
+	};
+
+	it('no winner at the limit → more SP wins', () => {
+		expect.assertions(3);
+		const units = [u('a', 0, 4, 0, 0), u('b', 0, 3, 0, 1), u('e', 1, 2, 5, 0)];
+		const r = evaluateVictory(
+			[cond],
+			snapshot({
+				turn: 15,
+				units,
+				turnLimit: 15,
+				starting: { 0: 2, 1: 2 } as Record<Player, number>
+			}),
+			progress()
+		);
+		expect(r.outcome?.status).toBe('won');
+		expect(r.outcome?.winner).toBe(0);
+		expect(r.outcome?.reason).toBe('turn_limit_tiebreak');
+	});
+
+	it('equal SP at the limit → draw', () => {
+		expect.assertions(3);
+		const units = [u('a', 0, 4, 0, 0), u('e', 1, 4, 5, 0)];
+		const r = evaluateVictory(
+			[cond],
+			snapshot({
+				turn: 15,
+				units,
+				turnLimit: 15,
+				starting: { 0: 1, 1: 1 } as Record<Player, number>
+			}),
+			progress()
+		);
+		expect(r.outcome?.status).toBe('draw');
+		expect(r.outcome?.winner).toBeNull();
+		expect(r.outcome?.reason).toBe('turn_limit_draw');
+	});
+
+	it('before the limit with no winner → game continues', () => {
+		expect.assertions(1);
+		const units = [u('a', 0, 4, 0, 0), u('e', 1, 1, 5, 0)];
+		const r = evaluateVictory([cond], snapshot({ turn: 14, units, turnLimit: 15 }), progress());
+		expect(r.outcome).toBeNull();
+	});
+});
+
+// --- mutual satisfaction ---
+
+describe('evaluateVictory — mutual satisfaction', () => {
+	it('both sides satisfy a condition → resolved by tiebreak, not active player', () => {
+		expect.assertions(2);
+		const conds: VictoryCondition[] = [
+			{ kind: 'eliminate_units', id: 'elim-0', player: 0, description: '', count: 1 },
+			{ kind: 'eliminate_units', id: 'elim-1', player: 1, description: '', count: 1 }
+		];
+		// Each side lost one of two starting units; player 1 has more SP left.
+		const units = [u('a', 0, 1, 0, 0), u('e', 1, 4, 5, 0)];
+		const starting = { 0: 2, 1: 2 } as Record<Player, number>;
+		const r = evaluateVictory(
+			conds,
+			snapshot({ turn: 5, units, starting, turnLimit: 15 }),
+			progress()
+		);
+		expect(r.outcome?.reason).toBe('turn_limit_tiebreak');
+		expect(r.outcome?.winner).toBe(1);
+	});
+});

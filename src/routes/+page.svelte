@@ -2,13 +2,19 @@
 	import { initGameStore } from '$lib/game/state/gameStore.svelte';
 	import HexTile from '$lib/game/ui/HexTile.svelte';
 	import UnitCounter from '$lib/game/ui/UnitCounter.svelte';
-	import { TEST_MAP } from '$lib/game/data/maps';
-	import { TEST_LEADERS, TEST_UNITS } from '$lib/game/data/scenarios';
+	import { PITCHED_BATTLE } from '$lib/game/data/scenarios';
 	import { ActionType } from '$lib/game/core/types';
 	import { getUnitDefinition } from '$lib/game/core/unitDefinitions';
 
-	const store = initGameStore(TEST_UNITS, TEST_MAP, TEST_LEADERS);
+	const store = initGameStore(PITCHED_BATTLE);
 	$inspect(store.log);
+
+	const outcomeText = $derived.by(() => {
+		const o = store.victoryOutcome;
+		if (!o) return null;
+		const who = o.status === 'draw' ? 'Draw' : `${o.winner === 0 ? 'Blue' : 'Red'} wins`;
+		return `${who} — ${o.reason.replace(/_/g, ' ')}`;
+	});
 
 	const sel = $derived(store.selectedUnit);
 	const def = $derived(sel ? getUnitDefinition(sel.type) : null);
@@ -58,13 +64,19 @@
 	<header class="top-bar">
 		<div class="meta">
 			<span class="meta-label">Turn</span>
-			<span class="meta-value">{store.turn}</span>
+			<span class="meta-value">{store.turn} / {store.turnLimit ?? '∞'}</span>
 			<span class="player-chip" data-player={store.activePlayer}
 				>{store.activePlayer === 0 ? 'Blue' : 'Red'}</span
 			>
 		</div>
-		<button class="end-turn" onclick={() => store.endPlayerTurn()}>End Turn</button>
+		<button class="end-turn" onclick={() => store.endPlayerTurn()} disabled={store.isGameOver}
+			>End Turn</button
+		>
 	</header>
+
+	{#if outcomeText}
+		<div class="banner" data-status={store.victoryOutcome?.status}>{outcomeText}</div>
+	{/if}
 
 	<svg
 		viewBox={`${minX - padding} ${minY - padding} ${width + padding * 2} ${height + padding * 2}`}
@@ -211,9 +223,32 @@
 			background 80ms ease,
 			color 80ms ease;
 	}
-	.end-turn:hover {
+	.end-turn:hover:not(:disabled) {
 		background: transparent;
 		color: #e8e1d1;
+	}
+	.end-turn:disabled {
+		opacity: 0.3;
+		cursor: not-allowed;
+	}
+
+	/* --- victory banner --- */
+	.banner {
+		padding: 0.625rem 1rem;
+		text-align: center;
+		font-size: 0.8125rem;
+		text-transform: uppercase;
+		letter-spacing: 0.12em;
+		font-weight: 600;
+		color: #15181c;
+		background: #e8e1d1;
+	}
+	.banner[data-status='won'] {
+		background: #c9a227;
+	}
+	.banner[data-status='draw'] {
+		background: #8a8275;
+		color: #15181c;
 	}
 
 	/* --- bottom bar (selected unit + actions) --- */

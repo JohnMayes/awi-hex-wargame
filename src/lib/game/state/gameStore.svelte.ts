@@ -22,10 +22,26 @@ import {
 } from '../core/command';
 import { applyEliminations } from '../core/elimination';
 import { checkMorale, type MoraleResult } from '../core/morale';
+import type { Scenario } from '../core/scenario';
 import { ActionType, ActivationStep, type Player, type Unit } from '../core/types';
 import { getUnitDefinition } from '../core/unitDefinitions';
+import {
+	boundsFromCoords,
+	emptyVictoryProgress,
+	evaluateVictory,
+	type VictoryCondition,
+	type VictoryOutcome,
+	type VictoryProgress,
+	type VictorySnapshot
+} from '../core/victory';
 
 export type ActionMode = 'move' | 'fire';
+
+export type GameStoreConfig = {
+	firstPlayer?: Player;
+	turnLimit?: number | null;
+	victoryConditions?: VictoryCondition[];
+};
 
 export class GameStore {
 	units: Unit[] = $state([]);
@@ -36,8 +52,13 @@ export class GameStore {
 	activeUnitId: string | null = $state(null);
 	actionMode: ActionMode | null = $state(null);
 	turn: number = $state(1);
+	turnLimit: number | null = $state(null);
 	lastCommandCheck: CommandCheckResult | null = $state(null);
 	log: LogEvent[] = $state([]);
+	victoryConditions: VictoryCondition[] = $state([]);
+	victoryProgress: VictoryProgress = $state(emptyVictoryProgress());
+	victoryOutcome: VictoryOutcome | null = $state(null);
+	isGameOver = $derived(this.victoryOutcome !== null);
 	selectedUnit = $derived(this.units.find((u) => u.selected === true));
 	validMoveTargets: MoveTarget[] = $derived.by(() => {
 		if (this.activeUnitId === null) return [];
@@ -77,7 +98,11 @@ export class GameStore {
 		return getValidChargeTargets(active, this.grid, this.units);
 	});
 
-	constructor(units: Unit[], map: MapDefinition, leaders: Leader[]) {
+	// Immutable scenario context, set once at construction.
+	#bounds: VictorySnapshot['bounds'];
+	#startingUnitsByPlayer: Record<Player, number>;
+
+	constructor(units: Unit[], map: MapDefinition, leaders: Leader[], config: GameStoreConfig = {}) {
 		const newGrid = new Grid(
 			HexCell,
 			map.map((cell) => HexCell.create({ col: cell.col, row: cell.row, terrain: cell.terrain }))
@@ -86,6 +111,27 @@ export class GameStore {
 		this.grid = newGrid;
 		this.units = units;
 		this.leaders = leaders;
+		this.activePlayer = config.firstPlayer ?? 0;
+		this.turnLimit = config.turnLimit ?? null;
+		this.victoryConditions = config.victoryConditions ?? [];
+		this.#bounds = boundsFromCoords(map);
+		this.#startingUnitsByPlayer = {
+			0: units.filter((u) => u.player === 0).length,
+			1: units.filter((u) => u.player === 1).length
+		};
+	}
+
+	static fromScenario(scenario: Scenario): GameStore {
+		return new GameStore(
+			structuredClone(scenario.units),
+			scenario.map,
+			structuredClone(scenario.leaders),
+			{
+				firstPlayer: scenario.firstPlayer,
+				turnLimit: scenario.turnLimit,
+				victoryConditions: scenario.victoryConditions
+			}
+		);
 	}
 
 	// -- Helpers --
@@ -115,6 +161,36 @@ export class GameStore {
 
 	#emit(event: LogEvent) {
 		this.log = [...this.log, event];
+	}
+
+	// Evaluate victory at the end of a full game turn. Pure core decides; the
+	// store applies the new progress and, only on a decision, records the
+	// outcome and emits a game_over event. With no conditions and no turn limit
+	// this is a no-op that emits nothing.
+	#evaluateVictory() {
+		const snapshot: VictorySnapshot = {
+			turn: this.turn,
+			turnLimit: this.turnLimit,
+			units: this.units.map((u) => ({
+				id: u.id,
+				player: u.player,
+				strengthPoints: u.strengthPoints,
+				coordinates: u.coordinates
+			})),
+			startingUnitsByPlayer: this.#startingUnitsByPlayer,
+			bounds: this.#bounds,
+			exitedThisTurn: [] // exit action deferred; evaluator supports it for future use
+		};
+		const { progress, outcome } = evaluateVictory(
+			this.victoryConditions,
+			snapshot,
+			this.victoryProgress
+		);
+		this.victoryProgress = progress;
+		if (outcome) {
+			this.victoryOutcome = outcome;
+			this.#emit({ kind: 'game_over', turn: this.turn, outcome });
+		}
 	}
 
 	clearLog() {
@@ -190,6 +266,7 @@ export class GameStore {
 	// -- Selection / activation --
 
 	selectUnit(unit: Unit) {
+		if (this.victoryOutcome) return;
 		if (unit.player !== this.activePlayer) return;
 		if (unit.activated) return;
 
@@ -209,6 +286,7 @@ export class GameStore {
 	}
 
 	beginAction(mode: ActionMode, rng: () => number = Math.random) {
+		if (this.victoryOutcome) return;
 		const sel = this.selectedUnit;
 		if (!sel) return;
 		if (sel.player !== this.activePlayer) return;
@@ -248,6 +326,7 @@ export class GameStore {
 	// -- Movement --
 
 	moveUnit(newCords: OffsetCoordinates, rng: () => number = Math.random): MoveResult | null {
+		if (this.victoryOutcome) return null;
 		if (this.activeUnitId === null) return null;
 		if (this.activationStep !== ActivationStep.ACTION) return null;
 		if (this.selectedUnit?.id !== this.activeUnitId) return null;
@@ -307,6 +386,7 @@ export class GameStore {
 	// -- Firing --
 
 	fireAt(targetId: string, rng: () => number = Math.random): FireResult | null {
+		if (this.victoryOutcome) return null;
 		if (this.activeUnitId === null) return null;
 		if (this.activationStep !== ActivationStep.ACTION) return null;
 		if (this.selectedUnit?.id !== this.activeUnitId) return null;
@@ -398,6 +478,7 @@ export class GameStore {
 	// -- Charge --
 
 	chargeAt(targetId: string, rng: () => number = Math.random): ChargeResult | null {
+		if (this.victoryOutcome) return null;
 		if (this.activeUnitId === null) return null;
 		if (this.activationStep !== ActivationStep.ACTION) return null;
 		if (this.selectedUnit?.id !== this.activeUnitId) return null;
@@ -562,6 +643,7 @@ export class GameStore {
 	// -- Activation lifecycle --
 
 	activateUnit(id: string, rng: () => number = Math.random) {
+		if (this.victoryOutcome) return;
 		if (this.activeUnitId !== null) return;
 		const unit = this.#getUnit(id);
 		if (unit.player !== this.activePlayer) return;
@@ -570,10 +652,12 @@ export class GameStore {
 	}
 
 	endActivation() {
+		if (this.victoryOutcome) return;
 		this.#finishActivation();
 	}
 
 	endPlayerTurn() {
+		if (this.victoryOutcome) return;
 		if (this.activeUnitId !== null) {
 			this.#finishActivation();
 		}
@@ -596,17 +680,22 @@ export class GameStore {
 			nextTurn: this.turn,
 			nextPlayer: this.activePlayer
 		});
+
+		// A full game turn completes when the second player (1) hands back to 0.
+		if (prevPlayer === 1) {
+			this.#evaluateVictory();
+		}
 	}
 }
 
 let gameStore: GameStore | null = null;
 
-export function initGameStore(units: Unit[], map: MapDefinition, leaders: Leader[]) {
+export function initGameStore(scenario: Scenario) {
 	if (!gameStore) {
-		if (!units || !map || !leaders) {
-			throw new Error('GameStore must be initialized with units, map, and leaders.');
+		if (!scenario) {
+			throw new Error('GameStore must be initialized with a scenario.');
 		}
-		gameStore = new GameStore(units, map, leaders);
+		gameStore = GameStore.fromScenario(scenario);
 	}
 
 	return gameStore;
