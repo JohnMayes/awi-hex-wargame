@@ -2,12 +2,17 @@
 	import { initGameStore } from '$lib/game/state/gameStore.svelte';
 	import HexTile from '$lib/game/ui/HexTile.svelte';
 	import UnitCounter from '$lib/game/ui/UnitCounter.svelte';
+	import LittleBoard from '$lib/game/render/LittleBoard.svelte';
 	import { PITCHED_BATTLE } from '$lib/game/data/scenarios';
 	import { ActionType } from '$lib/game/core/types';
 	import { getUnitDefinition } from '$lib/game/core/unitDefinitions';
+	import { page } from '$app/state';
 
 	const store = initGameStore(PITCHED_BATTLE);
 	$inspect(store.log);
+
+	// R0 renderer toggle: SVG is the default; `?render=ljs` selects the LittleJS spike.
+	const useLJS = $derived(page.url.searchParams.get('render') === 'ljs');
 
 	const outcomeText = $derived.by(() => {
 		const o = store.victoryOutcome;
@@ -60,76 +65,81 @@
 	const padding = 2;
 </script>
 
-<div class="container">
-	<header class="top-bar">
-		<div class="meta">
-			<span class="meta-label">Turn</span>
-			<span class="meta-value">{store.turn} / {store.turnLimit ?? '∞'}</span>
-			<span class="player-chip" data-player={store.activePlayer}
-				>{store.activePlayer === 0 ? 'Blue' : 'Red'}</span
-			>
-		</div>
-		<button class="end-turn" onclick={() => store.endPlayerTurn()} disabled={store.isGameOver}
-			>End Turn</button
-		>
-	</header>
-
-	{#if outcomeText}
-		<div class="banner" data-status={store.victoryOutcome?.status}>{outcomeText}</div>
-	{/if}
-
-	<svg
-		viewBox={`${minX - padding} ${minY - padding} ${width + padding * 2} ${height + padding * 2}`}
-		preserveAspectRatio="xMidYMid meet"
-	>
-		{#each store.grid as Hex, i (`${Hex.q},${Hex.r}`)}
-			<HexTile
-				cell={Hex}
-				highlighted={validKeys.has(`${Hex.col},${Hex.row}`)}
-				onClick={() => store.moveUnit({ col: Hex.col, row: Hex.row })}
-			/>
-		{/each}
-		{#each store.units as unit, i (unit.id)}
-			{@const pos = store.takesCordsReturnsPos(unit.coordinates)}
-			<UnitCounter
-				{unit}
-				pos={pos!}
-				fireTarget={fireTargetIds.has(unit.id)}
-				chargeTarget={chargeTargetIds.has(unit.id)}
-				onClick={() => {
-					if (unit.player === store.activePlayer) {
-						store.selectUnit(unit);
-					} else if (fireTargetIds.has(unit.id)) {
-						store.fireAt(unit.id);
-					} else if (chargeTargetIds.has(unit.id)) {
-						store.chargeAt(unit.id);
-					}
-				}}
-			/>
-		{/each}
-	</svg>
-
-	<footer class="bottom-bar">
-		{#if sel && def}
-			<div class="unit-readout">
-				<span class="unit-label">{store.activeUnitId === sel.id ? 'Activating' : 'Selected'}</span>
-				<span class="unit-name">{sel.type.toLowerCase().replace(/_/g, ' ')}</span>
-			</div>
-			<div class="actions">
-				<button class="action" disabled={!moveEnabled} onclick={() => store.beginAction('move')}
-					>Move</button
+{#if useLJS}
+	<LittleBoard {store} />
+{:else}
+	<div class="container">
+		<header class="top-bar">
+			<div class="meta">
+				<span class="meta-label">Turn</span>
+				<span class="meta-value">{store.turn} / {store.turnLimit ?? '∞'}</span>
+				<span class="player-chip" data-player={store.activePlayer}
+					>{store.activePlayer === 0 ? 'Blue' : 'Red'}</span
 				>
-				{#if def.firingRange > 0}
-					<button class="action" disabled={!fireEnabled} onclick={() => store.beginAction('fire')}
-						>Fire</button
-					>
-				{/if}
 			</div>
-		{:else}
-			<span class="prompt">Tap a unit to select</span>
+			<button class="end-turn" onclick={() => store.endPlayerTurn()} disabled={store.isGameOver}
+				>End Turn</button
+			>
+		</header>
+
+		{#if outcomeText}
+			<div class="banner" data-status={store.victoryOutcome?.status}>{outcomeText}</div>
 		{/if}
-	</footer>
-</div>
+
+		<svg
+			viewBox={`${minX - padding} ${minY - padding} ${width + padding * 2} ${height + padding * 2}`}
+			preserveAspectRatio="xMidYMid meet"
+		>
+			{#each store.grid as Hex, i (`${Hex.q},${Hex.r}`)}
+				<HexTile
+					cell={Hex}
+					highlighted={validKeys.has(`${Hex.col},${Hex.row}`)}
+					onClick={() => store.moveUnit({ col: Hex.col, row: Hex.row })}
+				/>
+			{/each}
+			{#each store.units as unit, i (unit.id)}
+				{@const pos = store.takesCordsReturnsPos(unit.coordinates)}
+				<UnitCounter
+					{unit}
+					pos={pos!}
+					fireTarget={fireTargetIds.has(unit.id)}
+					chargeTarget={chargeTargetIds.has(unit.id)}
+					onClick={() => {
+						if (unit.player === store.activePlayer) {
+							store.selectUnit(unit);
+						} else if (fireTargetIds.has(unit.id)) {
+							store.fireAt(unit.id);
+						} else if (chargeTargetIds.has(unit.id)) {
+							store.chargeAt(unit.id);
+						}
+					}}
+				/>
+			{/each}
+		</svg>
+
+		<footer class="bottom-bar">
+			{#if sel && def}
+				<div class="unit-readout">
+					<span class="unit-label">{store.activeUnitId === sel.id ? 'Activating' : 'Selected'}</span
+					>
+					<span class="unit-name">{sel.type.toLowerCase().replace(/_/g, ' ')}</span>
+				</div>
+				<div class="actions">
+					<button class="action" disabled={!moveEnabled} onclick={() => store.beginAction('move')}
+						>Move</button
+					>
+					{#if def.firingRange > 0}
+						<button class="action" disabled={!fireEnabled} onclick={() => store.beginAction('fire')}
+							>Fire</button
+						>
+					{/if}
+				</div>
+			{:else}
+				<span class="prompt">Tap a unit to select</span>
+			{/if}
+		</footer>
+	</div>
+{/if}
 
 <style>
 	:global(body) {

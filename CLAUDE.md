@@ -57,10 +57,17 @@ data/    → Static game data
 state/   → Reactive state management
   gameStore.svelte.ts   Singleton GameStore class using Svelte 5 runes ($state, $derived)
 
-ui/      → Svelte components
+ui/      → Svelte components (current SVG renderer)
   HexTile.svelte       Hex polygon rendering with terrain-based colors
   UnitCounter.svelte   SVG unit icons for all 6 unit types
+
+render/  → LittleJS renderer (in-progress migration off SVG; see render/CLAUDE.md)
+  LittleBoard.svelte   Mounts the LittleJS engine client-only; draws the board from the store
 ```
+
+### Rendering migration (SVG → LittleJS)
+
+The SVG layer in `ui/` is being incrementally replaced by a LittleJS canvas renderer in `render/`, behind a `?render=ljs` toggle (SVG stays the default until parity). **When working in `render/`, read `src/lib/game/render/CLAUDE.md`** — it covers the integration model (ESM/Vite, client-only `onMount`, the honeycomb→LittleJS Y-flip, single-instance lifecycle) and where to find version-accurate LittleJS docs. Phase plan: `docs/littlejs-migration-roadmap.md`; rationale: `docs/littlejs-rendering-evaluation.md`.
 
 ### Key patterns
 
