@@ -29,30 +29,31 @@ Proved the engine mounts inside SvelteKit, client-only, and draws the board from
 
 ---
 
-### R1: Coordinate & Picking Bridge
+### ~~R1: Coordinate & Picking Bridge~~ COMPLETE
 
-Extract the renderer-neutral geometry glue as **pure functions** so it's Node-testable and the spike's ad-hoc Y-flip becomes a single audited conversion.
+Extracted the renderer-neutral geometry glue as **pure functions**, so it's Node-testable and the spike's ad-hoc Y-flip is now a single audited conversion.
 
-- `boardGeometry.ts`: `worldToHexPixel` / `hexPixelToWorld` (the Y-flip + any camera offset), and `pickHex(worldPos, grid)` wrapping honeycomb's `pointToHex`
-- `pickUnit(worldPos, units, grid)`: world coord → unit at that hex (coordinate compare, reusing `coordsEqual`)
-- All functions take plain inputs (no `mousePos`/engine globals) so they unit-test without a browser
+- `render/boardGeometry.ts`: `worldToHexPixel` / `hexPixelToWorld` (the Y-flip is the entire bridge — confirmed no camera offset, since LittleJS `mousePos` is already world-space and the camera transform is the engine's job), `pickHex(world, grid)` wrapping honeycomb's `pointToHex(p, { allowOutside: false })` → `HexCell | null`, and `pickUnit(world, units, grid)` → unit via `coordsEqual` (reused from `core/hex.ts`)
+- Plain `{ x, y }` inputs (a LittleJS `Vector2` satisfies it structurally); no engine import, so it's pure and Node-testable. `LittleBoard.svelte` now routes its `toWorld` and camera-center through `hexPixelToWorld` — the inline flip is gone
+- Lives in `render/` (renderer/input glue, depends on `core/`, not game logic). Bounds/camera extraction stays inline in the spike until R2
 
-**Files:** new `src/lib/game/render/boardGeometry.ts`
-**Tests:** new `boardGeometry.spec.ts` (Node) — round-trip world↔pixel, Y-flip correctness, `pickHex` at hex centers and near hexside boundaries, off-grid → null, `pickUnit` hit/miss/empty-hex
+**Files:** new `src/lib/game/render/boardGeometry.ts`; `LittleBoard.svelte` (uses `hexPixelToWorld`)
+**Tests:** new `render/boardGeometry.spec.ts` — 9 Node tests: Y-flip negate/preserve + round-trip, `pickHex` at every hex center (world round-trip), either-side-of-a-shared-hexside, off-grid → null; `pickUnit` hit / distinguishes-units / empty-hex / off-grid → null. All green; full suite 538 passed (the lone `page.svelte.spec.ts` failure is pre-existing and unrelated).
 **Depends on:** R0
 
 ---
 
-### R2: Static Board Rendering + Camera
+### ~~R2: Static Board Rendering + Camera~~ COMPLETE
 
-Render the real terrain board with a camera that fits any scenario map, replacing the spike's outline.
+Rendered the real terrain board with a camera that fits any scenario map, and extracted the engine lifecycle + draw loop out of the spike component.
 
-- Port terrain → color from `HexTile.svelte:12` into `terrainStyle.ts`; fill each hex via `drawPoly`
-- Camera fit: compute map pixel bounds (as `+page.svelte:47-58` does for the SVG viewBox) and set `cameraPos`/`cameraScale` to center-and-fit; recompute on canvas resize
-- Hex borders/stroke to match current look
+- `render/terrainStyle.ts` (pure): terrain fill palette mirrored from `HexTile.svelte` (removed at R11; then sole palette), `hexToRgb` (→ 0..1 for LittleJS `rgb()`), `terrainFill(terrain)`, and `hexStrokeHex` (`#000000`, matching HexTile's border). Each hex filled via `drawPoly(corners, fill, lineWidth, stroke)`
+- `render/engine.ts`: owns the single-instance lifecycle (`mountBoard`/`unmountBoard` with a `wantActive` guard against unmount-during-load), camera-fit (`scale = min(cw/boardW, ch/boardH) * 0.95`, `cameraPos` = board center, recomputed each frame in `gameUpdatePost` so resize is free), and `gameRender`. Dynamic-imports `littlejsengine` inside `mountBoard`, so importing the file is SSR-safe
+- `LittleBoard.svelte` reduced to a thin mount wrapper (`onMount` → `mountBoard`, cleanup → `unmountBoard`) + the HMR full-reload guard
+- Unit dots remain as **explicitly-labeled placeholders** until R3 (kept so the asymmetric layout stays Y-flip-verifiable — `PITCHED_BATTLE`'s terrain is point-symmetric)
 
-**Files:** new `src/lib/game/render/terrainStyle.ts`; `LittleBoard.svelte`; new `render/engine.ts` (gameInit/gameRender wiring)
-**Tests:** `terrainStyle.spec.ts` (every `TerrainType` maps to a color); manual visual parity vs SVG at several window sizes / mobile viewport
+**Files:** new `src/lib/game/render/terrainStyle.ts` + `engine.ts`; `LittleBoard.svelte` (slimmed)
+**Tests:** new `terrainStyle.spec.ts` (4 Node tests: every `TerrainType` → 6-digit hex, `hexToRgb` parsing, in-range rgb for all terrains, `terrainFill` matches palette). Full suite 542 passed; `pnpm build` SSR-safe; dev serves both routes at 200. Manual: terrain colors + black borders match SVG, camera fits across window/mobile sizes (confirmed).
 **Depends on:** R1
 
 ---

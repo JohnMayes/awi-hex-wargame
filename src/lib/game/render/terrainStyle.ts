@@ -1,0 +1,42 @@
+import { TerrainType } from '../core/types';
+
+/** Normalized RGB in 0..1 (the range LittleJS's `rgb(r,g,b)` expects). */
+export type Rgb = { r: number; g: number; b: number };
+
+/**
+ * Terrain fill palette, mirrored from the SVG renderer (`ui/HexTile.svelte`) so
+ * the two renderers look identical during the migration. HexTile is removed at
+ * R11, at which point this becomes the sole palette. Engine-free and pure so it
+ * is unit-tested in Node; the render layer converts to a LittleJS `Color` via
+ * `rgb(...)` at the draw call.
+ */
+export const terrainHexColors: Record<TerrainType, string> = {
+	[TerrainType.OPEN]: '#d9cbb2',
+	[TerrainType.WOODS]: '#7f9a76',
+	[TerrainType.TOWN]: '#bfa58c',
+	[TerrainType.MARSH]: '#8ea88f',
+	[TerrainType.LAKE]: '#7fa3b8',
+	[TerrainType.RIVER]: '#6f95ad',
+	[TerrainType.FORD]: '#a9b7b5',
+	[TerrainType.BRIDGE]: '#a48f7a',
+	[TerrainType.ROAD]: '#c8b79c',
+	[TerrainType.HILLTOP]: '#b6a87f'
+};
+
+/** Hex border color — matches HexTile's `stroke="black"`. */
+export const hexStrokeHex = '#000000';
+
+/** Parse a `#rrggbb` string into normalized 0..1 RGB. */
+export function hexToRgb(hex: string): Rgb {
+	const int = parseInt(hex.replace('#', ''), 16);
+	return {
+		r: ((int >> 16) & 255) / 255,
+		g: ((int >> 8) & 255) / 255,
+		b: (int & 255) / 255
+	};
+}
+
+/** Normalized 0..1 fill color for a terrain type. */
+export function terrainFill(terrain: TerrainType): Rgb {
+	return hexToRgb(terrainHexColors[terrain]);
+}
