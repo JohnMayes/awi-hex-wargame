@@ -33,6 +33,8 @@ const SP_TEXT_FILL = hexToRgb('#ffffff');
 const SP_TEXT_OUTLINE = hexToRgb('#010203');
 const HIGHLIGHT_COLOR = hexToRgb('#ffcc00'); // move-target outline (matches HexTile)
 const HIGHLIGHT_WIDTH = 3;
+const TARGET_COLOR = hexToRgb('#cc2222'); // valid fire/charge target hex tint
+const TARGET_ALPHA = 0.35; // subtle translucent fill
 
 /** honeycomb pixel point -> LittleJS world-space vec2 (Y-flip via boardGeometry). */
 function toWorld(p: { x: number; y: number }) {
@@ -169,6 +171,19 @@ function gameRender() {
 			HIGHLIGHT_WIDTH,
 			highlight
 		);
+	}
+
+	// Valid combat targets: a subtle red fill on the target hex (fire + charge,
+	// unified). Charge shows in move mode now; fire shows once R6 enters fire mode.
+	const targetTint = color(TARGET_COLOR, TARGET_ALPHA);
+	for (const t of [...currentStore.validFireTargets, ...currentStore.validChargeTargets]) {
+		const hex = currentStore.hexAt(t.coordinates);
+		if (hex)
+			drawPoly(
+				hex.corners.map((c) => toWorld(c)),
+				targetTint,
+				0
+			);
 	}
 
 	drawCounters(currentStore);

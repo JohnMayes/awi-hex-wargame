@@ -87,16 +87,16 @@ Made the canvas interactive for selection + movement (fire/charge is R5). Polls 
 
 ---
 
-### R5: Combat Targeting & Action Overlays
+### ~~R5: Combat Targeting & Action Overlays~~ COMPLETE
 
-Complete the action loop on canvas: fire and charge, with their target overlays.
+Routed enemy-counter taps to `fireAt`/`chargeAt` and added valid-target overlays. **Two deliberate deviations from the original sketch (confirmed with user):**
 
-- Render `validFireTargets` (red ring) and `validChargeTargets` (orange ring) — port radii/colors from `UnitCounter.svelte:26-47`
-- Route enemy-counter clicks to `store.fireAt` / `store.chargeAt` based on which target set the unit is in (same branch as `+page.svelte:102-106`)
-- `beginAction('fire')` wiring
+- **Overlay = a subtle translucent hex fill, not a counter ring.** `engine.ts` `gameRender` tints each valid combat-target hex (`store.hexAt(t.coordinates).corners` filled at `#cc2222`, alpha `0.35`, no border) between the move highlights and the counters — **unified red** for both fire and charge (dropped the SVG's fire-red/charge-orange distinction). No `counters.ts` ring port; the planned `UnitCounter.svelte:26-47` rings were never carried onto the canvas
+- **Enemy-click routing in `boardInput.ts`:** the R4 enemy no-op became `validFireTargets.some(...) → store.fireAt` else `validChargeTargets.some(...) → store.chargeAt` (fire takes priority; only one set is non-empty per mode), mirroring `+page.svelte`. Threads the existing injectable `rng`
+- **Fire-mode entry deferred to R6.** There's no clean pre-R6 tap gesture to enter fire mode (the `beginAction` committal lock makes re-tap cycling unreliable for the `MOVE_OR_FIRE` shooters; tap-to-fire would commit on a misclick). So `validFireTargets` is currently always empty when the fire branch is reached on canvas — **charge is fully playable now; fire becomes reachable when R6's Fire button calls `beginAction('fire')`** (same render + routing path, no further work). The `fireAt` routing is built and unit-tested regardless
 
-**Files:** `engine.ts`; `counters.ts` (rings)
-**Tests:** Playwright — fire reduces target SP / removes eliminated unit; charge moves/eliminates per outcome (assert store state). Reuse the gameStore-level outcomes already covered by `gameStore.spec.ts`; here we only assert the click path reaches them.
+**Files:** `src/lib/game/render/boardInput.ts` (enemy fire/charge branch); `engine.ts` (red target-hex overlays); `boardInput.spec.ts`
+**Tests:** extended `boardInput.spec.ts` (Node, not the originally-suggested Playwright — continuing the R4 decision) — 7 tests total, +2: fire routing (blue-light-inf adjacent to red-light-horse → tap → SP −1 and firer `firedThisActivation`) and charge routing (blue-line-inf vs adjacent red-artillery in move mode → tap → `activeUnitId` null, i.e. `chargeAt` ended the activation). Reuses the `gameStore.spec.ts` fixtures/geometry + a local `seqRng`; only asserts the click path reaches the store methods (outcomes are covered by `gameStore.spec.ts`). Full suite 559 passed (the lone `page.svelte.spec.ts` failure is pre-existing/unrelated); `pnpm check` 0 errors; `pnpm lint` clean; `pnpm build` SSR-safe. Manual charge verification on `/?render=ljs` left to play-testing; fire verified at R6
 **Depends on:** R4
 
 ---
@@ -105,7 +105,7 @@ Complete the action loop on canvas: fire and charge, with their target overlays.
 
 Reach full feature parity with the SVG renderer, then flip the default.
 
-- Overlay the existing Svelte top bar (turn/player), victory banner, and bottom action bar (Move/Fire buttons, unit readout) over the canvas via CSS layering; these stay reactive runes DOM (the board-game template overlays DOM menus the same way)
+- Overlay the existing Svelte top bar (turn/player), victory banner, and bottom action bar (Move/Fire buttons, unit readout) over the canvas via CSS layering; these stay reactive runes DOM (the board-game template overlays DOM menus the same way). **The Fire button's `beginAction('fire')` is what unlocks canvas fire** — R5 deferred fire-mode entry to here; the fire routing + red target overlay already exist and light up once fire mode can be entered
 - `pointer-events` discipline so chrome buttons and canvas taps don't fight
 - Flip the renderer toggle default to LittleJS; SVG remains reachable behind the flag for rollback
 - Preserve `env(safe-area-inset-*)` and `100dvh` handling already in `+page.svelte`
