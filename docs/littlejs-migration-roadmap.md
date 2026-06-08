@@ -58,30 +58,31 @@ Rendered the real terrain board with a camera that fits any scenario map, and ex
 
 ---
 
-### R3: Unit Counter Rendering
+### ~~R3: Unit Counter Rendering~~ COMPLETE
 
-Draw the 6 unit types from `store.units`, as immediate-mode shapes first (PNG deferred to R8 so we adopt LittleJS before any art exists).
+Drew the 6 unit types from `store.units` as immediate-mode shapes (PNG deferred to R8 so we adopt LittleJS before any art exists). Final art/UI tuning is a later step — this phase gets recognizable counters on the canvas.
 
-- Port the NATO symbols in `UnitCounter.svelte` (rects/lines/circles per type) to `drawPoly`/`drawLine`/`drawRect`/`drawEllipse` in `counters.ts`
-- Player color fill (blue/red), `selected` gold outline, SP readout via `drawText`
-- Position via `store.takesCordsReturnsPos(unit.coordinates)` → world (reuse R1 conversion)
+- `render/counters.ts` (pure, engine-free): ports the NATO symbols from `UnitCounter.svelte` into renderer-neutral `Primitive` descriptors (`poly`/`line`/`ellipse`) in **counter-local pixel space** (Y-down, so the existing `toWorld()` flip renders them upright). `counterPrimitives(unit, selected)` emits the player-colored base box (gold outline when `selected`) plus the per-type glyph: Line=box+X, Light=dashed box+X, Dragoons=box+`/`+circle, Light Horse=box+`/`, Horse=box+`/`+midline, Artillery=box+circle. Colors ported via `terrainStyle.hexToRgb`. `dashedRectSegments()` tiles the light-infantry border into dashes (LittleJS has no native dash support); `spAnchor()` positions the SP label
+- `engine.ts`: new `drawPrimitive()` dispatcher maps each primitive to `drawPoly`/`drawLine`/`drawEllipse` (offset by the unit's board pixel center via `store.takesCordsReturnsPos`, then `toWorld()`; transparent fill alpha for outline-only shapes; ellipse sized by **diameter**). `drawCounters()` replaces the R2 placeholder dots and adds the SP readout via world-space `drawText`. Pure `counters.ts` keeps no engine import (SSR-safe); `engine.ts` stays the sole engine consumer
+- **SP readout** is per this roadmap but slightly beyond strict SVG parity — the SVG `UnitCounter.svelte` doesn't render SP. Kept as additive; not a parity risk
 
-**Files:** new `src/lib/game/render/counters.ts`; `engine.ts`
-**Tests:** `counters.spec.ts` for any pure shape-geometry helpers; manual visual parity (all 6 types, both players, selected state, SP)
+**Files:** new `src/lib/game/render/counters.ts` + `counters.spec.ts`; `engine.ts` (draw dispatch + SP text)
+**Tests:** new `counters.spec.ts` — 10 Node tests (base poly + player colors, gold-on-select, two-diagonals for infantry, one-diagonal + midline delta for cavalry, filled player-color circle for dragoons/artillery, dashed-border tiling lies on the perimeter with the expected segment count, SP anchor quadrant). Full suite 552 passed (the lone `page.svelte.spec.ts` failure is pre-existing and unrelated). `pnpm check` 0 errors; `pnpm lint` clean; `pnpm build` SSR-safe. Manual visual parity (all 6 types, both players, selected state, SP) deferred to the art/UI pass
 **Depends on:** R2
 
 ---
 
-### R4: Input — Selection & Movement
+### ~~R4: Input — Selection & Movement~~ COMPLETE
 
-Make the canvas interactive. Poll input in `gameUpdate`, resolve to a hex/unit, route to the store — mirroring the click branching in `+page.svelte:99-107`.
+Made the canvas interactive for selection + movement (fire/charge is R5). Polls input each frame, resolves to a hex/unit via the R1 pickers, and routes to the store — mirroring the click branching in `+page.svelte`.
 
-- `gameUpdate`: on `mouseWasPressed(0)`, use R1 `pickUnit`/`pickHex` on `mousePos`; branch to `store.selectUnit` / `store.beginAction('move')` / `store.moveUnit(coords)`
-- Render `store.validMoveTargets` as the yellow highlight overlay (port from `HexTile.svelte:35`)
-- Touch parity: confirm tap == click via LittleJS touch routing
+- `render/boardInput.ts` (pure, engine-free, Node-testable): `resolveBoardClick(world, store, rng = Math.random)` is the whole click→store branch over the store contract — enemy-unit click → no-op (R5); friendly unit already selected → `store.beginAction('move')`; other friendly → `store.selectUnit`; else `pickHex` → `store.moveUnit`. Reuses `boardGeometry`'s `pickUnit`/`pickHex` and threads an injectable `rng` per the codebase convention
+- **Move trigger (temporary until R6's DOM Move button):** `validMoveTargets` is empty until `beginAction('move')` activates the unit (`gameStore.svelte.ts:63-75`), so the canvas affordance is **a second click on the already-selected unit** to begin move (keeps select≠activate, so selection never gambles the command check)
+- `engine.ts`: new `gameUpdate()` routes world-space `mousePos` to `resolveBoardClick` on `mouseWasPressed(0)` (wired into the `engineInit` gameUpdate slot; touch routes through `mousePos` for free). `gameRender` draws `validMoveTargets` as yellow outline polys (`#ffcc00`, width 3) between terrain and counters — port of `HexTile.svelte`
+- `LittleBoard.svelte` unchanged — LittleJS owns the canvas input listeners; no DOM wiring needed
 
-**Files:** `engine.ts`; `LittleBoard.svelte`
-**Tests:** Playwright interaction test — synthetic click at a unit's screen pixel selects it (assert `store.selectedUnit`); click a highlighted hex moves it (assert `store.units` coords). Drive via the R1 conversion to compute click pixels.
+**Files:** new `src/lib/game/render/boardInput.ts` + `boardInput.spec.ts`; `engine.ts` (gameUpdate + input wiring + move highlights)
+**Tests:** new `boardInput.spec.ts` — 5 Node tests on the same `TEST_UNITS/TEST_MAP/TEST_LEADERS` fixtures as `gameStore.spec.ts` (select on first click; begin-move on second click → `activeUnitId` set + highlights present; move on valid-hex click; enemy click ignored; off-grid no-op), driven by the R1 `hexPixelToWorld` conversion. Chose Node-testing the pure branch over the roadmap's originally-suggested Playwright canvas-pixel test (more robust; canvas wiring covered manually). Full suite 557 passed (the lone `page.svelte.spec.ts` failure is pre-existing/unrelated); `pnpm check` 0 errors; `pnpm lint` clean; `pnpm build` SSR-safe. Manual: tap-to-select → tap-again-for-highlights → tap-hex-to-move confirmed, incl. touch on a mobile viewport
 **Depends on:** R3
 
 ---

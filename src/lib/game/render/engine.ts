@@ -1,6 +1,8 @@
 import type { GameStore } from '$lib/game/state/gameStore.svelte';
 import { hexPixelToWorld } from './boardGeometry';
-import { terrainFill, hexToRgb, hexStrokeHex } from './terrainStyle';
+import { terrainFill, hexToRgb, hexStrokeHex, type Rgb } from './terrainStyle';
+import { counterPrimitives, spAnchor, type Primitive, type Vec } from './counters';
+import { resolveBoardClick } from './boardInput';
 
 /**
  * LittleJS engine bridge: owns the engine lifecycle and the board draw loop,
@@ -26,11 +28,81 @@ let bounds: Bounds | null = null;
 
 const CAMERA_FIT = 0.95; // leave a small margin around the board
 const HEX_LINE_WIDTH = 1; // world units; matches HexTile's thin black border
+const SP_TEXT_SIZE = 16; // world units
+const SP_TEXT_FILL = hexToRgb('#ffffff');
+const SP_TEXT_OUTLINE = hexToRgb('#010203');
+const HIGHLIGHT_COLOR = hexToRgb('#ffcc00'); // move-target outline (matches HexTile)
+const HIGHLIGHT_WIDTH = 3;
 
 /** honeycomb pixel point -> LittleJS world-space vec2 (Y-flip via boardGeometry). */
 function toWorld(p: { x: number; y: number }) {
 	const w = hexPixelToWorld(p);
 	return LJS!.vec2(w.x, w.y);
+}
+
+/** Counter-local point + board pixel center -> world-space vec2 (offset then Y-flip). */
+function toCounterWorld(local: Vec, center: { x: number; y: number }) {
+	return toWorld({ x: center.x + local.x, y: center.y + local.y });
+}
+
+/** Normalized 0..1 RGB(+optional alpha) -> LittleJS Color. */
+function color(c: Rgb, a = 1) {
+	return LJS!.rgb(c.r, c.g, c.b, a);
+}
+
+const TRANSPARENT = () => color({ r: 0, g: 0, b: 0 }, 0);
+
+/** Dispatch one counter primitive to its LittleJS draw call, in world space. */
+function drawPrimitive(prim: Primitive, center: { x: number; y: number }) {
+	const { drawPoly, drawLine, drawEllipse, vec2 } = LJS!;
+	switch (prim.kind) {
+		case 'poly':
+			drawPoly(
+				prim.points.map((p) => toCounterWorld(p, center)),
+				prim.fill ? color(prim.fill) : TRANSPARENT(),
+				prim.lineWidth ?? 0,
+				prim.stroke ? color(prim.stroke) : TRANSPARENT()
+			);
+			break;
+		case 'line':
+			drawLine(
+				toCounterWorld(prim.a, center),
+				toCounterWorld(prim.b, center),
+				prim.width,
+				color(prim.color)
+			);
+			break;
+		case 'ellipse':
+			drawEllipse(
+				toCounterWorld(prim.center, center),
+				vec2(prim.diameter, prim.diameter),
+				prim.fill ? color(prim.fill) : TRANSPARENT(),
+				0,
+				prim.lineWidth ?? 0,
+				prim.stroke ? color(prim.stroke) : TRANSPARENT()
+			);
+			break;
+	}
+}
+
+/** Draw every unit's counter + SP readout from the store. */
+function drawCounters(store: GameStore) {
+	const anchor = spAnchor();
+	for (const u of store.units) {
+		const center = store.takesCordsReturnsPos(u.coordinates);
+		if (!center) continue;
+		for (const prim of counterPrimitives(u, u.selected)) drawPrimitive(prim, center);
+		// SP readout (world-space drawText renders upright; the Y-flip is only on position).
+		LJS!.drawText(
+			String(u.strengthPoints),
+			toCounterWorld(anchor, center),
+			SP_TEXT_SIZE,
+			color(SP_TEXT_FILL),
+			3,
+			color(SP_TEXT_OUTLINE),
+			'center'
+		);
+	}
 }
 
 /** Board pixel extents + center, from hex corners (same min/max as the SVG viewBox). */
@@ -50,6 +122,13 @@ function computeBounds(store: GameStore): Bounds {
 	};
 }
 
+// Poll input each frame: a click/tap routes to the store via the R1 pickers.
+// `mousePos` is world-space and routes touch, so tap == click for free.
+function gameUpdate() {
+	if (!active || !LJS || !currentStore) return;
+	if (LJS.mouseWasPressed(0)) resolveBoardClick(LJS.mousePos, currentStore);
+}
+
 // Fit the board to the canvas every frame, which also handles window resize.
 function gameUpdatePost() {
 	if (!active || !LJS || !bounds) return;
@@ -65,7 +144,7 @@ function gameRender() {
 	const grid = currentStore.grid;
 	if (!grid) return;
 
-	const { drawPoly, drawRect, vec2, rgb } = LJS;
+	const { drawPoly, rgb } = LJS;
 	const s = hexToRgb(hexStrokeHex);
 	const stroke = rgb(s.r, s.g, s.b);
 
@@ -79,17 +158,20 @@ function gameRender() {
 		);
 	}
 
-	// Placeholder unit markers — real counters arrive in R3. Kept so the board
-	// stays readable and the Y-flip stays visually verifiable on an asymmetric layout.
-	for (const u of currentStore.units) {
-		const p = currentStore.takesCordsReturnsPos(u.coordinates);
-		if (!p) continue;
-		drawRect(
-			toWorld(p),
-			vec2(20, 20),
-			u.player === 0 ? rgb(0.1, 0.34, 0.86) : rgb(0.88, 0.14, 0.14)
+	// Move-range highlights (under counters), ported from HexTile's yellow outline.
+	const highlight = color(HIGHLIGHT_COLOR);
+	for (const t of currentStore.validMoveTargets) {
+		const hex = currentStore.hexAt(t.coordinates);
+		if (!hex) continue;
+		drawPoly(
+			hex.corners.map((c) => toWorld(c)),
+			TRANSPARENT(),
+			HIGHLIGHT_WIDTH,
+			highlight
 		);
 	}
+
+	drawCounters(currentStore);
 }
 
 function noop() {}
@@ -114,7 +196,7 @@ export async function mountBoard(store: GameStore): Promise<void> {
 		// Single-instance guard: never create a second engine (it can't be torn down).
 		const mod = await import('littlejsengine');
 		LJS = mod;
-		await mod.engineInit(noop, noop, gameUpdatePost, gameRender, noop);
+		await mod.engineInit(noop, gameUpdate, gameUpdatePost, gameRender, noop);
 		started = true; // engine exists now; never init again
 		mod.setDebugWatermark?.(false); // may be absent in production builds
 	}
