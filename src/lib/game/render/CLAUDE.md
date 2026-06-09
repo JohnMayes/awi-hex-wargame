@@ -4,7 +4,7 @@ This directory is the **LittleJS rendering layer** that is incrementally replaci
 
 - **Roadmap & phases:** `docs/littlejs-migration-roadmap.md` (R0–R11; check which phase you're in)
 - **Why/architecture rationale:** `docs/littlejs-rendering-evaluation.md`
-- **Status:** R0 (Spike & Mount) complete. `LittleBoard.svelte` is the throwaway spike; engine wiring is inlined there and gets extracted to `engine.ts` + `boardGeometry.ts` in R1/R2.
+- **Status:** R0–R6 complete — **past the parity gate**. LittleJS is the default renderer (SVG retained at `/?render=svg`). The board (terrain, counters, highlights, combat overlays), input (select/move/fire/charge), and DOM chrome overlay are all in place. Next: R7 (lifecycle/mobile/a11y hardening) and R8 (PNG art). Engine lifecycle + draw loop live in `engine.ts`; coordinate/picking glue in `boardGeometry.ts`; click→store routing in `boardInput.ts`; `LittleBoard.svelte` is now a thin mount wrapper. The DOM chrome (top/bottom bars, banner) lives in `+page.svelte` as shared snippets, overlaid over the body-rooted canvas with `pointer-events` discipline (a `swallowPointer` attachment stops `mousedown`/`touchstart` from reaching the engine's `document` listeners).
 
 ## This is NOT the LittleJS-AI workflow
 

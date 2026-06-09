@@ -101,19 +101,20 @@ Routed enemy-counter taps to `fireAt`/`chargeAt` and added valid-target overlays
 
 ---
 
-### R6: DOM Chrome Integration — **PARITY GATE**
+### ~~R6: DOM Chrome Integration~~ COMPLETE — **PARITY GATE**
 
-Reach full feature parity with the SVG renderer, then flip the default.
+Reached full feature parity with the SVG renderer and flipped the default to LittleJS.
 
-- Overlay the existing Svelte top bar (turn/player), victory banner, and bottom action bar (Move/Fire buttons, unit readout) over the canvas via CSS layering; these stay reactive runes DOM (the board-game template overlays DOM menus the same way). **The Fire button's `beginAction('fire')` is what unlocks canvas fire** — R5 deferred fire-mode entry to here; the fire routing + red target overlay already exist and light up once fire mode can be entered
-- `pointer-events` discipline so chrome buttons and canvas taps don't fight
-- Flip the renderer toggle default to LittleJS; SVG remains reachable behind the flag for rollback
-- Preserve `env(safe-area-inset-*)` and `100dvh` handling already in `+page.svelte`
+- The top bar (turn/player + End Turn), victory banner, and bottom action bar (unit readout + Move/Fire) are extracted into shared Svelte snippets (`topBar`/`banner`/`bottomBar`) in `+page.svelte`, so both renderers render identical chrome from the same `$derived` state. The SVG branch keeps its flex-column `.container`; the LJS branch composes the snippets into a `position:fixed; inset:0` overlay (`justify-content:space-between` pins the top group up and the bottom group down; the empty middle is `pointer-events:none` so board taps fall through to the canvas)
+- **Fire is now reachable on the canvas:** the Fire button calls `store.beginAction('fire')`, which populates `validFireTargets`; the R5 red target tint (`engine.ts`) and `fireAt` routing (`boardInput.ts`) light up unchanged
+- **`pointer-events` discipline:** LittleJS attaches its input listeners to `document` and records every press regardless of target (verified in `engineInput.js` — `mousedown`/`touchstart`, never `pointerdown`), so a chrome tap would otherwise fire a phantom board click. A `swallowPointer` Svelte **attachment** on each chrome group calls `stopPropagation()` on `mousedown` + `touchstart`, stopping presses before they reach `document`; the button's own `onclick` is a separate event and still fires
+- **Explicit canvas z-index:** `engine.ts` `showCanvases()` pins both canvases to `z-index:0` (rather than the engine's default `auto`) so the `z-index:1` overlay paints above them regardless of the page's stacking chain — robust against a future transformed ancestor trapping the fixed overlay
+- Default flipped: `useLJS = searchParams.get('render') !== 'svg'`; SVG stays reachable at `/?render=svg`. `env(safe-area-inset-*)` padding (on the bars) and `100dvh` (SVG `.container`) are preserved
 
-**Files:** `+page.svelte` (overlay layout, default flip); `LittleBoard.svelte`
-**Tests:** full manual playthrough on desktop + mobile viewport; Playwright smoke covering a full activation (select → move → fire → end turn) and a victory banner
+**Files:** `+page.svelte` (snippet extraction, LJS overlay + `swallowPointer` attachment, default flip); `engine.ts` (canvas z-index); `boardInput.ts` (comment only — the R4 second-tap-to-move gesture is **kept** as a convenience alongside the Move button); `page.svelte.spec.ts` (reworked)
+**Tests:** `page.svelte.spec.ts` rewritten as an overlay smoke — mocks `$lib/game/render/engine` to no-ops (so the real engine never mounts RAF/WebGL/listeners in headless Chromium), renders the default LJS branch, asserts the chrome renders and **End Turn flips Blue → Red**. Full suite **560 passed** (the previously-failing SVG `role="img"` test is replaced); `pnpm check` 0 errors (2 pre-existing `HexTile.svelte` a11y warnings, unrelated), `pnpm lint` clean, `pnpm build` SSR-safe, Svelte autofixer clean. **Manual playthrough (desktop + mobile viewport: select → Move → move, Fire → fire, charge, victory banner, no phantom clicks from chrome buttons, safe-area insets) remains the human verification step.**
 **Depends on:** R5
-**Gate:** at this point the SVG layer is feature-complete-replaceable. Everything after is enhancement; everything before was parity.
+**Gate:** the SVG layer is now feature-complete-replaceable. Everything after is enhancement; everything before was parity.
 
 ---
 

@@ -10,14 +10,14 @@ import { pickHex, pickUnit, type Point } from './boardGeometry';
  *
  * Friendly-unit clicks (R4): first click selects; a second click on the already-
  * selected unit calls `beginAction('move')` (keeps select≠activate, so selection
- * never gambles the command check) — the temporary canvas trigger until R6's
- * Move button. Enemy-unit clicks (R5) route to fire/charge, fire taking priority
- * (only one set is non-empty per mode), mirroring `+page.svelte`.
+ * never gambles the command check). As of R6 this lives alongside the DOM Move
+ * button as a convenience canvas gesture. Enemy-unit clicks (R5) route to
+ * fire/charge, fire taking priority (only one set is non-empty per mode),
+ * mirroring `+page.svelte`.
  *
- * Fire-MODE entry is deferred to R6's Fire button (no clean pre-R6 tap gesture):
- * so on the canvas `validFireTargets` is currently always empty when the fire
- * branch is reached, and only charge is reachable. The `fireAt` routing is built
- * and unit-tested here; R6 lights it up by calling `beginAction('fire')`.
+ * Fire-MODE entry is the DOM Fire button (`beginAction('fire')`, R6): once fire
+ * mode is active `validFireTargets` populates and an enemy tap routes to `fireAt`
+ * here. Charge is reachable in move mode without any button.
  */
 export function resolveBoardClick(
 	world: Point,

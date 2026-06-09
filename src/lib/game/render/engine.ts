@@ -192,8 +192,16 @@ function gameRender() {
 function noop() {}
 
 function showCanvases() {
-	if (LJS?.mainCanvas) LJS.mainCanvas.style.display = '';
-	if (LJS?.glCanvas) LJS.glCanvas.style.display = '';
+	// Explicit z-index (not the engine's default `auto`) so the DOM chrome overlay
+	// reliably paints above both canvases regardless of the page's stacking chain.
+	if (LJS?.mainCanvas) {
+		LJS.mainCanvas.style.display = '';
+		LJS.mainCanvas.style.zIndex = '0';
+	}
+	if (LJS?.glCanvas) {
+		LJS.glCanvas.style.display = '';
+		LJS.glCanvas.style.zIndex = '0';
+	}
 }
 
 function hideCanvases() {

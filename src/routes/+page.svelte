@@ -11,8 +11,24 @@
 	const store = initGameStore(PITCHED_BATTLE);
 	$inspect(store.log);
 
-	// R0 renderer toggle: SVG is the default; `?render=ljs` selects the LittleJS spike.
-	const useLJS = $derived(page.url.searchParams.get('render') === 'ljs');
+	// Renderer toggle: LittleJS is the default as of R6 (parity gate); `?render=svg`
+	// keeps the original SVG renderer reachable for rollback.
+	const useLJS = $derived(page.url.searchParams.get('render') !== 'svg');
+
+	// Pointer-events discipline for the LJS chrome overlay: stop chrome presses from
+	// bubbling to `document`, where LittleJS's input listeners would otherwise record
+	// them as a board click. The engine listens for `mousedown`/`touchstart` (never
+	// `pointerdown`); the button's own `onclick` is a separate event and still fires.
+	// An attachment (not inline handlers) keeps the static container free of a11y warnings.
+	function swallowPointer(node: HTMLElement) {
+		const stop = (e: Event) => e.stopPropagation();
+		node.addEventListener('mousedown', stop);
+		node.addEventListener('touchstart', stop);
+		return () => {
+			node.removeEventListener('mousedown', stop);
+			node.removeEventListener('touchstart', stop);
+		};
+	}
 
 	const outcomeText = $derived.by(() => {
 		const o = store.victoryOutcome;
@@ -65,26 +81,68 @@
 	const padding = 2;
 </script>
 
+{#snippet topBar()}
+	<header class="top-bar">
+		<div class="meta">
+			<span class="meta-label">Turn</span>
+			<span class="meta-value">{store.turn} / {store.turnLimit ?? '∞'}</span>
+			<span class="player-chip" data-player={store.activePlayer}
+				>{store.activePlayer === 0 ? 'Blue' : 'Red'}</span
+			>
+		</div>
+		<button class="end-turn" onclick={() => store.endPlayerTurn()} disabled={store.isGameOver}
+			>End Turn</button
+		>
+	</header>
+{/snippet}
+
+{#snippet banner()}
+	{#if outcomeText}
+		<div class="banner" data-status={store.victoryOutcome?.status}>{outcomeText}</div>
+	{/if}
+{/snippet}
+
+{#snippet bottomBar()}
+	<footer class="bottom-bar">
+		{#if sel && def}
+			<div class="unit-readout">
+				<span class="unit-label">{store.activeUnitId === sel.id ? 'Activating' : 'Selected'}</span>
+				<span class="unit-name">{sel.type.toLowerCase().replace(/_/g, ' ')}</span>
+			</div>
+			<div class="actions">
+				<button class="action" disabled={!moveEnabled} onclick={() => store.beginAction('move')}
+					>Move</button
+				>
+				{#if def.firingRange > 0}
+					<button class="action" disabled={!fireEnabled} onclick={() => store.beginAction('fire')}
+						>Fire</button
+					>
+				{/if}
+			</div>
+		{:else}
+			<span class="prompt">Tap a unit to select</span>
+		{/if}
+	</footer>
+{/snippet}
+
 {#if useLJS}
 	<LittleBoard {store} />
+	<!-- DOM chrome overlaid over the body-rooted canvas. The empty middle is
+	     pointer-events:none so board taps fall through to the engine; the bars
+	     are pointer-events:auto and stop their presses from reaching `document`. -->
+	<div class="overlay">
+		<div class="chrome-group" {@attach swallowPointer}>
+			{@render topBar()}
+			{@render banner()}
+		</div>
+		<div class="chrome-group" {@attach swallowPointer}>
+			{@render bottomBar()}
+		</div>
+	</div>
 {:else}
 	<div class="container">
-		<header class="top-bar">
-			<div class="meta">
-				<span class="meta-label">Turn</span>
-				<span class="meta-value">{store.turn} / {store.turnLimit ?? '∞'}</span>
-				<span class="player-chip" data-player={store.activePlayer}
-					>{store.activePlayer === 0 ? 'Blue' : 'Red'}</span
-				>
-			</div>
-			<button class="end-turn" onclick={() => store.endPlayerTurn()} disabled={store.isGameOver}
-				>End Turn</button
-			>
-		</header>
-
-		{#if outcomeText}
-			<div class="banner" data-status={store.victoryOutcome?.status}>{outcomeText}</div>
-		{/if}
+		{@render topBar()}
+		{@render banner()}
 
 		<svg
 			viewBox={`${minX - padding} ${minY - padding} ${width + padding * 2} ${height + padding * 2}`}
@@ -117,27 +175,7 @@
 			{/each}
 		</svg>
 
-		<footer class="bottom-bar">
-			{#if sel && def}
-				<div class="unit-readout">
-					<span class="unit-label">{store.activeUnitId === sel.id ? 'Activating' : 'Selected'}</span
-					>
-					<span class="unit-name">{sel.type.toLowerCase().replace(/_/g, ' ')}</span>
-				</div>
-				<div class="actions">
-					<button class="action" disabled={!moveEnabled} onclick={() => store.beginAction('move')}
-						>Move</button
-					>
-					{#if def.firingRange > 0}
-						<button class="action" disabled={!fireEnabled} onclick={() => store.beginAction('fire')}
-							>Fire</button
-						>
-					{/if}
-				</div>
-			{:else}
-				<span class="prompt">Tap a unit to select</span>
-			{/if}
-		</footer>
+		{@render bottomBar()}
 	</div>
 {/if}
 
@@ -153,6 +191,20 @@
 		width: 100vw;
 		height: 100vh; /* fallback for older browsers */
 		height: 100dvh; /* preferred: avoids iOS Safari URL-bar layout thrash */
+	}
+
+	/* --- LJS chrome overlay (DOM bars over the body-rooted canvas) --- */
+	.overlay {
+		position: fixed;
+		inset: 0;
+		z-index: 1; /* above the canvas (engine.ts pins both canvases to z-index 0) */
+		display: flex;
+		flex-direction: column;
+		justify-content: space-between; /* pin top group to top, bottom group to bottom */
+		pointer-events: none; /* empty middle is click-through to the canvas */
+	}
+	.chrome-group {
+		pointer-events: auto; /* bars are interactive */
 	}
 
 	svg {
