@@ -205,6 +205,9 @@
 	}
 	.chrome-group {
 		pointer-events: auto; /* bars are interactive */
+		touch-action: manipulation; /* drop the 300ms tap delay; no double-tap zoom on the bars */
+		-webkit-user-select: none;
+		user-select: none; /* taps on bars never start a text selection */
 	}
 
 	svg {

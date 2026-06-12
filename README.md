@@ -194,6 +194,8 @@ Minimal but functional interface for all game mechanics. Build only after core s
 
 **Files:** `+page.svelte`, `HexTile.svelte`, `UnitCounter.svelte`, new components as needed
 
+> **Known a11y gap (board interaction).** On the LittleJS renderer (default since the R7 rendering phase), the board is a canvas with no keyboard/AT affordance — interaction is touch/pointer only. The accessible controls (End Turn / Move / Fire, status) live in the DOM chrome as real buttons, and the canvas carries `aria-label="Game board"`, but keyboard/screen-reader **board navigation is deliberately deferred** as not worth the cost for a mobile-first touch game. Revisit if a desktop/AT audience emerges. See `docs/littlejs-migration-roadmap.md` (R7).
+
 ---
 
 ### Milestone Dependency Graph

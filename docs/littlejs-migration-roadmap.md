@@ -118,16 +118,18 @@ Reached full feature parity with the SVG renderer and flipped the default to Lit
 
 ---
 
-### R7: Lifecycle & Mobile Hardening
+### ~~R7: Lifecycle & Mobile Hardening~~ COMPLETE
 
-Make the engine integration production-safe — the §6.2 lifecycle risks from the report.
+Made the engine integration production-safe on real mobile devices and robust across mount/unmount/HMR — the §6.2 lifecycle risks from the report. Investigation of the installed engine (`littlejsengine@1.18.18`) reshaped the phase: **most of the original "resize / DPR / pinch-zoom" bullet is already handled by the engine** (verify, not build), and the real levers turned out to be a backing-store cap fix and `setPaused`.
 
-- Single-instance guard (one engine per page); robust teardown on unmount and on hot-reload
-- Resize / `devicePixelRatio` handling; orientation changes; pinch/scroll suppression as appropriate
-- Accessibility: a parallel keyboard/`aria` affordance for unit selection (canvas is opaque) — or a documented, ticketed a11y gap with a DOM fallback list of units. The current SVG counters carry `role`/`tabindex`/`aria-label`/Enter-key handling (`UnitCounter.svelte:48-54`) that the canvas loses.
+- **Headline real-device fix — canvas under-filling the viewport.** The engine default `canvasMaxSize` (1920×1080) caps `mainCanvasSize` and then sets CSS size to `maxSize/dpr`, so on a tall high-DPI phone (e.g. 932 CSS px at dpr 3 → 2796 > 1080) the canvas collapsed to ~⅓ of the viewport. **Invisible in desktop devtools mobile emulation** (dpr 1, cap never hit), which is why R6's emulator pass missed it. Fix: `setCanvasMaxSize(vec2(4096, 4096))` before `engineInit` (`engine.js:339-362`; 4096 is the universally-safe WebGL dimension, covers every device at dpr ≤ 3)
+- **Concurrent double-init guard.** `mountBoard` is async and previously set `started = true` only _after_ `await engineInit`, so two interleaved mounts (rapid renderer toggle / double `onMount`) could both create a second, un-tearable engine. Replaced the boolean with a module-level `startPromise`: the first mount owns init, the rest `await` the same promise
+- **Pause on hide/unmount.** The engine never pauses on tab-hide. `applyPauseState()` = `setPaused(!wantActive || document.hidden)`, called from `mountBoard`/`unmountBoard` and a once-attached `document` `visibilitychange` listener. `setPaused` halts `gameUpdate` (input polling) + object sim while render/`gameUpdatePost` still run, so the board stays correct and resumes instantly with no return-from-background catch-up (`engine.js:217-280`)
+- **Resize / DPR / gesture suppression — verified as engine-handled.** `updateCanvas()` runs every frame (resize + orientation free; our per-frame camera recompute rides on it — no resize listener to write); backing store scaled by `canvasPixelRatio ?? devicePixelRatio`; `inputPreventDefault` + `touch-action:none` on the root suppress pinch-zoom/scroll/context-menu over the canvas. Added `touch-action: manipulation` + `user-select: none` to the DOM chrome bars so taps there never start a text selection or double-tap zoom
+- **Accessibility — documented gap, not a parallel model (confirmed with user).** For a mobile-first touch game, a keyboard/AT board-navigation model isn't worth the cost. The accessible controls (End Turn / Move / Fire, status) already live in the DOM chrome as real `<button>`s; `mainCanvas` gets `aria-label="Game board"`. Keyboard/screen-reader **board interaction is a deferred, ticketed gap** — see README. The SVG counters' `role`/`tabindex`/`aria-label`/Enter handling (`UnitCounter.svelte:48-54`) is intentionally **not** ported to the canvas
 
-**Files:** `LittleBoard.svelte`; `engine.ts`; possibly a small `render/a11y.ts`
-**Tests:** mount/unmount/navigate stress (no leaked loops/listeners); manual mobile device pass; keyboard-only selection if implemented
+**Files:** `engine.ts` (canvasMaxSize, `startPromise`, `applyPauseState`/visibilitychange, canvas `aria-label`); `+page.svelte` (chrome `touch-action`/`user-select`); `render/CLAUDE.md`, `README.md` (docs + a11y gap); `page.svelte.spec.ts` (mount/unmount/remount smoke)
+**Tests:** extended `page.svelte.spec.ts` (engine mocked to no-ops) with an unmount→remount idempotency case (chrome re-renders, End Turn still flips player). Asserting "exactly one engine" isn't possible against the mock — the single-instance check is manual (count canvas pairs). The engine-coupled lifecycle logic isn't Node-unit-testable; per "test what's testable, be honest about the rest," substantive verification is the manual real-device pass below. `pnpm check`/`lint`/`build` clean; Svelte autofixer clean. **Manual (real iOS + Android — item 1 is invisible in emulation): canvas fills the viewport portrait + landscape and re-fits on rotate; no pinch-zoom/scroll/double-tap-zoom/long-press menu over the board; chrome taps clean with no selection flash; safe-area insets respected; `/?render=svg` ↔ default toggling leaves exactly one canvas pair; backgrounding and returning keeps state with no catch-up burst.**
 **Depends on:** R6
 
 ---
@@ -216,7 +218,7 @@ R6  DOM Chrome Integration ───────  ★ PARITY GATE (flip default;
       R11 Decommission SVG          (only after production confidence)
 ```
 
-R0→R6 is a strict chain to parity. R7 and R8 fork after the gate; R9–R11 follow the art track. R7 can land any time after R6.
+R0→R6 is a strict chain to parity. R7 and R8 fork after the gate; R9–R11 follow the art track. **R7 is complete**; R8 (independent of R7) is next.
 
 ### Design Principles
 
