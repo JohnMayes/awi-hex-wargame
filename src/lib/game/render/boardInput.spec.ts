@@ -43,24 +43,23 @@ describe('resolveBoardClick', () => {
 		expect(store.selectedUnit?.id).toBe('blue-line-inf');
 	});
 
-	it('begins the move action on a second click of the selected unit', () => {
+	it('arms (but does not yet commit) a move when a move-target hex is tapped', () => {
 		const store = makeStore();
 		const blue = unit(store, 'blue-line-inf');
-		const world = worldAt(store, blue.coordinates);
-		resolveBoardClick(world, store); // select
-		resolveBoardClick(world, store); // begin move
-		expect(store.activeUnitId).toBe('blue-line-inf');
-		expect(store.validMoveTargets.length).toBeGreaterThan(0);
+		resolveBoardClick(worldAt(store, blue.coordinates), store); // select
+		const target = store.validMoveTargets[0].coordinates;
+		resolveBoardClick(worldAt(store, target), store); // arm move
+		expect(store.pendingAction).toEqual(expect.objectContaining({ kind: 'move' }));
+		expect(unit(store, 'blue-line-inf').coordinates).toEqual(blue.coordinates); // not moved yet
 	});
 
-	it('moves the active unit when a valid move-target hex is clicked', () => {
+	it('moves the unit when a move-target hex is tapped twice (arm + confirm)', () => {
 		const store = makeStore();
 		const blue = unit(store, 'blue-line-inf');
-		const world = worldAt(store, blue.coordinates);
-		resolveBoardClick(world, store); // select
-		resolveBoardClick(world, store); // begin move
+		resolveBoardClick(worldAt(store, blue.coordinates), store); // select
 		const target = store.validMoveTargets[0].coordinates;
-		resolveBoardClick(worldAt(store, target), store); // move
+		resolveBoardClick(worldAt(store, target), store); // arm
+		resolveBoardClick(worldAt(store, target), store); // confirm
 		expect(unit(store, 'blue-line-inf').coordinates).toEqual(target);
 	});
 
@@ -79,40 +78,34 @@ describe('resolveBoardClick', () => {
 		expect(store.selectedUnit).toBeUndefined();
 	});
 
-	it('routes a click on a valid fire target to fireAt', () => {
+	it('routes a second tap on a valid fire target to fireAt (arm then confirm)', () => {
 		// blue-light-inf (4,0) adjacent to red-light-horse (5,0): in range, LOS clear.
 		const store = makeStoreWith({ 'blue-light-inf': { col: 4, row: 0 } });
 		store.activateUnit('blue-light-inf');
 		expect(store.validFireTargets.some((t) => t.id === 'red-light-horse')).toBe(true);
 		const before = unit(store, 'red-light-horse').strengthPoints;
+		const enemyWorld = worldAt(store, unit(store, 'red-light-horse').coordinates);
+		resolveBoardClick(enemyWorld, store); // arm fire (no rng consumed)
 		// seq: hit(0) + no-double(0.5) + morale-pass(0)
-		resolveBoardClick(
-			worldAt(store, unit(store, 'red-light-horse').coordinates),
-			store,
-			seqRng([0, 0.5, 0])
-		);
+		resolveBoardClick(enemyWorld, store, seqRng([0, 0.5, 0])); // confirm fire
 		expect(unit(store, 'red-light-horse').strengthPoints).toBe(before - 1);
 		expect(unit(store, 'blue-light-inf').firedThisActivation).toBe(true);
 	});
 
-	it('routes a click on a valid charge target to chargeAt', () => {
-		// blue-line-inf (3,1) adjacent to red-artillery (4,1); move mode so only
-		// charge targets are populated (no fire/charge ambiguity).
+	it('routes a second tap on a valid charge target to chargeAt', () => {
+		// Player 1's Horse (3,1) adjacent to blue-line-inf (4,1): Horse can charge
+		// but never fire, so the tap unambiguously arms a charge.
 		const store = makeStoreWith({
-			'blue-line-inf': { col: 3, row: 1 },
-			'red-artillery': { col: 4, row: 1 }
+			'red-horse': { col: 3, row: 1 },
+			'blue-line-inf': { col: 4, row: 1 }
 		});
-		const li = unit(store, 'blue-line-inf');
-		store.selectUnit(li);
-		store.beginAction('move');
-		expect(store.validChargeTargets.some((t) => t.id === 'red-artillery')).toBe(true);
-		expect(store.validFireTargets).toHaveLength(0); // move mode → no fire ambiguity
-		// seq: winning charge (mirrors gameStore.spec's Line-Inf-vs-Artillery advance)
-		resolveBoardClick(
-			worldAt(store, unit(store, 'red-artillery').coordinates),
-			store,
-			seqRng([0.2, 0])
-		);
+		store.endPlayerTurn(); // → player 1
+		store.activateUnit('red-horse');
+		expect(store.validChargeTargets.some((t) => t.id === 'blue-line-inf')).toBe(true);
+		const enemyWorld = worldAt(store, unit(store, 'blue-line-inf').coordinates);
+		resolveBoardClick(enemyWorld, store); // arm charge
+		// seq: winning charge roll
+		resolveBoardClick(enemyWorld, store, seqRng([0.2, 0])); // confirm charge
 		expect(store.activeUnitId).toBeNull(); // chargeAt ends the activation
 	});
 });

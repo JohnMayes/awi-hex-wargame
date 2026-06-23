@@ -1,10 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { GameStore, type ActionMode } from './gameStore.svelte';
+import { GameStore } from './gameStore.svelte';
 import { ActivationStep, type Unit } from '../core/types';
 import type { Leader } from '../core/command';
 import { PITCHED_BATTLE, TEST_LEADERS, TEST_UNITS } from '../data/scenarios';
 import { TEST_MAP } from '../data/maps';
-import { getUnitDefinition } from '../core/unitDefinitions';
 
 const makeStore = () =>
 	new GameStore(structuredClone(TEST_UNITS), TEST_MAP, structuredClone(TEST_LEADERS));
@@ -15,14 +14,11 @@ const select = (store: GameStore, id: string) => {
 	store.selectUnit(unit);
 };
 
-// Convenience: select + beginAction. Defaults to a mode the unit can use.
-const begin = (store: GameStore, id: string, mode?: ActionMode) => {
-	const unit = store.units.find((u) => u.id === id);
-	if (!unit) throw new Error(`Unit ${id} not found`);
-	store.selectUnit(unit);
-	const def = getUnitDefinition(unit.type);
-	const m: ActionMode = mode ?? (def.firingRange > 0 ? 'move' : 'move');
-	store.beginAction(m);
+// Convenience: drive a unit into its ACTION step (runs the command check). The
+// optional third arg is ignored — action "mode" no longer exists; kept so the
+// many existing `begin(store, id, 'move'|'fire')` call sites keep compiling.
+const begin = (store: GameStore, id: string, _mode?: 'move' | 'fire') => {
+	store.activateUnit(id);
 };
 
 const BLUE_IDS = ['blue-line-inf', 'blue-light-inf', 'blue-dragoons'];
@@ -53,10 +49,11 @@ describe('GameStore initial state', () => {
 		expect(store.activeUnitId).toBeNull();
 	});
 
-	it('starts with no actionMode', () => {
-		expect.assertions(1);
+	it('starts with no pendingAction', () => {
+		expect.assertions(2);
 		const store = makeStore();
-		expect(store.actionMode).toBeNull();
+		expect(store.pendingAction).toBeNull();
+		expect(store.notice).toBeNull();
 	});
 
 	it('starts with all units unactivated', () => {
@@ -194,74 +191,297 @@ describe('selectUnit', () => {
 		expect(prior.selected).toBe(false);
 		expect(fresh.selected).toBe(true);
 		expect(store.activeUnitId).toBeNull();
-		expect(store.actionMode).toBeNull();
+		expect(store.pendingAction).toBeNull();
 	});
 });
 
-describe('beginAction', () => {
-	it('activates and sets actionMode', () => {
+// Line Infantry adjacent to enemy Artillery: line inf can BOTH fire (range 2)
+// and charge it (artillery is not a cavalry type), so the fire/charge choice
+// applies.
+const makeLineVsArtilleryStore = () => {
+	const units = structuredClone(TEST_UNITS) as Unit[];
+	units.find((u) => u.id === 'blue-line-inf')!.coordinates = { col: 3, row: 1 };
+	units.find((u) => u.id === 'red-artillery')!.coordinates = { col: 4, row: 1 };
+	return new GameStore(units, TEST_MAP, structuredClone(TEST_LEADERS));
+};
+
+// Player 1's Horse (MOVE_ONLY, range 0) adjacent to a blue unit: can charge but
+// never fire.
+const makeHorseChargeStore = () => {
+	const units = structuredClone(TEST_UNITS) as Unit[];
+	units.find((u) => u.id === 'red-horse')!.coordinates = { col: 3, row: 1 };
+	units.find((u) => u.id === 'blue-line-inf')!.coordinates = { col: 4, row: 1 };
+	const store = new GameStore(units, TEST_MAP, structuredClone(TEST_LEADERS));
+	store.endPlayerTurn(); // → player 1's turn
+	return store;
+};
+
+describe('selectUnit — preview & re-tap', () => {
+	it('previews move targets for a selected unit without activating it', () => {
 		expect.assertions(3);
 		const store = makeStore();
 		select(store, 'blue-line-inf');
-		store.beginAction('move');
-		expect(store.activeUnitId).toBe('blue-line-inf');
-		expect(store.activationStep).toBe(ActivationStep.ACTION);
-		expect(store.actionMode).toBe('move');
-	});
-
-	it('is a no-op when no unit is selected', () => {
-		expect.assertions(2);
-		const store = makeStore();
-		store.beginAction('move');
+		expect(store.validMoveTargets.length).toBeGreaterThan(0);
 		expect(store.activeUnitId).toBeNull();
-		expect(store.actionMode).toBeNull();
+		expect(store.units.find((u) => u.id === 'blue-line-inf')!.activated).toBe(false);
 	});
 
-	it('rejects fire mode for a unit with firingRange 0 (cavalry)', () => {
+	it('re-tapping a selected unit clears a pending action but keeps the selection', () => {
 		expect.assertions(2);
 		const store = makeStore();
-		store.endPlayerTurn(); // switch to player 1
-		select(store, 'red-light-horse');
-		store.beginAction('fire');
-		expect(store.activeUnitId).toBeNull();
-		expect(store.actionMode).toBeNull();
+		select(store, 'blue-line-inf');
+		store.tapHex(store.validMoveTargets[0].coordinates);
+		const fresh = store.units.find((u) => u.id === 'blue-line-inf')!;
+		store.selectUnit(fresh);
+		expect(store.pendingAction).toBeNull();
+		expect(store.units.find((u) => u.id === 'blue-line-inf')!.selected).toBe(true);
 	});
 
-	it('locks fire vs. move for MOVE_OR_FIRE units (fire then move rejected)', () => {
-		expect.assertions(2);
-		const store = makeStore();
-		begin(store, 'blue-line-inf', 'fire');
-		store.beginAction('move');
-		expect(store.actionMode).toBe('fire');
-		expect(store.activeUnitId).toBe('blue-line-inf');
-	});
-
-	it('locks fire vs. move for MOVE_OR_FIRE units (move then fire rejected)', () => {
+	it('re-tapping a selected unit with no pending action deselects it', () => {
 		expect.assertions(1);
 		const store = makeStore();
-		begin(store, 'blue-line-inf', 'move');
-		store.beginAction('fire');
-		expect(store.actionMode).toBe('move');
+		select(store, 'blue-line-inf');
+		const fresh = store.units.find((u) => u.id === 'blue-line-inf')!;
+		store.selectUnit(fresh);
+		expect(store.units.find((u) => u.id === 'blue-line-inf')!.selected).toBe(false);
 	});
+});
 
-	it('allows free mode switching for FIRE_AND_MOVE units (move then fire)', () => {
-		expect.assertions(1);
+describe('tapHex — arm/confirm move', () => {
+	it('first tap on a valid hex arms a pending move without activating', () => {
+		expect.assertions(3);
 		const store = makeStore();
-		begin(store, 'blue-light-inf', 'move');
-		store.beginAction('fire');
-		expect(store.actionMode).toBe('fire');
+		select(store, 'blue-line-inf');
+		const target = store.validMoveTargets[0];
+		store.tapHex(target.coordinates);
+		expect(store.pendingAction?.kind).toBe('move');
+		expect(store.activeUnitId).toBeNull();
+		expect(store.units.find((u) => u.id === 'blue-line-inf')!.coordinates).toEqual({
+			col: 0,
+			row: 0
+		});
 	});
 
-	it('does not activate the unit when mode is rejected', () => {
+	it('second tap on the same hex confirms: activates and moves', () => {
 		expect.assertions(2);
 		const store = makeStore();
-		store.endPlayerTurn();
-		select(store, 'red-light-horse');
-		store.beginAction('fire');
-		// fire was rejected; nothing else activates either
+		select(store, 'blue-line-inf');
+		const target = store.validMoveTargets[0];
+		store.tapHex(target.coordinates);
+		store.tapHex(target.coordinates);
+		expect(store.units.find((u) => u.id === 'blue-line-inf')!.coordinates).toEqual(
+			target.coordinates
+		);
+		expect(store.pendingAction).toBeNull();
+	});
+
+	it('tapping a different valid hex re-arms rather than confirming', () => {
+		expect.assertions(1);
+		const store = makeStore();
+		select(store, 'blue-dragoons'); // 2 MP → plenty of distinct targets
+		const targets = store.validMoveTargets;
+		store.tapHex(targets[0].coordinates);
+		store.tapHex(targets[1].coordinates);
+		expect(store.pendingAction).toEqual({
+			kind: 'move',
+			coords: targets[1].coordinates,
+			cost: targets[1].cost
+		});
+	});
+
+	it('tapping a non-target hex clears the pending action', () => {
+		expect.assertions(1);
+		const store = makeStore();
+		select(store, 'blue-line-inf');
+		store.tapHex(store.validMoveTargets[0].coordinates);
+		store.tapHex({ col: 5, row: 3 }); // far away, not a move target
+		expect(store.pendingAction).toBeNull();
+	});
+});
+
+describe('tapEnemy — arm/confirm fire & charge', () => {
+	it('first tap arms fire (preferred over charge) without activating', () => {
+		expect.assertions(2);
+		const store = makeLineVsArtilleryStore();
+		select(store, 'blue-line-inf');
+		store.tapEnemy('red-artillery');
+		expect(store.pendingAction).toEqual({ kind: 'fire', targetId: 'red-artillery' });
 		expect(store.activeUnitId).toBeNull();
-		const u = store.units.find((u) => u.id === 'red-light-horse')!;
-		expect(u.selected).toBe(true); // selection persists, just no activation
+	});
+
+	it('arms charge when the target is chargeable but not fireable', () => {
+		expect.assertions(1);
+		const store = makeHorseChargeStore();
+		select(store, 'red-horse');
+		store.tapEnemy('blue-line-inf');
+		expect(store.pendingAction).toEqual({ kind: 'charge', targetId: 'blue-line-inf' });
+	});
+
+	it('second tap on the same enemy confirms the action', () => {
+		expect.assertions(2);
+		const store = makeLineVsArtilleryStore();
+		select(store, 'blue-line-inf');
+		store.tapEnemy('red-artillery');
+		const beforeSP = store.units.find((u) => u.id === 'red-artillery')!.strengthPoints;
+		store.tapEnemy('red-artillery', () => 0); // confirm fire; rng 0 → hit
+		const after = store.units.find((u) => u.id === 'red-artillery');
+		expect(store.pendingAction).toBeNull();
+		expect(after === undefined || after.strengthPoints < beforeSP).toBe(true);
+	});
+
+	it('tapping a non-target enemy is a no-op', () => {
+		expect.assertions(1);
+		const store = makeStore();
+		select(store, 'blue-line-inf'); // at (0,0); enemies far away
+		store.tapEnemy('red-horse');
+		expect(store.pendingAction).toBeNull();
+	});
+});
+
+describe('setPendingCombatKind', () => {
+	it('switches an armed fire to charge when the target is also chargeable', () => {
+		expect.assertions(1);
+		const store = makeLineVsArtilleryStore();
+		select(store, 'blue-line-inf');
+		store.tapEnemy('red-artillery'); // arms fire
+		store.setPendingCombatKind('charge');
+		expect(store.pendingAction).toEqual({ kind: 'charge', targetId: 'red-artillery' });
+	});
+
+	it('ignores a switch to a kind the target does not support', () => {
+		expect.assertions(1);
+		// Line Infantry can fire cavalry but cannot charge it (restricted).
+		const units = structuredClone(TEST_UNITS) as Unit[];
+		units.find((u) => u.id === 'blue-line-inf')!.coordinates = { col: 3, row: 1 };
+		units.find((u) => u.id === 'red-light-horse')!.coordinates = { col: 4, row: 1 };
+		const store = new GameStore(units, TEST_MAP, structuredClone(TEST_LEADERS));
+		select(store, 'blue-line-inf');
+		store.tapEnemy('red-light-horse'); // arms fire
+		store.setPendingCombatKind('charge'); // not a valid charge target → ignored
+		expect(store.pendingAction).toEqual({ kind: 'fire', targetId: 'red-light-horse' });
+	});
+});
+
+describe('confirmAction — lazy command check', () => {
+	it('rolls the command check on the first action and moves on pass', () => {
+		expect.assertions(3);
+		const store = makeStore(); // TEST_LEADERS → in command
+		select(store, 'blue-line-inf');
+		const target = store.validMoveTargets[0];
+		store.tapHex(target.coordinates);
+		store.confirmAction();
+		expect(store.units.find((u) => u.id === 'blue-line-inf')!.coordinates).toEqual(
+			target.coordinates
+		);
+		expect(store.lastCommandCheck?.inCommand).toBe(true);
+		expect(store.pendingAction).toBeNull();
+	});
+
+	it('on a failed command check: aborts the action, burns the activation, sets a notice', () => {
+		expect.assertions(4);
+		const store = new GameStore(structuredClone(TEST_UNITS), TEST_MAP, []); // no leaders
+		select(store, 'blue-line-inf');
+		const target = store.validMoveTargets[0];
+		store.tapHex(target.coordinates);
+		store.confirmAction(() => 0.6); // out of command, 0.6 ≥ 0.5 → fail
+		const unit = store.units.find((u) => u.id === 'blue-line-inf')!;
+		expect(unit.coordinates).toEqual({ col: 0, row: 0 }); // did not move
+		expect(unit.activated).toBe(true); // activation burned
+		expect(store.pendingAction).toBeNull();
+		expect(store.notice?.text).toMatch(/out of command/i);
+	});
+
+	it('does not re-roll the command check on a second action in the same activation', () => {
+		expect.assertions(2);
+		// Light Infantry (FIRE_AND_MOVE) fires then moves; the command check must
+		// run only once. No leaders → out of command, so a check object is created.
+		const units = structuredClone(TEST_UNITS) as Unit[];
+		units.find((u) => u.id === 'blue-light-inf')!.coordinates = { col: 3, row: 0 };
+		units.find((u) => u.id === 'red-light-horse')!.coordinates = { col: 5, row: 0 };
+		const store = new GameStore(units, TEST_MAP, []);
+		select(store, 'blue-light-inf');
+		store.tapEnemy('red-light-horse');
+		store.confirmAction(() => 0); // first action rolls the check
+		const firstCheck = store.lastCommandCheck;
+		const moveTarget = store.validMoveTargets[0];
+		expect(moveTarget).toBeDefined();
+		store.tapHex(moveTarget.coordinates);
+		store.confirmAction(() => 0);
+		expect(store.lastCommandCheck).toBe(firstCheck); // same object → no second roll
+	});
+});
+
+describe('cancelAction', () => {
+	it('clears a pending action without ending the activation', () => {
+		expect.assertions(2);
+		const store = makeStore();
+		store.activateUnit('blue-line-inf');
+		store.tapHex(store.validMoveTargets[0].coordinates);
+		store.cancelAction();
+		expect(store.pendingAction).toBeNull();
+		expect(store.activeUnitId).toBe('blue-line-inf');
+	});
+});
+
+describe('auto-end activation', () => {
+	it('Line Infantry auto-ends after a move (1 MP, cannot then fire)', () => {
+		expect.assertions(2);
+		const store = makeStore();
+		store.activateUnit('blue-line-inf');
+		store.tapHex(store.validMoveTargets[0].coordinates);
+		store.confirmAction();
+		expect(store.activeUnitId).toBeNull();
+		expect(store.units.find((u) => u.id === 'blue-line-inf')!.activated).toBe(true);
+	});
+
+	it('Light Infantry does NOT auto-end after firing (can still move)', () => {
+		expect.assertions(2);
+		const units = structuredClone(TEST_UNITS) as Unit[];
+		units.find((u) => u.id === 'blue-light-inf')!.coordinates = { col: 3, row: 0 };
+		units.find((u) => u.id === 'red-light-horse')!.coordinates = { col: 5, row: 0 };
+		const store = new GameStore(units, TEST_MAP, structuredClone(TEST_LEADERS));
+		store.activateUnit('blue-light-inf');
+		store.tapEnemy('red-light-horse');
+		store.confirmAction(() => 0);
+		expect(store.activeUnitId).toBe('blue-light-inf');
+		expect(store.validMoveTargets.length).toBeGreaterThan(0);
+	});
+
+	it('Dragoon does NOT auto-end after moving 1 of 2 MP', () => {
+		expect.assertions(2);
+		const store = makeStore(); // blue-dragoons at (0,2), 2 MP
+		store.activateUnit('blue-dragoons');
+		const oneStep = store.validMoveTargets.find((t) => t.cost === 1)!;
+		store.tapHex(oneStep.coordinates);
+		store.confirmAction();
+		expect(store.activeUnitId).toBe('blue-dragoons');
+		expect(store.units.find((u) => u.id === 'blue-dragoons')!.movementPointsUsed).toBe(1);
+	});
+
+	it('Artillery auto-ends after firing', () => {
+		expect.assertions(1);
+		const units = structuredClone(TEST_UNITS) as Unit[];
+		units.find((u) => u.id === 'red-artillery')!.coordinates = { col: 3, row: 0 };
+		units.find((u) => u.id === 'blue-line-inf')!.coordinates = { col: 5, row: 0 };
+		const store = new GameStore(units, TEST_MAP, structuredClone(TEST_LEADERS));
+		store.endPlayerTurn(); // → player 1
+		store.activateUnit('red-artillery');
+		store.tapEnemy('blue-line-inf');
+		store.confirmAction(() => 0);
+		expect(store.activeUnitId).toBeNull();
+	});
+});
+
+describe('notice lifecycle', () => {
+	it('selecting a unit clears a prior notice', () => {
+		expect.assertions(2);
+		const store = new GameStore(structuredClone(TEST_UNITS), TEST_MAP, []); // no leaders
+		select(store, 'blue-line-inf');
+		store.tapHex(store.validMoveTargets[0].coordinates);
+		store.confirmAction(() => 0.6); // fail → sets notice
+		expect(store.notice).not.toBeNull();
+		select(store, 'blue-light-inf');
+		expect(store.notice).toBeNull();
 	});
 });
 
@@ -302,12 +522,13 @@ describe('endActivation', () => {
 		expect(store.activeUnitId).toBeNull();
 	});
 
-	it('clears actionMode', () => {
+	it('clears pendingAction', () => {
 		expect.assertions(1);
 		const store = makeStore();
-		begin(store, 'blue-line-inf', 'move');
+		store.activateUnit('blue-line-inf');
+		store.tapHex(store.validMoveTargets[0].coordinates);
 		store.endActivation();
-		expect(store.actionMode).toBeNull();
+		expect(store.pendingAction).toBeNull();
 	});
 
 	it('returns to AWAITING_ACTIVATION', () => {
@@ -497,15 +718,6 @@ describe('moveUnit gating', () => {
 		const after = store.units.find((u) => u.id === 'blue-line-inf')!.coordinates;
 		expect(after).toEqual(before);
 	});
-
-	it('is a no-op when actionMode is fire', () => {
-		expect.assertions(1);
-		const store = makeStore();
-		begin(store, 'blue-line-inf', 'fire');
-		store.moveUnit({ col: 1, row: 0 });
-		const unit = store.units.find((u) => u.id === 'blue-line-inf');
-		expect(unit?.coordinates).toEqual({ col: 0, row: 0 });
-	});
 });
 
 describe('moveUnit — validation (M5)', () => {
@@ -560,11 +772,12 @@ describe('moveUnit — validation (M5)', () => {
 		expect(store.validMoveTargets).toHaveLength(0);
 	});
 
-	it('validMoveTargets is empty when actionMode is fire', () => {
-		expect.assertions(1);
+	it('validMoveTargets previews for a selected (not-yet-activated) unit', () => {
+		expect.assertions(2);
 		const store = makeStore();
-		begin(store, 'blue-line-inf', 'fire');
-		expect(store.validMoveTargets).toHaveLength(0);
+		select(store, 'blue-line-inf');
+		expect(store.activeUnitId).toBeNull();
+		expect(store.validMoveTargets.length).toBeGreaterThan(0);
 	});
 });
 
@@ -780,10 +993,11 @@ describe('fireAt — gating (M7)', () => {
 		expect(afterSP).toBe(beforeSP);
 	});
 
-	it('rejects when actionMode is move (MOVE_OR_FIRE unit committed to move)', () => {
+	it('rejects fire after the MOVE_OR_FIRE unit has moved', () => {
 		expect.assertions(2);
 		const store = makeLineInfFireStore();
-		begin(store, 'blue-line-inf', 'move');
+		store.activateUnit('blue-line-inf');
+		store.moveUnit({ col: 3, row: 2 });
 		const beforeSP = store.units.find((u) => u.id === 'red-light-horse')!.strengthPoints;
 		const result = store.fireAt('red-light-horse', () => 0);
 		const afterSP = store.units.find((u) => u.id === 'red-light-horse')!.strengthPoints;
@@ -814,11 +1028,12 @@ describe('validFireTargets — derived gating (M7)', () => {
 		expect(store.validFireTargets.length).toBeGreaterThan(0);
 	});
 
-	it('is empty when actionMode is move (mode-based filter)', () => {
-		expect.assertions(1);
+	it('previews fire targets for a selected (not-yet-activated) MOVE_OR_FIRE unit', () => {
+		expect.assertions(2);
 		const store = makeLineInfFireStore();
-		begin(store, 'blue-line-inf', 'move');
-		expect(store.validFireTargets).toHaveLength(0);
+		select(store, 'blue-line-inf');
+		expect(store.activeUnitId).toBeNull();
+		expect(store.validFireTargets.length).toBeGreaterThan(0);
 	});
 });
 
@@ -894,13 +1109,6 @@ describe('validChargeTargets — gating (M8)', () => {
 		lh.coordinates = { col: 4, row: 1 };
 		const store = new GameStore(units, TEST_MAP, structuredClone(TEST_LEADERS));
 		store.activateUnit('blue-light-inf');
-		expect(store.validChargeTargets).toEqual([]);
-	});
-
-	it('is empty when actionMode is fire', () => {
-		expect.assertions(1);
-		const store = makeChargeStore();
-		begin(store, 'blue-line-inf', 'fire');
 		expect(store.validChargeTargets).toEqual([]);
 	});
 

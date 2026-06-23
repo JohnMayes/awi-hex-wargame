@@ -30,8 +30,8 @@ The sibling `../LittleJS-AI/` repo (and its `CLAUDE.md`) assume a **global `<scr
 
 The render layer is a **pure consumer** of `GameStore` — never put game logic, rules, or RNG in a render callback. Svelte _pushes_; LittleJS _pulls_ — read current state every frame in callbacks (no `$effect` needed for the board):
 
-- **Read:** `store.grid`, `store.units`, `store.validMoveTargets`/`validFireTargets`/`validChargeTargets`, `store.selectedUnit`, `store.turn`, `store.activePlayer`, `store.victoryOutcome`, `store.isGameOver`.
-- **Write (on input):** `selectUnit`, `beginAction('move'|'fire')`, `moveUnit`, `fireAt`, `chargeAt`, `endPlayerTurn`.
+- **Read:** `store.grid`, `store.units`, `store.validMoveTargets`/`validFireTargets`/`validChargeTargets`, `store.selectedUnit`, `store.pendingAction`, `store.turn`, `store.activePlayer`, `store.victoryOutcome`, `store.isGameOver`.
+- **Write (on input):** `selectUnit`, `tapHex`, `tapEnemy` (tap-to-preview / tap-again-to-confirm), `confirmAction`/`cancelAction`/`setPendingCombatKind` (bottom-bar buttons), `endActivation`, `endPlayerTurn`. The lower-level `moveUnit`/`fireAt`/`chargeAt` are driven by `confirmAction`, not called directly from input.
 
 Reading a runes `$state`/`$derived` from a plain engine callback returns the current value — that's fine and intended.
 

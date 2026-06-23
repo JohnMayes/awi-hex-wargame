@@ -4,9 +4,8 @@
 	import UnitCounter from '$lib/game/ui/UnitCounter.svelte';
 	import LittleBoard from '$lib/game/render/LittleBoard.svelte';
 	import { PITCHED_BATTLE } from '$lib/game/data/scenarios';
-	import { ActionType } from '$lib/game/core/types';
-	import { getUnitDefinition } from '$lib/game/core/unitDefinitions';
 	import { page } from '$app/state';
+	import { fade } from 'svelte/transition';
 
 	const store = initGameStore(PITCHED_BATTLE);
 	$inspect(store.log);
@@ -38,25 +37,38 @@
 	});
 
 	const sel = $derived(store.selectedUnit);
-	const def = $derived(sel ? getUnitDefinition(sel.type) : null);
+	const unitName = (u: { type: string }) => u.type.toLowerCase().replace(/_/g, ' ');
 
-	const moveEnabled = $derived.by(() => {
-		if (!sel || !def) return false;
-		if (def.actionType === ActionType.MOVE_OR_FIRE && sel.firedThisActivation) return false;
-		if (sel.movementPointsUsed >= def.movementAllowance) return false;
-		if (def.actionType === ActionType.MOVE_OR_FIRE && store.actionMode === 'fire') return false;
-		return true;
-	});
+	// Bottom-bar contextual state, all driven by the store's pendingAction.
+	const pending = $derived(store.pendingAction);
+	const pendingTarget = $derived(
+		pending && pending.kind !== 'move'
+			? (store.units.find((u) => u.id === pending.targetId) ?? null)
+			: null
+	);
+	// A target the active unit can both fire AND charge needs the Fire/Charge radio.
+	const bothCombat = $derived(
+		pending && pending.kind !== 'move'
+			? store.validFireTargets.some((u) => u.id === pending.targetId) &&
+					store.validChargeTargets.some((u) => u.id === pending.targetId)
+			: false
+	);
 
-	const fireEnabled = $derived.by(() => {
-		if (!sel || !def) return false;
-		if (def.firingRange === 0) return false;
-		if (sel.firedThisActivation) return false;
-		if (def.actionType === ActionType.MOVE_OR_FIRE) {
-			if (sel.movementPointsUsed > 0) return false;
-			if (store.actionMode === 'move') return false;
-		}
-		return true;
+	// Activation status for the active player (top-bar readout).
+	const totalUnits = $derived(store.units.filter((u) => u.player === store.activePlayer).length);
+	const actedUnits = $derived(
+		store.units.filter((u) => u.player === store.activePlayer && u.activated).length
+	);
+
+	// Transient notice toast — auto-dismiss a couple seconds after it appears.
+	let noticeTimer: ReturnType<typeof setTimeout> | undefined;
+	$effect(() => {
+		if (!store.notice) return;
+		clearTimeout(noticeTimer);
+		noticeTimer = setTimeout(() => {
+			store.notice = null;
+		}, 2500);
+		return () => clearTimeout(noticeTimer);
 	});
 
 	const validKeys = $derived(
@@ -89,6 +101,8 @@
 			<span class="player-chip" data-player={store.activePlayer}
 				>{store.activePlayer === 0 ? 'Blue' : 'Red'}</span
 			>
+			<span class="meta-label">Acted</span>
+			<span class="meta-value">{actedUnits} / {totalUnits}</span>
 		</div>
 		<button class="end-turn" onclick={() => store.endPlayerTurn()} disabled={store.isGameOver}
 			>End Turn</button
@@ -104,23 +118,59 @@
 
 {#snippet bottomBar()}
 	<footer class="bottom-bar">
-		{#if sel && def}
+		{#if !sel}
+			<span class="prompt">Tap a unit to select</span>
+		{:else}
 			<div class="unit-readout">
 				<span class="unit-label">{store.activeUnitId === sel.id ? 'Activating' : 'Selected'}</span>
-				<span class="unit-name">{sel.type.toLowerCase().replace(/_/g, ' ')}</span>
+				<span class="unit-name">{unitName(sel)}</span>
 			</div>
-			<div class="actions">
-				<button class="action" disabled={!moveEnabled} onclick={() => store.beginAction('move')}
-					>Move</button
-				>
-				{#if def.firingRange > 0}
-					<button class="action" disabled={!fireEnabled} onclick={() => store.beginAction('fire')}
-						>Fire</button
-					>
-				{/if}
-			</div>
-		{:else}
-			<span class="prompt">Tap a unit to select</span>
+
+			{#if pending}
+				<div class="pending">
+					{#if pending.kind === 'move'}
+						<span class="pending-label">Move here · cost {pending.cost}</span>
+					{:else if bothCombat}
+						<div class="combat-choice" role="radiogroup" aria-label="Combat action">
+							<label class="radio">
+								<input
+									type="radio"
+									name="combat"
+									value="fire"
+									checked={pending.kind === 'fire'}
+									onchange={() => store.setPendingCombatKind('fire')}
+								/> Fire
+							</label>
+							<label class="radio">
+								<input
+									type="radio"
+									name="combat"
+									value="charge"
+									checked={pending.kind === 'charge'}
+									onchange={() => store.setPendingCombatKind('charge')}
+								/> Charge
+							</label>
+						</div>
+					{:else}
+						<span class="pending-label"
+							>{pending.kind === 'fire' ? 'Fire' : 'Charge'}{pendingTarget
+								? ` · ${unitName(pendingTarget)}`
+								: ''}</span
+						>
+					{/if}
+				</div>
+				<div class="actions">
+					<button class="action" onclick={() => store.cancelAction()}>Cancel</button>
+				</div>
+			{:else if store.activeUnitId === sel.id}
+				<div class="actions">
+					<button class="action" onclick={() => store.endActivation()}>End Activation</button>
+				</div>
+			{:else}
+				<span class="command-badge" data-incommand={store.selectedInCommand !== false}>
+					{store.selectedInCommand === false ? 'Out of command' : 'In command'}
+				</span>
+			{/if}
 		{/if}
 	</footer>
 {/snippet}
@@ -138,6 +188,11 @@
 		<div class="chrome-group" {@attach swallowPointer}>
 			{@render bottomBar()}
 		</div>
+		{#if store.notice}
+			{#key store.notice.id}
+				<div class="notice" transition:fade>{store.notice.text}</div>
+			{/key}
+		{/if}
 	</div>
 {:else}
 	<div class="container">
@@ -402,5 +457,90 @@
 		display: flex;
 		align-items: center;
 		min-height: 48px;
+	}
+
+	.action.primary {
+		background: #c9a227;
+		color: #15181c;
+		border-color: #c9a227;
+	}
+	.action.primary:hover:not(:disabled) {
+		background: #e8e1d1;
+		border-color: #e8e1d1;
+	}
+
+	/* --- selected-unit command badge (the activation gamble, pre-commit) --- */
+	.command-badge {
+		display: inline-flex;
+		align-items: center;
+		margin-left: auto;
+		padding: 0.25rem 0.625rem;
+		border-radius: 2px;
+		font-size: 0.6875rem;
+		text-transform: uppercase;
+		letter-spacing: 0.1em;
+		font-weight: 600;
+		min-height: 48px;
+		box-sizing: border-box;
+	}
+	.command-badge[data-incommand='true'] {
+		color: #8fbf6b;
+	}
+	.command-badge[data-incommand='false'] {
+		color: #e0a324;
+	}
+
+	/* --- pending (armed) action readout --- */
+	.pending {
+		display: flex;
+		align-items: center;
+		margin-left: auto;
+		min-width: 0;
+	}
+	.pending-label {
+		font-size: 0.8125rem;
+		text-transform: capitalize;
+		color: #e8e1d1;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+	.combat-choice {
+		display: flex;
+		gap: 0.75rem;
+	}
+	.radio {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.3rem;
+		font-size: 0.8125rem;
+		text-transform: uppercase;
+		letter-spacing: 0.08em;
+		color: #e8e1d1;
+		cursor: pointer;
+	}
+	.radio input {
+		accent-color: #c9a227;
+		width: 1.1rem;
+		height: 1.1rem;
+	}
+
+	/* --- transient notice toast (fades in/out over the board) --- */
+	.notice {
+		position: absolute;
+		left: 50%;
+		bottom: calc(96px + env(safe-area-inset-bottom));
+		transform: translateX(-50%);
+		max-width: min(90vw, 28rem);
+		padding: 0.625rem 1rem;
+		background: #15181c;
+		color: #e8e1d1;
+		border: 1px solid #c9a227;
+		border-radius: 3px;
+		font-size: 0.8125rem;
+		text-align: center;
+		letter-spacing: 0.04em;
+		box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
+		pointer-events: none;
 	}
 </style>

@@ -46,6 +46,13 @@ const HIGHLIGHT_COLOR = hexToRgb('#ffcc00'); // move-target outline (matches Hex
 const HIGHLIGHT_WIDTH = 3;
 const TARGET_COLOR = hexToRgb('#cc2222'); // valid fire/charge target hex tint
 const TARGET_ALPHA = 0.35; // subtle translucent fill
+const DIM_ALPHA = 0.4; // activated (spent) counters fade back
+// Armed/pending action: bolder than the "available" tiers above so the tapped
+// target reads as committed-pending vs merely-reachable.
+const PENDING_MOVE_COLOR = hexToRgb('#5aa9e6'); // light blue: armed move destination
+const PENDING_MOVE_ALPHA = 0.5;
+const PENDING_COMBAT_COLOR = hexToRgb('#ff2d2d'); // bold red: armed fire/charge target
+const PENDING_COMBAT_ALPHA = 0.6;
 
 /** honeycomb pixel point -> LittleJS world-space vec2 (Y-flip via boardGeometry). */
 function toWorld(p: { x: number; y: number }) {
@@ -65,16 +72,17 @@ function color(c: Rgb, a = 1) {
 
 const TRANSPARENT = () => color({ r: 0, g: 0, b: 0 }, 0);
 
-/** Dispatch one counter primitive to its LittleJS draw call, in world space. */
-function drawPrimitive(prim: Primitive, center: { x: number; y: number }) {
+/** Dispatch one counter primitive to its LittleJS draw call, in world space.
+ * `alpha` scales every color (used to fade activated/spent counters). */
+function drawPrimitive(prim: Primitive, center: { x: number; y: number }, alpha = 1) {
 	const { drawPoly, drawLine, drawEllipse, vec2 } = LJS!;
 	switch (prim.kind) {
 		case 'poly':
 			drawPoly(
 				prim.points.map((p) => toCounterWorld(p, center)),
-				prim.fill ? color(prim.fill) : TRANSPARENT(),
+				prim.fill ? color(prim.fill, alpha) : TRANSPARENT(),
 				prim.lineWidth ?? 0,
-				prim.stroke ? color(prim.stroke) : TRANSPARENT()
+				prim.stroke ? color(prim.stroke, alpha) : TRANSPARENT()
 			);
 			break;
 		case 'line':
@@ -82,37 +90,39 @@ function drawPrimitive(prim: Primitive, center: { x: number; y: number }) {
 				toCounterWorld(prim.a, center),
 				toCounterWorld(prim.b, center),
 				prim.width,
-				color(prim.color)
+				color(prim.color, alpha)
 			);
 			break;
 		case 'ellipse':
 			drawEllipse(
 				toCounterWorld(prim.center, center),
 				vec2(prim.diameter, prim.diameter),
-				prim.fill ? color(prim.fill) : TRANSPARENT(),
+				prim.fill ? color(prim.fill, alpha) : TRANSPARENT(),
 				0,
 				prim.lineWidth ?? 0,
-				prim.stroke ? color(prim.stroke) : TRANSPARENT()
+				prim.stroke ? color(prim.stroke, alpha) : TRANSPARENT()
 			);
 			break;
 	}
 }
 
-/** Draw every unit's counter + SP readout from the store. */
+/** Draw every unit's counter + SP readout from the store. Activated (spent)
+ * units fade back so the available ones read as actionable. */
 function drawCounters(store: GameStore) {
 	const anchor = spAnchor();
 	for (const u of store.units) {
 		const center = store.takesCordsReturnsPos(u.coordinates);
 		if (!center) continue;
-		for (const prim of counterPrimitives(u, u.selected)) drawPrimitive(prim, center);
+		const a = u.activated ? DIM_ALPHA : 1;
+		for (const prim of counterPrimitives(u, u.selected)) drawPrimitive(prim, center, a);
 		// SP readout (world-space drawText renders upright; the Y-flip is only on position).
 		LJS!.drawText(
 			String(u.strengthPoints),
 			toCounterWorld(anchor, center),
 			SP_TEXT_SIZE,
-			color(SP_TEXT_FILL),
+			color(SP_TEXT_FILL, a),
 			3,
-			color(SP_TEXT_OUTLINE),
+			color(SP_TEXT_OUTLINE, a),
 			'center'
 		);
 	}
@@ -185,7 +195,7 @@ function gameRender() {
 	}
 
 	// Valid combat targets: a subtle red fill on the target hex (fire + charge,
-	// unified). Charge shows in move mode now; fire shows once R6 enters fire mode.
+	// unified) — the "available" tier. The armed target gets the bold tier below.
 	const targetTint = color(TARGET_COLOR, TARGET_ALPHA);
 	for (const t of [...currentStore.validFireTargets, ...currentStore.validChargeTargets]) {
 		const hex = currentStore.hexAt(t.coordinates);
@@ -195,6 +205,31 @@ function gameRender() {
 				targetTint,
 				0
 			);
+	}
+
+	// Armed/pending action (tapped once, awaiting confirm): a bold fill on top of
+	// the available tiers — light blue for a move destination, bold red for a
+	// fire/charge target.
+	const pending = currentStore.pendingAction;
+	if (pending) {
+		const hex =
+			pending.kind === 'move'
+				? currentStore.hexAt(pending.coords)
+				: (() => {
+						const target = currentStore.units.find((u) => u.id === pending.targetId);
+						return target ? currentStore.hexAt(target.coordinates) : null;
+					})();
+		if (hex) {
+			const fill =
+				pending.kind === 'move'
+					? color(PENDING_MOVE_COLOR, PENDING_MOVE_ALPHA)
+					: color(PENDING_COMBAT_COLOR, PENDING_COMBAT_ALPHA);
+			drawPoly(
+				hex.corners.map((c) => toWorld(c)),
+				fill,
+				0
+			);
+		}
 	}
 
 	drawCounters(currentStore);

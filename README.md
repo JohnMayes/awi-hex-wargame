@@ -156,27 +156,16 @@ Facing was implemented at this milestone and later removed in the **facing refac
 
 ---
 
-### M12: Scenarios & Victory
+### ~~M12: Scenarios & Victory~~ COMPLETE
 
-Replace hardcoded test data with a scenario system.
-
-**`Scenario` type:**
-
-- Map definition (7×9 portrait grid per rules §2, replacing current test map)
-- Unit setup per side (type, position, SP, quality modifiers)
-- Leader assignments
-- First player, turn limit (default 15)
-- Victory conditions (objective hexes, elimination count, hold for N turns, exit map edge)
-
-**New `core/victory.ts`:**
-
-- `checkVictoryConditions(scenario, gameState)` → result or null
-- Evaluated at end of each full game turn
-
-**GameStore init** takes a `Scenario` instead of raw units + map.
-
-**Files:** `scenarios.ts` (major expansion), new `core/victory.ts`, `gameStore.svelte.ts`, `maps.ts` (absorbed into scenarios)
-**Tests:** Scenario loading. Victory condition evaluation.
+- Added `core/scenario.ts` with the `Scenario` type — a self-contained setup (`map`, `units`, `leaders`, `firstPlayer`, `turnLimit`, `victoryConditions`) that the store loads via the new `GameStore.fromScenario` factory
+- Created `core/victory.ts` with a pure `evaluateVictory(conditions, snapshot, progress) → { progress, outcome }`. `VictoryCondition` is a discriminated union of four kinds — `eliminate_units` (break N of the enemy's starting units), `control_hexes` (occupy hex(es), `requireAll` for all-vs-any, optional `atTurn` to make it decisive only on a given turn), `hold_hexes` (control for N consecutive game turns), and `exit_units` (move N units off a named map edge) — the single extension point for new win conditions
+- Cross-turn accumulators live in an immutable `VictoryProgress` (hold streaks, exit counts) keyed by condition id, recomputed each turn from a `VictorySnapshot` (units, starting counts per player, map bounds, units exited this turn). Helpers `boundsFromCoords` and `edgeOf` derive the rectangular edges; `coordsEqual` (M0) backs hex control
+- Decision order: a single satisfied side wins immediately (`condition_met`); both sides satisfying on the same turn falls through to an SP tiebreak; reaching the turn limit with no winner triggers the same tiebreak (`turn_limit_tiebreak`, or `turn_limit_draw` on equal SP). No-op contract: with no conditions and no turn limit the evaluator returns progress unchanged and a null outcome, so a default game never ends
+- `GameStore` gains `turnLimit`, `victoryConditions`, `victoryProgress`, `victoryOutcome`, and an `isGameOver` derived; `#bounds` and `#startingUnitsByPlayer` are captured once at construction. `#evaluateVictory` runs at end of each full game turn (when player 1 hands back to 0), applies the new progress, and on a decision records the outcome and emits a new `game_over` `LogEvent`. Every public mutator (`selectUnit`, `beginAction`, `moveUnit`, `fireAt`, `chargeAt`, `activateUnit`, `endActivation`, `endPlayerTurn`) early-returns once `victoryOutcome` is set
+- `initGameStore` now takes a single `Scenario` instead of raw `units`/`map`/`leaders`; the `GameStore` constructor gained an optional `GameStoreConfig` (`firstPlayer`, `turnLimit`, `victoryConditions`) so tests can still build hermetically
+- Added the **Pitched Battle** scenario: a symmetric 6-vs-6 clash on a new 7×9 `PITCHED_BATTLE_MAP` (rules §2) with a central objective hill and mirrored woods/town cover, point-symmetric under `(col, row) → (6 - col, 8 - row)`. Win by eliminating 4 of 6 enemy units or holding the hill at the end of turn 15; SP tiebreak otherwise. Exposed via a `SCENARIOS` registry; `+page.svelte` loads it and renders an outcome banner. The exit-edge action is unwired for now — `exitedThisTurn` is always empty — but the evaluator supports it for future use
+- 23 tests in `victory.spec.ts` (bounds/edge helpers, no-op contract, each condition kind including `atTurn` gating and hold-streak reset, turn-limit tiebreak and draw, simultaneous mutual satisfaction); 9 new tests in `gameStore.spec.ts` covering victory evaluation at turn rollover, the eliminate/hold paths, mutator lockout after game over, and the `game_over` event
 
 ---
 

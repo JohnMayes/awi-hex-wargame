@@ -35,7 +35,10 @@ import {
 	type VictorySnapshot
 } from '../core/victory';
 
-export type ActionMode = 'move' | 'fire';
+export type PendingAction =
+	| { kind: 'move'; coords: OffsetCoordinates; cost: number }
+	| { kind: 'fire'; targetId: string }
+	| { kind: 'charge'; targetId: string };
 
 export type GameStoreConfig = {
 	firstPlayer?: Player;
@@ -50,7 +53,8 @@ export class GameStore {
 	activePlayer: Player = $state(0);
 	activationStep: ActivationStep = $state(ActivationStep.AWAITING_ACTIVATION);
 	activeUnitId: string | null = $state(null);
-	actionMode: ActionMode | null = $state(null);
+	pendingAction: PendingAction | null = $state(null);
+	notice: { id: number; text: string } | null = $state(null);
 	turn: number = $state(1);
 	turnLimit: number | null = $state(null);
 	lastCommandCheck: CommandCheckResult | null = $state(null);
@@ -60,47 +64,31 @@ export class GameStore {
 	victoryOutcome: VictoryOutcome | null = $state(null);
 	isGameOver = $derived(this.victoryOutcome !== null);
 	selectedUnit = $derived(this.units.find((u) => u.selected === true));
-	validMoveTargets: MoveTarget[] = $derived.by(() => {
-		if (this.activeUnitId === null) return [];
-		if (this.activationStep !== ActivationStep.ACTION) return [];
-		if (this.actionMode === 'fire') return [];
-		if (!this.grid) return [];
-		const active = this.units.find((u) => u.id === this.activeUnitId);
-		if (!active) return [];
-		const def = getUnitDefinition(active.type);
-		if (def.actionType === ActionType.MOVE_OR_FIRE && active.firedThisActivation) return [];
-		if (active.movementPointsUsed >= def.movementAllowance) return [];
-		const remainingMP = def.movementAllowance - active.movementPointsUsed;
-		return getValidMoveTargets(active, this.grid, this.units, remainingMP);
+	// Valid actions for the focus unit (the active unit mid-activation, else the
+	// merely-selected unit). Computed once via #targetsFor so the preview shown
+	// on selection and the auto-end check can never drift. A selected-but-not-yet-
+	// activated unit previews all of move + fire + charge simultaneously.
+	focusTargets = $derived.by(() => {
+		const focus = this.#focusUnit();
+		if (!focus) return { move: [] as MoveTarget[], fire: [] as Unit[], charge: [] as Unit[] };
+		return this.#targetsFor(focus);
 	});
-	validFireTargets: Unit[] = $derived.by(() => {
-		if (this.activeUnitId === null) return [];
-		if (this.activationStep !== ActivationStep.ACTION) return [];
-		if (this.actionMode === 'move') return [];
-		if (!this.grid) return [];
-		const active = this.units.find((u) => u.id === this.activeUnitId);
-		if (!active) return [];
-		const def = getUnitDefinition(active.type);
-		if (def.firingRange === 0) return [];
-		if (active.firedThisActivation) return [];
-		if (def.actionType === ActionType.MOVE_OR_FIRE) {
-			if (active.movementPointsUsed > 0) return [];
-		}
-		return getValidFireTargets(active, this.grid, this.units);
-	});
-	validChargeTargets: Unit[] = $derived.by(() => {
-		if (this.activeUnitId === null) return [];
-		if (this.activationStep !== ActivationStep.ACTION) return [];
-		if (this.actionMode === 'fire') return [];
-		if (!this.grid) return [];
-		const active = this.units.find((u) => u.id === this.activeUnitId);
-		if (!active) return [];
-		return getValidChargeTargets(active, this.grid, this.units);
+	validMoveTargets: MoveTarget[] = $derived(this.focusTargets.move);
+	validFireTargets: Unit[] = $derived(this.focusTargets.fire);
+	validChargeTargets: Unit[] = $derived(this.focusTargets.charge);
+	// Whether the selected unit would pass its command check for free (in radius
+	// of a friendly leader). null when nothing is selected. Lets the UI show the
+	// gamble before the user commits to an action. Display-only — no roll.
+	selectedInCommand = $derived.by(() => {
+		const sel = this.selectedUnit;
+		if (!sel || !this.grid) return null;
+		return isInCommand(sel, this.leaders, this.units, this.grid);
 	});
 
 	// Immutable scenario context, set once at construction.
 	#bounds: VictorySnapshot['bounds'];
 	#startingUnitsByPlayer: Record<Player, number>;
+	#noticeSeq = 0;
 
 	constructor(units: Unit[], map: MapDefinition, leaders: Leader[], config: GameStoreConfig = {}) {
 		const newGrid = new Grid(
@@ -157,6 +145,56 @@ export class GameStore {
 		const u = this.units.find((u) => u.id === id);
 		if (!u) throw new Error(`Unit ${id} not found`);
 		return u;
+	}
+
+	// The unit whose actions are previewed/driven: the active unit during an
+	// activation, otherwise the merely-selected unit.
+	#focusUnit(): Unit | undefined {
+		const id = this.activeUnitId ?? this.selectedUnit?.id;
+		if (!id) return undefined;
+		return this.units.find((u) => u.id === id);
+	}
+
+	// The currently-legal move/fire/charge targets for a unit, honoring the
+	// per-unit action-type gates (MOVE_OR_FIRE exclusivity, MP exhaustion,
+	// fired-this-activation). The single source of truth shared by the
+	// focusTargets derive and #maybeAutoEnd, so preview and auto-end agree.
+	#targetsFor(unit: Unit): { move: MoveTarget[]; fire: Unit[]; charge: Unit[] } {
+		if (!this.grid) return { move: [], fire: [], charge: [] };
+		const def = getUnitDefinition(unit.type);
+
+		let move: MoveTarget[] = [];
+		const canMove =
+			!(def.actionType === ActionType.MOVE_OR_FIRE && unit.firedThisActivation) &&
+			unit.movementPointsUsed < def.movementAllowance;
+		if (canMove) {
+			const remainingMP = def.movementAllowance - unit.movementPointsUsed;
+			move = getValidMoveTargets(unit, this.grid, this.units, remainingMP);
+		}
+
+		let fire: Unit[] = [];
+		const canFire =
+			def.firingRange > 0 &&
+			!unit.firedThisActivation &&
+			!(def.actionType === ActionType.MOVE_OR_FIRE && unit.movementPointsUsed > 0);
+		if (canFire) {
+			fire = getValidFireTargets(unit, this.grid, this.units);
+		}
+
+		// getValidChargeTargets gates canCharge / firedThisActivation / MP internally.
+		const charge = getValidChargeTargets(unit, this.grid, this.units);
+
+		return { move, fire, charge };
+	}
+
+	#pendingIsValid(p: PendingAction): boolean {
+		if (p.kind === 'move') {
+			return this.validMoveTargets.some((t) => coordsEqual(t.coordinates, p.coords));
+		}
+		if (p.kind === 'fire') {
+			return this.validFireTargets.some((u) => u.id === p.targetId);
+		}
+		return this.validChargeTargets.some((u) => u.id === p.targetId);
 	}
 
 	#emit(event: LogEvent) {
@@ -228,8 +266,10 @@ export class GameStore {
 
 		if (!check.passed) {
 			// Wasted activation: the unit cannot move/fire/charge this game turn.
-			// Flow through the remaining lifecycle steps so observers see the
-			// transition and the activated flag gets set.
+			// Surface it (the command check otherwise fails silently) and flow
+			// through the remaining lifecycle steps so observers see the transition
+			// and the activated flag gets set.
+			this.notice = { id: ++this.#noticeSeq, text: 'Out of command — activation lost' };
 			this.#finishActivation();
 			return;
 		}
@@ -253,7 +293,7 @@ export class GameStore {
 			selected: u.id === activeId ? false : u.selected
 		}));
 		this.activeUnitId = null;
-		this.actionMode = null;
+		this.pendingAction = null;
 		this.activationStep = ActivationStep.AWAITING_ACTIVATION;
 		this.#emit({
 			kind: 'activation_ended',
@@ -263,6 +303,19 @@ export class GameStore {
 		});
 	}
 
+	// Auto-end the activation when the active unit has no legal action left, so
+	// the user never has to manually dismiss a spent unit. Charges already
+	// self-finish (activeUnitId is null), so this is a no-op after them.
+	#maybeAutoEnd() {
+		if (this.activeUnitId === null) return;
+		const active = this.units.find((u) => u.id === this.activeUnitId);
+		if (!active) return;
+		const t = this.#targetsFor(active);
+		if (t.move.length === 0 && t.fire.length === 0 && t.charge.length === 0) {
+			this.#finishActivation();
+		}
+	}
+
 	// -- Selection / activation --
 
 	selectUnit(unit: Unit) {
@@ -270,57 +323,119 @@ export class GameStore {
 		if (unit.player !== this.activePlayer) return;
 		if (unit.activated) return;
 
+		this.notice = null;
+
 		// Auto-end any in-progress activation on a foreign-friendly click.
 		if (this.activeUnitId !== null && this.activeUnitId !== unit.id) {
 			this.#finishActivation();
 		}
 
-		// If the unit is already activated (re-clicking the active unit), no-op.
+		// Re-tapping the active unit mid-activation is a no-op.
 		if (this.activeUnitId === unit.id) return;
 
-		const isSelected = this.selectedUnit?.id === unit.id;
-		this.units = this.units.map((u) => ({
-			...u,
-			selected: u.id === unit.id ? !isSelected : false
-		}));
+		// Re-tapping the already-selected (not-yet-activated) unit: clear an armed
+		// pending action if there is one, otherwise deselect.
+		if (this.selectedUnit?.id === unit.id) {
+			if (this.pendingAction) {
+				this.pendingAction = null;
+			} else {
+				this.units = this.units.map((u) => ({ ...u, selected: false }));
+			}
+			return;
+		}
+
+		// Selecting a different unit: clear any pending action and select it.
+		this.pendingAction = null;
+		this.units = this.units.map((u) => ({ ...u, selected: u.id === unit.id }));
 	}
 
-	beginAction(mode: ActionMode, rng: () => number = Math.random) {
+	// -- Arm / confirm (tap-to-preview, tap-again-to-confirm) --
+
+	// First tap on a valid move hex arms it; a second tap on the same hex
+	// confirms. A tap on any non-move-target hex clears the pending action.
+	tapHex(coords: OffsetCoordinates, rng: () => number = Math.random) {
 		if (this.victoryOutcome) return;
+		const p = this.pendingAction;
+		if (p && p.kind === 'move' && coordsEqual(p.coords, coords)) {
+			this.confirmAction(rng);
+			return;
+		}
+		const target = this.validMoveTargets.find((t) => coordsEqual(t.coordinates, coords));
+		if (target) {
+			this.pendingAction = { kind: 'move', coords: target.coordinates, cost: target.cost };
+		} else {
+			this.cancelAction();
+		}
+	}
+
+	// First tap on an enemy arms fire (preferred) or charge; a second tap on the
+	// same enemy confirms. A tap on a non-target enemy is a no-op.
+	tapEnemy(unitId: string, rng: () => number = Math.random) {
+		if (this.victoryOutcome) return;
+		const p = this.pendingAction;
+		if (p && (p.kind === 'fire' || p.kind === 'charge') && p.targetId === unitId) {
+			this.confirmAction(rng);
+			return;
+		}
+		if (this.validFireTargets.some((u) => u.id === unitId)) {
+			this.pendingAction = { kind: 'fire', targetId: unitId };
+		} else if (this.validChargeTargets.some((u) => u.id === unitId)) {
+			this.pendingAction = { kind: 'charge', targetId: unitId };
+		}
+	}
+
+	// Switch an armed combat action between fire and charge (the bottom-bar radio
+	// for units that can do both to the same enemy). Ignored unless the target is
+	// currently a valid target of the requested kind.
+	setPendingCombatKind(kind: 'fire' | 'charge') {
+		const p = this.pendingAction;
+		if (!p || (p.kind !== 'fire' && p.kind !== 'charge')) return;
+		if (p.kind === kind) return;
+		const valid =
+			kind === 'fire'
+				? this.validFireTargets.some((u) => u.id === p.targetId)
+				: this.validChargeTargets.some((u) => u.id === p.targetId);
+		if (valid) this.pendingAction = { kind, targetId: p.targetId };
+	}
+
+	cancelAction() {
+		this.pendingAction = null;
+	}
+
+	// Execute the armed pending action. The first action of an activation lazily
+	// rolls the command check (a failure ends the activation and surfaces a
+	// notice); subsequent actions never re-roll. After the action resolves, the
+	// activation auto-ends if nothing legal remains.
+	confirmAction(rng: () => number = Math.random) {
+		if (this.victoryOutcome) return;
+		const p = this.pendingAction;
+		if (!p) return;
 		const sel = this.selectedUnit;
 		if (!sel) return;
-		if (sel.player !== this.activePlayer) return;
-		if (sel.activated) return;
 
-		const def = getUnitDefinition(sel.type);
-
-		// Static eligibility checks
-		if (mode === 'fire' && def.firingRange === 0) return;
-
-		// Per-unit current eligibility (mirrors the derives' final guards)
-		if (mode === 'fire') {
-			if (sel.firedThisActivation) return;
-			if (def.actionType === ActionType.MOVE_OR_FIRE) {
-				if (sel.movementPointsUsed > 0) return;
-			}
-		}
-		if (mode === 'move') {
-			if (def.actionType === ActionType.MOVE_OR_FIRE && sel.firedThisActivation) return;
-			if (sel.movementPointsUsed >= def.movementAllowance) return;
+		// Self-heal: drop a pending action that state changes have invalidated.
+		if (!this.#pendingIsValid(p)) {
+			this.cancelAction();
+			return;
 		}
 
-		// Mode-switch committal lock for MOVE_OR_FIRE units
-		if (this.actionMode !== null && this.actionMode !== mode) {
-			if (def.actionType === ActionType.MOVE_OR_FIRE) return;
-		}
+		this.notice = null;
 
-		// Activate if not yet
-		if (this.activeUnitId !== sel.id) {
+		if (this.activeUnitId === null) {
 			this.#activate(sel.id, rng);
 			// A failed command check ends the activation immediately.
-			if (this.activeUnitId === null) return;
+			if (this.activeUnitId === null) {
+				this.pendingAction = null;
+				return;
+			}
 		}
-		this.actionMode = mode;
+
+		if (p.kind === 'move') this.moveUnit(p.coords, rng);
+		else if (p.kind === 'fire') this.fireAt(p.targetId, rng);
+		else if (p.kind === 'charge') this.chargeAt(p.targetId, rng);
+
+		this.pendingAction = null;
+		this.#maybeAutoEnd();
 	}
 
 	// -- Movement --
