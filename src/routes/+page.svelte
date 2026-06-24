@@ -5,18 +5,20 @@
 
 	const store = initGameStore(PITCHED_BATTLE);
 
-	// Pointer-events discipline for the LJS chrome overlay: stop chrome presses from
-	// bubbling to `document`, where LittleJS's input listeners would otherwise record
-	// them as a board click. The engine listens for `mousedown`/`touchstart` (never
-	// `pointerdown`); the button's own `onclick` is a separate event and still fires.
+	// Pointer-events discipline for the LJS chrome overlay: stop chrome presses AND
+	// releases from bubbling to `document`, where LittleJS's input listeners live.
+	// Stopping the *down* events keeps chrome taps from registering as board input;
+	// stopping the *up* events matters on touch devices, where the engine's
+	// `touchend` handler calls `preventDefault()` — which would cancel the
+	// synthesized `click` and leave every chrome button/radio/dialog dead to touch.
+	// The button's own `onclick`/`onchange` is a separate event and still fires.
 	// An attachment (not inline handlers) keeps the static container free of a11y warnings.
+	const SWALLOWED = ['mousedown', 'mouseup', 'touchstart', 'touchend'] as const;
 	function swallowPointer(node: HTMLElement) {
 		const stop = (e: Event) => e.stopPropagation();
-		node.addEventListener('mousedown', stop);
-		node.addEventListener('touchstart', stop);
+		for (const type of SWALLOWED) node.addEventListener(type, stop);
 		return () => {
-			node.removeEventListener('mousedown', stop);
-			node.removeEventListener('touchstart', stop);
+			for (const type of SWALLOWED) node.removeEventListener(type, stop);
 		};
 	}
 

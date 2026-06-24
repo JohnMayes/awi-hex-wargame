@@ -54,4 +54,24 @@ describe('/+page.svelte (LittleJS)', () => {
 		await endTurn.click();
 		await expect.element(banner.getByText('Red')).toBeInTheDocument();
 	});
+
+	// Regression: the chrome must stop press AND release events (mousedown/up,
+	// touchstart/end) from reaching `document`, where the real engine's input
+	// listeners live. The touchend leak in particular let the engine preventDefault
+	// the synthesized click, leaving chrome buttons dead to touch.
+	it('swallows chrome press/release events so they never reach document', async () => {
+		expect.assertions(5); // 1 presence check + 4 swallowed event types
+		render(Page);
+		const endTurn = page.getByRole('button', { name: /end turn/i });
+		await expect.element(endTurn).toBeInTheDocument();
+		const el = endTurn.element();
+
+		for (const type of ['mousedown', 'mouseup', 'touchstart', 'touchend']) {
+			const spy = vi.fn();
+			document.addEventListener(type, spy);
+			el.dispatchEvent(new Event(type, { bubbles: true, cancelable: true }));
+			document.removeEventListener(type, spy);
+			expect(spy, `${type} should be swallowed before document`).not.toHaveBeenCalled();
+		}
+	});
 });
