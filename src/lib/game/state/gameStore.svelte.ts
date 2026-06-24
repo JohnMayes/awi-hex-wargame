@@ -40,6 +40,18 @@ export type PendingAction =
 	| { kind: 'fire'; targetId: string }
 	| { kind: 'charge'; targetId: string };
 
+/** Display-only progress toward a single victory condition, for the objectives dialog. */
+export type VictoryConditionStatus = {
+	id: string;
+	player: Player;
+	description: string;
+	/** Human-readable progress, e.g. "2 / 4" or "1 / 3 turns". */
+	text: string;
+	/** Progress fraction in [0, 1] for a progress bar. */
+	fraction: number;
+	met: boolean;
+};
+
 export type GameStoreConfig = {
 	firstPlayer?: Player;
 	turnLimit?: number | null;
@@ -54,7 +66,6 @@ export class GameStore {
 	activationStep: ActivationStep = $state(ActivationStep.AWAITING_ACTIVATION);
 	activeUnitId: string | null = $state(null);
 	pendingAction: PendingAction | null = $state(null);
-	notice: { id: number; text: string } | null = $state(null);
 	turn: number = $state(1);
 	turnLimit: number | null = $state(null);
 	lastCommandCheck: CommandCheckResult | null = $state(null);
@@ -84,11 +95,16 @@ export class GameStore {
 		if (!sel || !this.grid) return null;
 		return isInCommand(sel, this.leaders, this.units, this.grid);
 	});
+	// Display-only progress toward each victory condition, for the objectives
+	// dialog. Mirrors evaluateVictory's per-kind logic against live state, but
+	// produces human-readable strings rather than a decision.
+	victoryStatus: VictoryConditionStatus[] = $derived.by(() =>
+		this.victoryConditions.map((c) => this.#conditionStatus(c))
+	);
 
 	// Immutable scenario context, set once at construction.
 	#bounds: VictorySnapshot['bounds'];
 	#startingUnitsByPlayer: Record<Player, number>;
-	#noticeSeq = 0;
 
 	constructor(units: Unit[], map: MapDefinition, leaders: Leader[], config: GameStoreConfig = {}) {
 		const newGrid = new Grid(
@@ -231,6 +247,60 @@ export class GameStore {
 		}
 	}
 
+	// Live progress for one victory condition (display only). Reuses the captured
+	// starting counts and cross-turn accumulators; never decides the game.
+	#conditionStatus(c: VictoryCondition): VictoryConditionStatus {
+		const frac = (n: number, d: number) => (d <= 0 ? 0 : Math.min(1, Math.max(0, n / d)));
+		const aliveOf = (p: Player) =>
+			this.units.filter((u) => u.player === p && u.strengthPoints > 0).length;
+		const base = { id: c.id, player: c.player, description: c.description };
+
+		switch (c.kind) {
+			case 'eliminate_units': {
+				const enemy: Player = c.player === 0 ? 1 : 0;
+				const destroyed = this.#startingUnitsByPlayer[enemy] - aliveOf(enemy);
+				return {
+					...base,
+					text: `${destroyed} / ${c.count}`,
+					fraction: frac(destroyed, c.count),
+					met: destroyed >= c.count
+				};
+			}
+			case 'control_hexes': {
+				const controls = (h: OffsetCoordinates) =>
+					this.units.some(
+						(u) => u.player === c.player && u.strengthPoints > 0 && coordsEqual(u.coordinates, h)
+					);
+				const controlled = c.requireAll ? c.hexes.every(controls) : c.hexes.some(controls);
+				const turnNote = c.atTurn !== null ? ` (turn ${c.atTurn})` : '';
+				return {
+					...base,
+					text: (controlled ? 'Held' : 'Not held') + turnNote,
+					fraction: controlled ? 1 : 0,
+					met: controlled && (c.atTurn === null || this.turn === c.atTurn)
+				};
+			}
+			case 'hold_hexes': {
+				const streak = this.victoryProgress.holdStreaks[c.id] ?? 0;
+				return {
+					...base,
+					text: `${streak} / ${c.consecutiveTurns} turns`,
+					fraction: frac(streak, c.consecutiveTurns),
+					met: streak >= c.consecutiveTurns
+				};
+			}
+			case 'exit_units': {
+				const exited = this.victoryProgress.exitedCounts[c.id] ?? 0;
+				return {
+					...base,
+					text: `${exited} / ${c.count}`,
+					fraction: frac(exited, c.count),
+					met: exited >= c.count
+				};
+			}
+		}
+	}
+
 	clearLog() {
 		this.log = [];
 	}
@@ -265,11 +335,10 @@ export class GameStore {
 		});
 
 		if (!check.passed) {
-			// Wasted activation: the unit cannot move/fire/charge this game turn.
-			// Surface it (the command check otherwise fails silently) and flow
-			// through the remaining lifecycle steps so observers see the transition
-			// and the activated flag gets set.
-			this.notice = { id: ++this.#noticeSeq, text: 'Out of command — activation lost' };
+			// Wasted activation: the unit cannot move/fire/charge this game turn. The
+			// failure is surfaced from the activation_started event already emitted
+			// above (the render FX layer renders it); flow through the remaining
+			// lifecycle steps so observers see the transition and `activated` gets set.
 			this.#finishActivation();
 			return;
 		}
@@ -322,8 +391,6 @@ export class GameStore {
 		if (this.victoryOutcome) return;
 		if (unit.player !== this.activePlayer) return;
 		if (unit.activated) return;
-
-		this.notice = null;
 
 		// Auto-end any in-progress activation on a foreign-friendly click.
 		if (this.activeUnitId !== null && this.activeUnitId !== unit.id) {
@@ -403,9 +470,10 @@ export class GameStore {
 	}
 
 	// Execute the armed pending action. The first action of an activation lazily
-	// rolls the command check (a failure ends the activation and surfaces a
-	// notice); subsequent actions never re-roll. After the action resolves, the
-	// activation auto-ends if nothing legal remains.
+	// rolls the command check (a failure ends the activation; the failure is
+	// emitted on the activation_started event for the UI); subsequent actions
+	// never re-roll. After the action resolves, the activation auto-ends if
+	// nothing legal remains.
 	confirmAction(rng: () => number = Math.random) {
 		if (this.victoryOutcome) return;
 		const p = this.pendingAction;
@@ -418,8 +486,6 @@ export class GameStore {
 			this.cancelAction();
 			return;
 		}
-
-		this.notice = null;
 
 		if (this.activeUnitId === null) {
 			this.#activate(sel.id, rng);
@@ -585,7 +651,8 @@ export class GameStore {
 			kind: 'fire_action',
 			turn: this.turn,
 			player: this.activePlayer,
-			result: fireResult
+			result: fireResult,
+			targetCoords: target.coordinates
 		});
 		return fireResult;
 	}
@@ -749,7 +816,9 @@ export class GameStore {
 			kind: 'charge_action',
 			turn: this.turn,
 			player: this.activePlayer,
-			result: chargeResult
+			result: chargeResult,
+			attackerCoords: attackerOrigin,
+			defenderCoords: target.coordinates
 		});
 		this.#finishActivation();
 		return chargeResult;

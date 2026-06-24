@@ -1,8 +1,10 @@
 import type { GameStore } from '$lib/game/state/gameStore.svelte';
+import { hexDistance } from '../core/hex';
 import { hexPixelToWorld } from './boardGeometry';
 import { terrainFill, hexToRgb, hexStrokeHex, type Rgb } from './terrainStyle';
 import { counterPrimitives, spAnchor, type Primitive, type Vec } from './counters';
 import { resolveBoardClick } from './boardInput';
+import { drawFx, resetFx, syncFx } from './fx';
 
 /**
  * LittleJS engine bridge: owns the engine lifecycle and the board draw loop,
@@ -38,21 +40,30 @@ let bounds: Bounds | null = null;
 const CANVAS_MAX = 4096;
 
 const CAMERA_FIT = 0.95; // leave a small margin around the board
-const HEX_LINE_WIDTH = 1; // world units; thin black hex border
+const HEX_LINE_WIDTH = 1; // world units; thin hex border
 const SP_TEXT_SIZE = 16; // world units
 const SP_TEXT_FILL = hexToRgb('#ffffff');
 const SP_TEXT_OUTLINE = hexToRgb('#010203');
-const HIGHLIGHT_COLOR = hexToRgb('#ffcc00'); // move-target outline
-const HIGHLIGHT_WIDTH = 3;
-const TARGET_COLOR = hexToRgb('#cc2222'); // valid fire/charge target hex tint
-const TARGET_ALPHA = 0.35; // subtle translucent fill
+const HIGHLIGHT_WIDTH = 3; // bold stroke (white) for an armed move destination
 const DIM_ALPHA = 0.4; // activated (spent) counters fade back
+// Highlight scheme: when a selection has legal targets, the actionable hexes are
+// brightened with a white stroke and everything else is dimmed back.
+const HEX_STROKE_WHITE = hexToRgb('#ffffff'); // stroke on the armed/selected hex only
+const HEX_DIM_COLOR = hexToRgb('#000000');
+const HEX_DIM_ALPHA = 0.3; // subtle overlay that pushes non-actionable hexes back
+const HEX_BRIGHTEN_COLOR = hexToRgb('#ffffff');
+const HEX_BRIGHTEN_ALPHA = 0.12; // faint lift on actionable hexes
+const TARGET_COLOR = hexToRgb('#ff6b6b'); // valid fire/charge target: light red
+const TARGET_ALPHA = 0.28; // low-opacity tint
 // Armed/pending action: bolder than the "available" tiers above so the tapped
 // target reads as committed-pending vs merely-reachable.
-const PENDING_MOVE_COLOR = hexToRgb('#5aa9e6'); // light blue: armed move destination
-const PENDING_MOVE_ALPHA = 0.5;
-const PENDING_COMBAT_COLOR = hexToRgb('#ff2d2d'); // bold red: armed fire/charge target
-const PENDING_COMBAT_ALPHA = 0.6;
+const PENDING_MOVE_COLOR = hexToRgb('#ffffff'); // armed move destination: white emphasis
+const PENDING_MOVE_ALPHA = 0.32;
+const PENDING_COMBAT_COLOR = hexToRgb('#7a0000'); // armed fire/charge target: dark red
+const PENDING_COMBAT_ALPHA = 0.85;
+// Leader / command legibility.
+const LEADER_PIP_COLOR = hexToRgb('#ffd700'); // gold marker on led units
+const COMMAND_COLOR = hexToRgb('#ffd700'); // gold command-radius outline
 
 /** honeycomb pixel point -> LittleJS world-space vec2 (Y-flip via boardGeometry). */
 function toWorld(p: { x: number; y: number }) {
@@ -115,6 +126,10 @@ function drawCounters(store: GameStore) {
 		if (!center) continue;
 		const a = u.activated ? DIM_ALPHA : 1;
 		for (const prim of counterPrimitives(u, u.selected)) drawPrimitive(prim, center, a);
+		// Leader pip: a small gold diamond in the counter's top-left corner when a
+		// leader is attached to this unit (contextualizes the in/out-of-command badge).
+		if (store.leaders.some((l) => l.attachedToUnitId === u.id))
+			drawPrimitive(leaderPip(), center, a);
 		// SP readout (world-space drawText renders upright; the Y-flip is only on position).
 		LJS!.drawText(
 			String(u.strengthPoints),
@@ -124,6 +139,60 @@ function drawCounters(store: GameStore) {
 			3,
 			color(SP_TEXT_OUTLINE, a),
 			'center'
+		);
+	}
+}
+
+/** A small gold diamond marking a unit that has an attached leader. Counter-local
+ * coords (top-left corner), matching the convention in `counters.ts`. */
+function leaderPip(): Primitive {
+	const x = -26;
+	const y = -26;
+	const d = 7;
+	return {
+		kind: 'poly',
+		points: [
+			{ x, y: y - d },
+			{ x: x + d, y },
+			{ x, y: y + d },
+			{ x: x - d, y }
+		],
+		fill: LEADER_PIP_COLOR,
+		lineWidth: 1.5,
+		stroke: SP_TEXT_OUTLINE
+	};
+}
+
+/** Draw command-radius context for the selected unit's side (under counters): a
+ * faint gold outline on every hex within a friendly leader's radius, plus a bold
+ * gold ring on each leader's host hex. Gives the in/out-of-command badge a
+ * visible footprint. No-op when nothing is selected. */
+function drawCommandOverlay(store: GameStore) {
+	if (!LJS || !store.grid) return;
+	const sel = store.selectedUnit;
+	if (!sel) return;
+	const { drawPoly } = LJS;
+	const area = color(COMMAND_COLOR, 0.22);
+	const ring = color(COMMAND_COLOR, 0.7);
+	for (const leader of store.leaders) {
+		const host = store.units.find((u) => u.id === leader.attachedToUnitId);
+		if (!host || host.player !== sel.player) continue;
+		const hostHex = store.hexAt(host.coordinates);
+		if (!hostHex) continue;
+		for (const hex of store.grid) {
+			if (hexDistance(hostHex, hex) <= leader.commandRadius)
+				drawPoly(
+					hex.corners.map((c) => toWorld(c)),
+					TRANSPARENT(),
+					1,
+					area
+				);
+		}
+		drawPoly(
+			hostHex.corners.map((c) => toWorld(c)),
+			TRANSPARENT(),
+			HIGHLIGHT_WIDTH,
+			ring
 		);
 	}
 }
@@ -162,6 +231,11 @@ function gameUpdatePost() {
 	LJS.setCameraPos(toWorld({ x: bounds.cx, y: bounds.cy }));
 }
 
+/** Offset-coordinate key for set membership. */
+function hexKey(c: { col: number; row: number }) {
+	return `${c.col},${c.row}`;
+}
+
 function gameRender() {
 	if (!active || !LJS || !currentStore) return;
 	const grid = currentStore.grid;
@@ -169,35 +243,48 @@ function gameRender() {
 
 	const { drawPoly, rgb } = LJS;
 	const s = hexToRgb(hexStrokeHex);
-	const stroke = rgb(s.r, s.g, s.b);
+	const blackStroke = rgb(s.r, s.g, s.b);
+	const whiteStroke = color(HEX_STROKE_WHITE);
 
+	// The focus unit's actionable hexes (move + fire + charge), as a key set.
+	const combatTargets = [...currentStore.validFireTargets, ...currentStore.validChargeTargets];
+	const highlightKeys = new Set<string>([
+		...currentStore.validMoveTargets.map((t) => hexKey(t.coordinates)),
+		...combatTargets.map((u) => hexKey(u.coordinates))
+	]);
+	const highlighting = highlightKeys.size > 0;
+
+	// Base terrain, black stroke.
 	for (const hex of grid) {
 		const f = terrainFill(hex.terrain);
 		drawPoly(
 			hex.corners.map((c) => toWorld(c)),
 			rgb(f.r, f.g, f.b),
 			HEX_LINE_WIDTH,
-			stroke
+			blackStroke
 		);
 	}
 
-	// Move-range highlights (under counters): yellow hex outline.
-	const highlight = color(HIGHLIGHT_COLOR);
-	for (const t of currentStore.validMoveTargets) {
-		const hex = currentStore.hexAt(t.coordinates);
-		if (!hex) continue;
-		drawPoly(
-			hex.corners.map((c) => toWorld(c)),
-			TRANSPARENT(),
-			HIGHLIGHT_WIDTH,
-			highlight
-		);
+	// While a selection has legal targets: subtly dim non-actionable hexes and
+	// brighten the actionable ones. Both keep their black base stroke — only the
+	// armed/selected hex gets a white stroke (below). Idle board is untouched.
+	if (highlighting) {
+		const dim = color(HEX_DIM_COLOR, HEX_DIM_ALPHA);
+		const bright = color(HEX_BRIGHTEN_COLOR, HEX_BRIGHTEN_ALPHA);
+		for (const hex of grid) {
+			const corners = hex.corners.map((c) => toWorld(c));
+			if (highlightKeys.has(hexKey({ col: hex.col, row: hex.row }))) drawPoly(corners, bright, 0);
+			else drawPoly(corners, dim, 0);
+		}
 	}
 
-	// Valid combat targets: a subtle red fill on the target hex (fire + charge,
-	// unified) — the "available" tier. The armed target gets the bold tier below.
+	// Command-radius context for the selected unit's side (under counters).
+	drawCommandOverlay(currentStore);
+
+	// Valid combat targets: a light low-opacity red fill (fire + charge, unified)
+	// — the "available" tier. The armed target gets the bold tier below.
 	const targetTint = color(TARGET_COLOR, TARGET_ALPHA);
-	for (const t of [...currentStore.validFireTargets, ...currentStore.validChargeTargets]) {
+	for (const t of combatTargets) {
 		const hex = currentStore.hexAt(t.coordinates);
 		if (hex)
 			drawPoly(
@@ -207,9 +294,9 @@ function gameRender() {
 			);
 	}
 
-	// Armed/pending action (tapped once, awaiting confirm): a bold fill on top of
-	// the available tiers — light blue for a move destination, bold red for a
-	// fire/charge target.
+	// Armed/pending action (tapped once, awaiting confirm): the only hex with a
+	// white stroke — white-emphasis fill for a move destination, dark high-opacity
+	// red for a fire/charge target.
 	const pending = currentStore.pendingAction;
 	if (pending) {
 		const hex =
@@ -227,12 +314,17 @@ function gameRender() {
 			drawPoly(
 				hex.corners.map((c) => toWorld(c)),
 				fill,
-				0
+				HIGHLIGHT_WIDTH,
+				whiteStroke
 			);
 		}
 	}
 
 	drawCounters(currentStore);
+
+	// Floating combat-result text (above counters), driven by new log events.
+	syncFx(currentStore, LJS.time);
+	drawFx(LJS);
 }
 
 function noop() {}
@@ -294,6 +386,7 @@ export async function mountBoard(store: GameStore): Promise<void> {
 	wantActive = true;
 	currentStore = store;
 	bounds = computeBounds(store);
+	resetFx(store); // don't replay pre-mount log events as a burst
 
 	// Single-instance guard: the first mount owns init; concurrent/later mounts
 	// await the same promise rather than creating a second (un-tearable) engine.

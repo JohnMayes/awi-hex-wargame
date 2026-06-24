@@ -1,3 +1,4 @@
+import type { OffsetCoordinates } from 'honeycomb-grid';
 import type { ChargeResult } from './charge';
 import type { CommandCheckResult } from './command';
 import type { FireResult } from './combat';
@@ -25,6 +26,9 @@ export type FireActionEvent = {
 	turn: number;
 	player: Player;
 	result: FireResult;
+	/** Target's hex at fire time — captured so render FX can place feedback even
+	 *  after the target is eliminated and removed from the units array. */
+	targetCoords: OffsetCoordinates;
 };
 
 export type ChargeActionEvent = {
@@ -32,6 +36,9 @@ export type ChargeActionEvent = {
 	turn: number;
 	player: Player;
 	result: ChargeResult;
+	/** Combatants' hexes at charge time (pre-resolution), captured for render FX. */
+	attackerCoords: OffsetCoordinates;
+	defenderCoords: OffsetCoordinates;
 };
 
 export type ActivationEndedEvent = {

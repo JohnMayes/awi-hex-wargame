@@ -50,10 +50,9 @@ describe('GameStore initial state', () => {
 	});
 
 	it('starts with no pendingAction', () => {
-		expect.assertions(2);
+		expect.assertions(1);
 		const store = makeStore();
 		expect(store.pendingAction).toBeNull();
-		expect(store.notice).toBeNull();
 	});
 
 	it('starts with all units unactivated', () => {
@@ -377,7 +376,7 @@ describe('confirmAction — lazy command check', () => {
 		expect(store.pendingAction).toBeNull();
 	});
 
-	it('on a failed command check: aborts the action, burns the activation, sets a notice', () => {
+	it('on a failed command check: aborts the action, burns the activation, logs the failure', () => {
 		expect.assertions(4);
 		const store = new GameStore(structuredClone(TEST_UNITS), TEST_MAP, []); // no leaders
 		select(store, 'blue-line-inf');
@@ -388,7 +387,12 @@ describe('confirmAction — lazy command check', () => {
 		expect(unit.coordinates).toEqual({ col: 0, row: 0 }); // did not move
 		expect(unit.activated).toBe(true); // activation burned
 		expect(store.pendingAction).toBeNull();
-		expect(store.notice?.text).toMatch(/out of command/i);
+		// The failure is surfaced via the activation_started event (the render FX
+		// layer renders it); there is no separate notice channel.
+		const started = store.log.find(
+			(e) => e.kind === 'activation_started' && e.unitId === 'blue-line-inf'
+		);
+		expect(started?.kind === 'activation_started' ? started.commandCheck.passed : true).toBe(false);
 	});
 
 	it('does not re-roll the command check on a second action in the same activation', () => {
@@ -469,19 +473,6 @@ describe('auto-end activation', () => {
 		store.tapEnemy('blue-line-inf');
 		store.confirmAction(() => 0);
 		expect(store.activeUnitId).toBeNull();
-	});
-});
-
-describe('notice lifecycle', () => {
-	it('selecting a unit clears a prior notice', () => {
-		expect.assertions(2);
-		const store = new GameStore(structuredClone(TEST_UNITS), TEST_MAP, []); // no leaders
-		select(store, 'blue-line-inf');
-		store.tapHex(store.validMoveTargets[0].coordinates);
-		store.confirmAction(() => 0.6); // fail → sets notice
-		expect(store.notice).not.toBeNull();
-		select(store, 'blue-light-inf');
-		expect(store.notice).toBeNull();
 	});
 });
 
@@ -2009,5 +2000,71 @@ describe('scenarios & victory', () => {
 		store.endPlayerTurn();
 		expect(store.turn).toBe(turnAtEnd);
 		expect(store.log.length).toBe(logLenAtEnd);
+	});
+});
+
+describe('victoryStatus (M13)', () => {
+	const setSp = (store: GameStore, id: string, sp: number) => {
+		store.units = store.units.map((u) => (u.id === id ? { ...u, strengthPoints: sp } : u));
+	};
+	const moveTo = (store: GameStore, id: string, col: number, row: number) => {
+		store.units = store.units.map((u) => (u.id === id ? { ...u, coordinates: { col, row } } : u));
+	};
+
+	it('reports eliminate progress as destroyed / needed', () => {
+		expect.assertions(3);
+		const store = GameStore.fromScenario(PITCHED_BATTLE);
+		setSp(store, 'red-line-1', 0);
+		setSp(store, 'red-line-2', 0);
+		const s = store.victoryStatus.find((c) => c.id === 'blue-break-enemy')!;
+		expect(s.text).toBe('2 / 4');
+		expect(s.fraction).toBeCloseTo(0.5);
+		expect(s.met).toBe(false);
+	});
+
+	it('marks an eliminate condition met once the count is reached', () => {
+		expect.assertions(2);
+		const store = GameStore.fromScenario(PITCHED_BATTLE);
+		['red-line-1', 'red-line-2', 'red-light-inf', 'red-artillery'].forEach((id) =>
+			setSp(store, id, 0)
+		);
+		const s = store.victoryStatus.find((c) => c.id === 'blue-break-enemy')!;
+		expect(s.text).toBe('4 / 4');
+		expect(s.met).toBe(true);
+	});
+
+	it('reports control_hexes as held when a friendly unit occupies the objective', () => {
+		expect.assertions(2);
+		const store = GameStore.fromScenario(PITCHED_BATTLE);
+		moveTo(store, 'blue-light-inf', 3, 4); // onto the central hill
+		const s = store.victoryStatus.find((c) => c.id === 'blue-hold-hill')!;
+		expect(s.text).toContain('Held');
+		expect(s.fraction).toBe(1);
+	});
+});
+
+describe('combat log coords (M13)', () => {
+	it('fire_action event carries the target hex coords', () => {
+		expect.assertions(1);
+		const store = makeLightInfFireStore(); // blue-light-inf (4,0) vs red-light-horse (5,0)
+		store.activateUnit('blue-light-inf');
+		store.fireAt('red-light-horse', () => 0.999); // miss → target stays put
+		const ev = store.log.find((e) => e.kind === 'fire_action');
+		expect(ev?.kind === 'fire_action' ? ev.targetCoords : null).toEqual({ col: 5, row: 0 });
+	});
+
+	it('charge_action event carries attacker and defender hex coords', () => {
+		expect.assertions(2);
+		const units = structuredClone(TEST_UNITS) as Unit[];
+		const li = units.find((u) => u.id === 'blue-line-inf')!;
+		li.coordinates = { col: 3, row: 1 };
+		const art = units.find((u) => u.id === 'red-artillery')!;
+		art.coordinates = { col: 4, row: 1 };
+		const store = new GameStore(units, TEST_MAP, structuredClone(TEST_LEADERS));
+		store.activateUnit('blue-line-inf');
+		store.chargeAt('red-artillery', () => 0);
+		const ev = store.log.find((e) => e.kind === 'charge_action');
+		expect(ev?.kind === 'charge_action' ? ev.attackerCoords : null).toEqual({ col: 3, row: 1 });
+		expect(ev?.kind === 'charge_action' ? ev.defenderCoords : null).toEqual({ col: 4, row: 1 });
 	});
 });

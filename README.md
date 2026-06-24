@@ -169,19 +169,36 @@ Facing was implemented at this milestone and later removed in the **facing refac
 
 ---
 
-### M13: UI Polish
+### ~~M13: UI Polish~~ COMPLETE
 
-Minimal but functional interface for all game mechanics. Build only after core systems work.
+- **Highlight overhaul** — selecting a unit subtly brightens its actionable hexes and dims every other hex back (both keep their black base stroke); valid fire/charge targets tint light low-opacity red. Only the armed/selected hex gets a white stroke — a white-emphasis fill for a move destination, dark high-opacity red for a combat target. All in `render/engine.ts` `gameRender` (`HEX_DIM_*`/`HEX_BRIGHTEN_*`/`TARGET_*`/`PENDING_*` constants), gated so an idle board is untouched.
+- **Combat result feedback** — new `render/fx.ts` draws large, screen-centered text (`-N SP`, `MISS`, `MORALE BROKEN`, `LEADER DOWN`, `ELIMINATED`) that holds then fades. Driven by polling `store.log` (a pure consumer); `FireActionEvent`/`ChargeActionEvent` gained `targetCoords`/`attackerCoords`/`defenderCoords` capturing where combat happened (for future R9/R10 animation).
+- **Victory progress on demand** — a star button in the top bar opens a native `<dialog>` (accessible, top-layer, Esc-dismissable — not the canvas-drawn LittleJS UI plugin) listing per-condition progress (eliminations N/needed, hold streaks, control state, turns) from a new `GameStore.victoryStatus` derived.
+- **Leader & command legibility** — gold leader pips on led counters and a gold command-radius overlay (faint outline on in-range hexes + ring on the leader's host hex) drawn for the selected unit's side, giving the in/out-of-command badge visible context. SP and a leader marker added to the bottom-bar readout.
+- **End-turn safety** — with un-activated units left, the first End Turn press arms a soft confirm (`End turn? (N left)`, amber Acted count) and the second ends the turn; auto-disarms on turn change via a derived turn-key (no reset effect).
+- 5 new `gameStore.spec.ts` tests (victoryStatus progress, fire/charge log coords); the two `+page.svelte` chrome tests updated for the two-press end-turn and banner-scoped player queries. All 579 tests pass; verified live (highlight overhaul, command overlay, leader pips, objectives dialog) with no console errors.
 
-- Activation UI: show available/activated units, current activation step
-- Action panel: available actions per unit type and state
-- Movement overlay: highlight valid hexes
-- Combat feedback: targets, results, damage
-- Unit info: SP, type, leader, activated status
-- Game HUD: turn, active player, victory progress
-- End-turn confirmation if un-activated units remain
+The board is the primary interface — a tap-driven, contextual model on the LittleJS canvas (select → preview every legal action as an overlay → tap-to-arm → tap-again-to-confirm), with a minimal DOM chrome overlay (top bar, bottom bar, banner, toast). Built remaining polish on top of that model; did not reintroduce the panels it replaced.
 
-**Files:** `+page.svelte`, `render/` components, new components as needed
+**Already in place (R3–R7):**
+
+- Available vs spent units read directly on the board (activated counters fade to 40%); top bar shows Acted N/M.
+- Contextual actions: selecting a unit lights up its valid move/fire/charge hexes; the bottom bar shows the armed action, a Fire/Charge toggle when a target is both, and Cancel / End Activation. No standalone action panel.
+- Tiered overlays: _available_ (yellow move outline, red target tint) vs _armed_ (bold blue move, bold red combat).
+- Unit basics: SP on the counter, type via NATO glyph, selection outline, in/out-of-command badge for the selected unit.
+- HUD: turn / turn limit, active player, acted count; victory-outcome banner. Transient toast for otherwise-invisible outcomes (e.g. failed command check).
+
+**Remaining polish (this milestone):**
+
+- **Combat result feedback** — surface what a resolved action did (hit/miss, damage, morale break + retreat, leader casualty, elimination) instead of letting the SP readout change silently. Floating text / toast now; overlaps the R10 particle/sound FX track.
+- **Victory progress in the HUD** — show progress toward the active win condition (eliminations N/needed, hold-hex streak, turns remaining), not just the final banner.
+- **Leader & command legibility** — draw leaders / command radius on the board (or in the unit readout) so the command badge has visible context.
+- **End-turn safety** — when the active player has un-activated units, nudge before ending the turn (soft confirmation or a highlighted Acted count), suited to the tap model rather than a blocking modal.
+- **Tap-model legibility** — keep the preview→arm→confirm gesture and overlay tiers self-explanatory (the bottom-bar prompts already carry most of this).
+
+**Dropped from the original scope** (obsoleted by the tap-driven board): a standalone action panel and any "current activation step" readout — the activation lifecycle resolves atomically under the hood; only its _visible outcomes_ (command failure, combat results) belong in the UI.
+
+**Files:** `+page.svelte` (chrome); `render/engine.ts` + new `render/` overlays as needed; combat-result feedback overlaps `render/fx.ts` (R10).
 
 > **Known a11y gap (board interaction).** The board is a LittleJS canvas with no keyboard/AT affordance — interaction is touch/pointer only. The accessible controls (End Turn / Move / Fire, status) live in the DOM chrome as real buttons, and the canvas carries `aria-label="Game board"`, but keyboard/screen-reader **board navigation is deliberately deferred** as not worth the cost for a mobile-first touch game. Revisit if a desktop/AT audience emerges. See `docs/littlejs-migration-roadmap.md` (R7).
 

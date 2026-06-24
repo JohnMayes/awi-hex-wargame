@@ -2,10 +2,8 @@
 	import { initGameStore } from '$lib/game/state/gameStore.svelte';
 	import LittleBoard from '$lib/game/render/LittleBoard.svelte';
 	import { PITCHED_BATTLE } from '$lib/game/data/scenarios';
-	import { fade } from 'svelte/transition';
 
 	const store = initGameStore(PITCHED_BATTLE);
-	$inspect(store.log);
 
 	// Pointer-events discipline for the LJS chrome overlay: stop chrome presses from
 	// bubbling to `document`, where LittleJS's input listeners would otherwise record
@@ -31,6 +29,11 @@
 
 	const sel = $derived(store.selectedUnit);
 	const unitName = (u: { type: string }) => u.type.toLowerCase().replace(/_/g, ' ');
+	const playerName = (p: number) => (p === 0 ? 'Blue' : 'Red');
+	const selHasLeader = $derived(!!sel && store.leaders.some((l) => l.attachedToUnitId === sel.id));
+
+	// Objectives dialog (victory progress on demand, not always-on HUD).
+	let victoryDialog: HTMLDialogElement | undefined = $state();
 
 	// Bottom-bar contextual state, all driven by the store's pendingAction.
 	const pending = $derived(store.pendingAction);
@@ -52,32 +55,50 @@
 	const actedUnits = $derived(
 		store.units.filter((u) => u.player === store.activePlayer && u.activated).length
 	);
+	const unitsLeft = $derived(totalUnits - actedUnits);
 
-	// Transient notice toast — auto-dismiss a couple seconds after it appears.
-	let noticeTimer: ReturnType<typeof setTimeout> | undefined;
-	$effect(() => {
-		if (!store.notice) return;
-		clearTimeout(noticeTimer);
-		noticeTimer = setTimeout(() => {
-			store.notice = null;
-		}, 2500);
-		return () => clearTimeout(noticeTimer);
-	});
+	// End-turn safety: with un-activated units left, the first press arms a soft
+	// confirm (no blocking modal) and the second press actually ends the turn.
+	// `armedFor` records which player-turn was armed, so a turn change auto-disarms
+	// it via the derived below (no reset effect needed).
+	const turnKey = $derived(`${store.turn}:${store.activePlayer}`);
+	let armedFor = $state<string | null>(null);
+	const endTurnArmed = $derived(armedFor === turnKey);
+	let endTurnTimer: ReturnType<typeof setTimeout> | undefined;
+	function handleEndTurn() {
+		if (store.isGameOver) return;
+		if (unitsLeft > 0 && !endTurnArmed) {
+			armedFor = turnKey;
+			clearTimeout(endTurnTimer);
+			endTurnTimer = setTimeout(() => (armedFor = null), 3000);
+			return;
+		}
+		clearTimeout(endTurnTimer);
+		armedFor = null;
+		store.endPlayerTurn();
+	}
 </script>
 
 {#snippet topBar()}
 	<header class="top-bar">
 		<div class="meta">
+			<button
+				class="star-btn"
+				aria-label="Show objectives"
+				onclick={() => victoryDialog?.showModal()}>★</button
+			>
 			<span class="meta-label">Turn</span>
-			<span class="meta-value">{store.turn} / {store.turnLimit ?? '∞'}</span>
+			<span class="meta-value">{store.turn}</span>
 			<span class="player-chip" data-player={store.activePlayer}
 				>{store.activePlayer === 0 ? 'Blue' : 'Red'}</span
 			>
-			<span class="meta-label">Acted</span>
-			<span class="meta-value">{actedUnits} / {totalUnits}</span>
 		</div>
-		<button class="end-turn" onclick={() => store.endPlayerTurn()} disabled={store.isGameOver}
-			>End Turn</button
+		<button
+			class="end-turn"
+			data-armed={endTurnArmed}
+			onclick={handleEndTurn}
+			disabled={store.isGameOver}
+			>{endTurnArmed ? `End turn? (${unitsLeft} left)` : 'End Turn'}</button
 		>
 	</header>
 {/snippet}
@@ -96,12 +117,15 @@
 			<div class="unit-readout">
 				<span class="unit-label">{store.activeUnitId === sel.id ? 'Activating' : 'Selected'}</span>
 				<span class="unit-name">{unitName(sel)}</span>
+				<span class="unit-detail"
+					>SP {sel.strengthPoints}/{sel.maxStrengthPoints}{selHasLeader ? ' · ★ leader' : ''}</span
+				>
 			</div>
 
 			{#if pending}
 				<div class="pending">
 					{#if pending.kind === 'move'}
-						<span class="pending-label">Move here · cost {pending.cost}</span>
+						<span class="pending-label">Move · cost {pending.cost}</span>
 					{:else if bothCombat}
 						<div class="combat-choice" role="radiogroup" aria-label="Combat action">
 							<label class="radio">
@@ -159,12 +183,34 @@
 	<div class="chrome-group" {@attach swallowPointer}>
 		{@render bottomBar()}
 	</div>
-	{#if store.notice}
-		{#key store.notice.id}
-			<div class="notice" transition:fade>{store.notice.text}</div>
-		{/key}
-	{/if}
 </div>
+
+<!-- Objectives dialog: victory progress on demand. Native <dialog> (top-layer,
+     focus-trapped, Esc-dismissable) keeps it accessible, unlike a canvas UI.
+     swallowPointer stops in-dialog presses from reaching the engine listeners. -->
+<dialog class="objectives" bind:this={victoryDialog} {@attach swallowPointer}>
+	<h2 class="obj-title">Objectives</h2>
+	{#if store.turnLimit !== null}
+		<p class="obj-turn">Turn {store.turn} of {store.turnLimit}</p>
+	{/if}
+	<ul class="obj-list">
+		{#each store.victoryStatus as c (c.id)}
+			<li class="obj-item" data-player={c.player} data-met={c.met}>
+				<div class="obj-row">
+					<span class="obj-side" data-player={c.player}>{playerName(c.player)}</span>
+					<span class="obj-progress">{c.text}</span>
+				</div>
+				<span class="obj-desc">{c.description}</span>
+				<div class="obj-bar">
+					<div class="obj-bar-fill" style="width:{Math.round(c.fraction * 100)}%"></div>
+				</div>
+			</li>
+		{:else}
+			<li class="obj-item"><span class="obj-desc">No victory conditions.</span></li>
+		{/each}
+	</ul>
+	<button class="action obj-close" onclick={() => victoryDialog?.close()}>Close</button>
+</dialog>
 
 <style>
 	:global(body) {
@@ -243,29 +289,28 @@
 
 	.end-turn {
 		appearance: none;
-		background: #e8e1d1;
-		color: #15181c;
-		border: 1px solid #e8e1d1;
-		padding: 0.5rem 0.875rem;
+		background: transparent;
+		color: #fff;
+		border: none;
+		padding: 0.25rem;
 		font: inherit;
-		font-size: 0.75rem;
+		font-size: 0.8125rem;
 		text-transform: uppercase;
 		letter-spacing: 0.1em;
 		font-weight: 600;
+		text-decoration: underline;
+		text-underline-offset: 3px;
 		cursor: pointer;
-		border-radius: 2px;
 		min-height: 44px;
-		transition:
-			background 80ms ease,
-			color 80ms ease;
+		transition: color 80ms ease;
 	}
 	.end-turn:hover:not(:disabled) {
-		background: transparent;
-		color: #e8e1d1;
+		color: #c9a227;
 	}
 	.end-turn:disabled {
 		opacity: 0.3;
 		cursor: not-allowed;
+		text-decoration: none;
 	}
 
 	/* --- victory banner --- */
@@ -431,22 +476,127 @@
 		height: 1.1rem;
 	}
 
-	/* --- transient notice toast (fades in/out over the board) --- */
-	.notice {
-		position: absolute;
-		left: 50%;
-		bottom: calc(96px + env(safe-area-inset-bottom));
-		transform: translateX(-50%);
-		max-width: min(90vw, 28rem);
-		padding: 0.625rem 1rem;
+	/* end-turn soft-confirm armed state (amber) */
+	.end-turn[data-armed='true'] {
+		color: #e0a324;
+	}
+
+	/* star button → objectives dialog */
+	.star-btn {
+		appearance: none;
+		background: transparent;
+		border: none;
+		color: #c9a227;
+		font-size: 1.1rem;
+		line-height: 1;
+		cursor: pointer;
+		padding: 0.25rem;
+		min-width: 44px;
+		min-height: 44px;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		border-radius: 2px;
+	}
+	.star-btn:hover {
+		color: #e8e1d1;
+	}
+
+	.unit-detail {
+		font-size: 0.625rem;
+		color: #8a8275;
+		font-variant-numeric: tabular-nums;
+		white-space: nowrap;
+	}
+
+	/* --- objectives dialog --- */
+	.objectives {
+		margin: auto;
+		max-width: min(92vw, 26rem);
+		width: 26rem;
+		padding: 1.25rem;
 		background: #15181c;
 		color: #e8e1d1;
-		border: 1px solid #c9a227;
-		border-radius: 3px;
+		border: 1px solid #3a3530;
+		border-radius: 4px;
+		box-shadow: 0 8px 32px rgba(0, 0, 0, 0.55);
+	}
+	.objectives::backdrop {
+		background: rgba(0, 0, 0, 0.55);
+	}
+	.obj-title {
+		margin: 0 0 0.25rem;
+		font-size: 0.875rem;
+		text-transform: uppercase;
+		letter-spacing: 0.12em;
+		font-weight: 600;
+	}
+	.obj-turn {
+		margin: 0 0 0.75rem;
+		font-size: 0.75rem;
+		color: #8a8275;
+		font-variant-numeric: tabular-nums;
+	}
+	.obj-list {
+		list-style: none;
+		margin: 0 0 1rem;
+		padding: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 0.75rem;
+	}
+	.obj-item {
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+	}
+	.obj-row {
+		display: flex;
+		align-items: baseline;
+		justify-content: space-between;
+		gap: 0.5rem;
+	}
+	.obj-side {
+		font-size: 0.6875rem;
+		text-transform: uppercase;
+		letter-spacing: 0.1em;
+		font-weight: 600;
+	}
+	.obj-side[data-player='0'] {
+		color: #5a8fe6;
+	}
+	.obj-side[data-player='1'] {
+		color: #e06a6a;
+	}
+	.obj-progress {
 		font-size: 0.8125rem;
-		text-align: center;
-		letter-spacing: 0.04em;
-		box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
-		pointer-events: none;
+		font-variant-numeric: tabular-nums;
+		color: #e8e1d1;
+	}
+	.obj-item[data-met='true'] .obj-progress {
+		color: #8fbf6b;
+		font-weight: 600;
+	}
+	.obj-desc {
+		font-size: 0.75rem;
+		color: #b8b0a0;
+	}
+	.obj-bar {
+		height: 4px;
+		background: #2a2722;
+		border-radius: 2px;
+		overflow: hidden;
+	}
+	.obj-bar-fill {
+		height: 100%;
+		background: #c9a227;
+		transition: width 120ms ease;
+	}
+	.obj-item[data-met='true'] .obj-bar-fill {
+		background: #8fbf6b;
+	}
+	.obj-close {
+		width: 100%;
+		max-width: none;
 	}
 </style>
