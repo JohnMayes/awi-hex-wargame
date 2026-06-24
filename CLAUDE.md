@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-AWI Hex & Counter Wargame — a Svelte-based digital hex wargame for the Horse and Musket era (1700–1860). Renders an SVG hex grid with unit counters, turn-based phased gameplay, and scenario based maps. Built on honeycomb-grid for hex math. Uses native SVG for rendering.
+AWI Hex & Counter Wargame — a Svelte-based digital hex wargame for the Horse and Musket era (1700–1860). Renders a hex grid with unit counters, turn-based phased gameplay, and scenario based maps. Built on honeycomb-grid for hex math. Renders on a LittleJS canvas.
 
 ## Commands
 
@@ -57,17 +57,13 @@ data/    → Static game data
 state/   → Reactive state management
   gameStore.svelte.ts   Singleton GameStore class using Svelte 5 runes ($state, $derived)
 
-ui/      → Svelte components (current SVG renderer)
-  HexTile.svelte       Hex polygon rendering with terrain-based colors
-  UnitCounter.svelte   SVG unit icons for all 6 unit types
-
-render/  → LittleJS renderer (in-progress migration off SVG; see render/CLAUDE.md)
+render/  → LittleJS renderer (the sole renderer; see render/CLAUDE.md)
   LittleBoard.svelte   Mounts the LittleJS engine client-only; draws the board from the store
 ```
 
-### Rendering migration (SVG → LittleJS)
+### Rendering (LittleJS)
 
-The SVG layer in `ui/` is being incrementally replaced by a LittleJS canvas renderer in `render/`, behind a `?render=ljs` toggle (SVG stays the default until parity). **When working in `render/`, read `src/lib/game/render/CLAUDE.md`** — it covers the integration model (ESM/Vite, client-only `onMount`, the honeycomb→LittleJS Y-flip, single-instance lifecycle) and where to find version-accurate LittleJS docs. Phase plan: `docs/littlejs-migration-roadmap.md`; rationale: `docs/littlejs-rendering-evaluation.md`.
+The board is drawn on a LittleJS canvas by the `render/` layer; the DOM chrome (top/bottom bars, victory banner) lives in `+page.svelte` overlaid on the canvas. **When working in `render/`, read `src/lib/game/render/CLAUDE.md`** — it covers the integration model (ESM/Vite, client-only `onMount`, the honeycomb→LittleJS Y-flip, single-instance lifecycle) and where to find version-accurate LittleJS docs. The renderer was migrated off an earlier SVG layer (R0–R11); history in `docs/littlejs-migration-roadmap.md`, rationale in `docs/littlejs-rendering-evaluation.md`.
 
 ### Key patterns
 

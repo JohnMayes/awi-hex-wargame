@@ -4,11 +4,9 @@ import { TerrainType } from '../core/types';
 export type Rgb = { r: number; g: number; b: number };
 
 /**
- * Terrain fill palette, mirrored from the SVG renderer (`ui/HexTile.svelte`) so
- * the two renderers look identical during the migration. HexTile is removed at
- * R11, at which point this becomes the sole palette. Engine-free and pure so it
- * is unit-tested in Node; the render layer converts to a LittleJS `Color` via
- * `rgb(...)` at the draw call.
+ * Terrain fill palette — the canonical per-terrain board colors. Engine-free and
+ * pure so it is unit-tested in Node; the render layer converts to a LittleJS
+ * `Color` via `rgb(...)` at the draw call.
  */
 export const terrainHexColors: Record<TerrainType, string> = {
 	[TerrainType.OPEN]: '#d9cbb2',
@@ -23,7 +21,7 @@ export const terrainHexColors: Record<TerrainType, string> = {
 	[TerrainType.HILLTOP]: '#b6a87f'
 };
 
-/** Hex border color — matches HexTile's `stroke="black"`. */
+/** Hex border color (black). */
 export const hexStrokeHex = '#000000';
 
 /** Parse a `#rrggbb` string into normalized 0..1 RGB. */

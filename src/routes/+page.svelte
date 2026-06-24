@@ -1,18 +1,11 @@
 <script lang="ts">
 	import { initGameStore } from '$lib/game/state/gameStore.svelte';
-	import HexTile from '$lib/game/ui/HexTile.svelte';
-	import UnitCounter from '$lib/game/ui/UnitCounter.svelte';
 	import LittleBoard from '$lib/game/render/LittleBoard.svelte';
 	import { PITCHED_BATTLE } from '$lib/game/data/scenarios';
-	import { page } from '$app/state';
 	import { fade } from 'svelte/transition';
 
 	const store = initGameStore(PITCHED_BATTLE);
 	$inspect(store.log);
-
-	// Renderer toggle: LittleJS is the default as of R6 (parity gate); `?render=svg`
-	// keeps the original SVG renderer reachable for rollback.
-	const useLJS = $derived(page.url.searchParams.get('render') !== 'svg');
 
 	// Pointer-events discipline for the LJS chrome overlay: stop chrome presses from
 	// bubbling to `document`, where LittleJS's input listeners would otherwise record
@@ -70,27 +63,6 @@
 		}, 2500);
 		return () => clearTimeout(noticeTimer);
 	});
-
-	const validKeys = $derived(
-		new Set(store.validMoveTargets.map((t) => `${t.coordinates.col},${t.coordinates.row}`))
-	);
-	const fireTargetIds = $derived(new Set(store.validFireTargets.map((u) => u.id)));
-	const chargeTargetIds = $derived(new Set(store.validChargeTargets.map((u) => u.id)));
-
-	const allPoints = [...store.grid!].flatMap((hex) => hex.corners);
-
-	const xs = allPoints.map((p) => p.x);
-	const ys = allPoints.map((p) => p.y);
-
-	const minX = Math.min(...xs);
-	const maxX = Math.max(...xs);
-	const minY = Math.min(...ys);
-	const maxY = Math.max(...ys);
-
-	const width = maxX - minX;
-	const height = maxY - minY;
-
-	const padding = 2;
 </script>
 
 {#snippet topBar()}
@@ -175,77 +147,29 @@
 	</footer>
 {/snippet}
 
-{#if useLJS}
-	<LittleBoard {store} />
-	<!-- DOM chrome overlaid over the body-rooted canvas. The empty middle is
-	     pointer-events:none so board taps fall through to the engine; the bars
-	     are pointer-events:auto and stop their presses from reaching `document`. -->
-	<div class="overlay">
-		<div class="chrome-group" {@attach swallowPointer}>
-			{@render topBar()}
-			{@render banner()}
-		</div>
-		<div class="chrome-group" {@attach swallowPointer}>
-			{@render bottomBar()}
-		</div>
-		{#if store.notice}
-			{#key store.notice.id}
-				<div class="notice" transition:fade>{store.notice.text}</div>
-			{/key}
-		{/if}
-	</div>
-{:else}
-	<div class="container">
+<LittleBoard {store} />
+<!-- DOM chrome overlaid over the body-rooted canvas. The empty middle is
+     pointer-events:none so board taps fall through to the engine; the bars
+     are pointer-events:auto and stop their presses from reaching `document`. -->
+<div class="overlay">
+	<div class="chrome-group" {@attach swallowPointer}>
 		{@render topBar()}
 		{@render banner()}
-
-		<svg
-			viewBox={`${minX - padding} ${minY - padding} ${width + padding * 2} ${height + padding * 2}`}
-			preserveAspectRatio="xMidYMid meet"
-		>
-			{#each store.grid as Hex, i (`${Hex.q},${Hex.r}`)}
-				<HexTile
-					cell={Hex}
-					highlighted={validKeys.has(`${Hex.col},${Hex.row}`)}
-					onClick={() => store.moveUnit({ col: Hex.col, row: Hex.row })}
-				/>
-			{/each}
-			{#each store.units as unit, i (unit.id)}
-				{@const pos = store.takesCordsReturnsPos(unit.coordinates)}
-				<UnitCounter
-					{unit}
-					pos={pos!}
-					fireTarget={fireTargetIds.has(unit.id)}
-					chargeTarget={chargeTargetIds.has(unit.id)}
-					onClick={() => {
-						if (unit.player === store.activePlayer) {
-							store.selectUnit(unit);
-						} else if (fireTargetIds.has(unit.id)) {
-							store.fireAt(unit.id);
-						} else if (chargeTargetIds.has(unit.id)) {
-							store.chargeAt(unit.id);
-						}
-					}}
-				/>
-			{/each}
-		</svg>
-
+	</div>
+	<div class="chrome-group" {@attach swallowPointer}>
 		{@render bottomBar()}
 	</div>
-{/if}
+	{#if store.notice}
+		{#key store.notice.id}
+			<div class="notice" transition:fade>{store.notice.text}</div>
+		{/key}
+	{/if}
+</div>
 
 <style>
 	:global(body) {
 		margin: 0;
 		font-family: 'IBM Plex Sans', system-ui, sans-serif;
-	}
-
-	.container {
-		display: flex;
-		flex-direction: column;
-		width: 100vw;
-		height: 100vh; /* fallback for older browsers */
-		height: 100dvh; /* preferred: avoids iOS Safari URL-bar layout thrash */
 	}
 
 	/* --- LJS chrome overlay (DOM bars over the body-rooted canvas) --- */
@@ -263,14 +187,6 @@
 		touch-action: manipulation; /* drop the 300ms tap delay; no double-tap zoom on the bars */
 		-webkit-user-select: none;
 		user-select: none; /* taps on bars never start a text selection */
-	}
-
-	svg {
-		flex: 1;
-		display: block;
-		background-color: cadetblue;
-		min-height: 0; /* required so flex shrinks correctly */
-		touch-action: manipulation; /* drop the 300ms iOS tap delay */
 	}
 
 	/* --- top bar (status + end turn) --- */
@@ -457,16 +373,6 @@
 		display: flex;
 		align-items: center;
 		min-height: 48px;
-	}
-
-	.action.primary {
-		background: #c9a227;
-		color: #15181c;
-		border-color: #c9a227;
-	}
-	.action.primary:hover:not(:disabled) {
-		background: #e8e1d1;
-		border-color: #e8e1d1;
 	}
 
 	/* --- selected-unit command badge (the activation gamble, pre-commit) --- */

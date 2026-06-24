@@ -38,11 +38,11 @@ let bounds: Bounds | null = null;
 const CANVAS_MAX = 4096;
 
 const CAMERA_FIT = 0.95; // leave a small margin around the board
-const HEX_LINE_WIDTH = 1; // world units; matches HexTile's thin black border
+const HEX_LINE_WIDTH = 1; // world units; thin black hex border
 const SP_TEXT_SIZE = 16; // world units
 const SP_TEXT_FILL = hexToRgb('#ffffff');
 const SP_TEXT_OUTLINE = hexToRgb('#010203');
-const HIGHLIGHT_COLOR = hexToRgb('#ffcc00'); // move-target outline (matches HexTile)
+const HIGHLIGHT_COLOR = hexToRgb('#ffcc00'); // move-target outline
 const HIGHLIGHT_WIDTH = 3;
 const TARGET_COLOR = hexToRgb('#cc2222'); // valid fire/charge target hex tint
 const TARGET_ALPHA = 0.35; // subtle translucent fill
@@ -128,7 +128,7 @@ function drawCounters(store: GameStore) {
 	}
 }
 
-/** Board pixel extents + center, from hex corners (same min/max as the SVG viewBox). */
+/** Board pixel extents + center, from hex corners. */
 function computeBounds(store: GameStore): Bounds {
 	const pts = [...store.grid!].flatMap((h) => h.corners);
 	const xs = pts.map((p) => p.x);
@@ -181,7 +181,7 @@ function gameRender() {
 		);
 	}
 
-	// Move-range highlights (under counters), ported from HexTile's yellow outline.
+	// Move-range highlights (under counters): yellow hex outline.
 	const highlight = color(HIGHLIGHT_COLOR);
 	for (const t of currentStore.validMoveTargets) {
 		const hex = currentStore.hexAt(t.coordinates);

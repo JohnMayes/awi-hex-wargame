@@ -176,17 +176,18 @@ The remaining engine upside: feedback FX.
 
 ---
 
-### R11: Decommission SVG
+### ~~R11: Decommission SVG~~ COMPLETE
 
-Remove the old renderer once LittleJS has been the default through real use.
+Removed the old renderer — the team committed to LittleJS-only ahead of the R8–R10 art track (the "depends on R10" was a soft gate; the gate that mattered was the R6 parity + R7 hardening, both long since passed in real use).
 
-- Delete `HexTile.svelte`, `UnitCounter.svelte`, the `<svg>` block, and the renderer toggle
-- Delete/replace obsolete browser component tests (`page.svelte.spec.ts` and any SVG-component specs); keep all `core/`/`state/` tests untouched
-- Update `CLAUDE.md` (architecture: `ui/` → `render/`, SVG → LittleJS) and `README.md`
+- Deleted `ui/HexTile.svelte` + `ui/UnitCounter.svelte` (the now-empty `ui/` directory is gone). No other module imported them — only `+page.svelte` did
+- `+page.svelte` reduced to the **unconditional** LittleJS body: removed the `?render=svg` toggle (`useLJS`), the SVG `{:else}` branch (the `<svg>`, `HexTile`/`UnitCounter` loops, `.container`), and the now-dead SVG-only reactive state that fed it (`validKeys`, `fireTargetIds`/`chargeTargetIds`, the viewBox `min/max/width/height/padding` math) plus the `$app/state` `page` import. The renderer-neutral DOM chrome (snippets, overlay, `swallowPointer`, notice) is untouched
+- `page.svelte.spec.ts` **kept** (it already tests the LJS overlay, mocking the engine — it was never SVG-specific); only stale toggle/migration comments were freshened. No `core/`/`state/`/`render/` specs changed; no SVG-component specs existed to delete
+- Comments in `render/terrainStyle.ts`/`counters.ts`/`engine.ts` that cross-referenced the deleted SVG files ("mirrored from HexTile", "ported from `UnitCounter.svelte`") reworded — each module is now the source of truth. Living docs (`CLAUDE.md`, `README.md`, `render/CLAUDE.md`) updated to present-tense LittleJS-only
 
-**Files:** delete `ui/HexTile.svelte`, `ui/UnitCounter.svelte`; `+page.svelte`; `CLAUDE.md`; `README.md`
-**Tests:** full suite green; `pnpm check`, `pnpm lint`, `pnpm build` clean
-**Depends on:** R10 (or whenever the team commits to LittleJS-only) — do not remove SVG until confidence is earned in production.
+**Files:** deleted `ui/HexTile.svelte`, `ui/UnitCounter.svelte`; edited `+page.svelte`, `page.svelte.spec.ts`, `render/{terrainStyle,counters,engine}.ts`, `CLAUDE.md`, `README.md`, `render/CLAUDE.md`
+**Verified:** `pnpm check` 0 errors, `pnpm lint` clean, `pnpm build` SSR-safe, full suite green, Svelte autofixer clean; `grep` confirms no remaining `HexTile`/`UnitCounter`/`render=svg`/`useLJS` references
+**Was:** R10 (or whenever the team commits to LittleJS-only) — done ahead of the art track.
 
 ---
 
@@ -214,11 +215,11 @@ R6  DOM Chrome Integration ───────  ★ PARITY GATE (flip default;
       R9  Movement & Camera Animation
       │
       R10 Particles & Sound
-      │
-      R11 Decommission SVG          (only after production confidence)
+
+R11 Decommission SVG               ★ COMPLETE (done ahead of the art track)
 ```
 
-R0→R6 is a strict chain to parity. R7 and R8 fork after the gate; R9–R11 follow the art track. **R7 is complete**; R8 (independent of R7) is next.
+R0→R6 is a strict chain to parity. R7 and R8 fork after the gate; R9–R10 follow the art track. **R0–R7 and R11 are complete** — the SVG layer is decommissioned and LittleJS is the only renderer. The remaining work is the optional art/juice track: R8 (PNG art), R9 (animation), R10 (FX), each an enhancement over the immediate-mode shapes shipping today.
 
 ### Design Principles
 

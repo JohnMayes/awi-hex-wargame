@@ -1,10 +1,10 @@
 # Rendering layer (`render/`) — LittleJS integration guide
 
-This directory is the **LittleJS rendering layer** that is incrementally replacing the SVG `ui/` components. Read this before writing engine code.
+This directory is the **LittleJS rendering layer** — the game's sole renderer. Read this before writing engine code.
 
-- **Roadmap & phases:** `docs/littlejs-migration-roadmap.md` (R0–R11; check which phase you're in)
+- **Roadmap & history:** `docs/littlejs-migration-roadmap.md` (R0–R11, the SVG→LittleJS migration, now complete)
 - **Why/architecture rationale:** `docs/littlejs-rendering-evaluation.md`
-- **Status:** R0–R7 complete — **past the parity gate and lifecycle-hardened**. LittleJS is the default renderer (SVG retained at `/?render=svg`). The board (terrain, counters, highlights, combat overlays), input (select/move/fire/charge), and DOM chrome overlay are all in place. Next: R8 (PNG art). Engine lifecycle + draw loop live in `engine.ts`; coordinate/picking glue in `boardGeometry.ts`; click→store routing in `boardInput.ts`; `LittleBoard.svelte` is now a thin mount wrapper. The DOM chrome (top/bottom bars, banner) lives in `+page.svelte` as shared snippets, overlaid over the body-rooted canvas with `pointer-events` discipline (a `swallowPointer` attachment stops `mousedown`/`touchstart` from reaching the engine's `document` listeners).
+- **Status:** R0–R7 + R11 complete — past the parity gate, lifecycle-hardened, and the old SVG layer is now decommissioned, so **LittleJS is the only renderer** (the team committed to it ahead of the R8–R10 art track). The board (terrain, counters, highlights, combat overlays), input (select/move/fire/charge), and DOM chrome overlay are all in place. Remaining enhancement work (immediate-mode shapes are the current art): R8 (PNG art), R9 (animation), R10 (FX). Engine lifecycle + draw loop live in `engine.ts`; coordinate/picking glue in `boardGeometry.ts`; click→store routing in `boardInput.ts`; `LittleBoard.svelte` is a thin mount wrapper. The DOM chrome (top/bottom bars, banner) lives in `+page.svelte` as shared snippets, overlaid over the body-rooted canvas with `pointer-events` discipline (a `swallowPointer` attachment stops `mousedown`/`touchstart` from reaching the engine's `document` listeners).
 
 ## This is NOT the LittleJS-AI workflow
 

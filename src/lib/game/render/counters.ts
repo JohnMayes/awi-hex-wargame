@@ -2,15 +2,15 @@ import { UnitType, type Unit } from '../core/types';
 import { hexToRgb, type Rgb } from './terrainStyle';
 
 /**
- * Unit-counter geometry, ported from the SVG `ui/UnitCounter.svelte` NATO
- * symbols. Pure and engine-free (no `littlejsengine` import) so it is unit-tested
- * in Node and stays SSR-safe; `engine.ts` is the sole consumer and turns these
- * primitives into LittleJS draw calls.
+ * Unit-counter geometry — the NATO symbols for the six unit types. Pure and
+ * engine-free (no `littlejsengine` import) so it is unit-tested in Node and stays
+ * SSR-safe; `engine.ts` is the sole consumer and turns these primitives into
+ * LittleJS draw calls.
  *
  * Coordinates are in **counter-local pixel space**: origin at the counter
- * center, Y-down (the same convention as the SVG and honeycomb pixel space), so
- * `engine.ts`'s existing `toWorld()` Y-flip renders them upright. `engine.ts`
- * offsets every point by the unit's board pixel position before flipping.
+ * center, Y-down (the same convention as honeycomb pixel space), so `engine.ts`'s
+ * existing `toWorld()` Y-flip renders them upright. `engine.ts` offsets every
+ * point by the unit's board pixel position before flipping.
  */
 
 export type Vec = { x: number; y: number };
@@ -28,15 +28,15 @@ export type Primitive =
 			stroke?: Rgb;
 	  };
 
-/** Counter dimensions (matches the SVG's 80px square; fits the 120×104px flat-top hex). */
+/** Counter dimensions: 80px square; fits the 120×104px flat-top hex. */
 export const SIZE = 80;
 const HALF = SIZE / 2;
 const SYM_HALF = 28; // NATO symbol box half-extent, leaving a margin inside the counter
-const SYM_WIDTH = 3; // symbol stroke width (world/pixel units; ~SVG's effective 2.4px)
+const SYM_WIDTH = 3; // symbol stroke width (world/pixel units)
 const SELECTED_WIDTH = 2.5; // gold selection outline width
 const CIRCLE_DIAMETER = 28; // dragoons/artillery center circle
 
-// Colors ported from `UnitCounter.svelte`.
+// Player counter base colors.
 const PLAYER_FILL: Rgb[] = [hexToRgb('#1a56db'), hexToRgb('#e02424')]; // [blue, red]
 const SELECTED_STROKE = hexToRgb('#ffd700'); // gold
 const SYMBOL_STROKE = hexToRgb('#010203');
