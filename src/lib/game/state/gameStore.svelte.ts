@@ -22,8 +22,9 @@ import {
 } from '../core/command';
 import { applyEliminations } from '../core/elimination';
 import { checkMorale, type MoraleResult } from '../core/morale';
-import type { Scenario } from '../core/scenario';
-import { ActionType, ActivationStep, type Player, type Unit } from '../core/types';
+import type { ReinforcementGroup, ReinforcementUnitSpec, Scenario } from '../core/scenario';
+import { canUnitEnterTerrain } from '../core/terrain';
+import { ActionType, ActivationStep, type Player, type Unit, type UnitType } from '../core/types';
 import { getUnitDefinition } from '../core/unitDefinitions';
 import {
 	boundsFromCoords,
@@ -56,7 +57,11 @@ export type GameStoreConfig = {
 	firstPlayer?: Player;
 	turnLimit?: number | null;
 	victoryConditions?: VictoryCondition[];
+	reinforcements?: ReinforcementGroup[];
 };
+
+/** A single reinforcement unit awaiting deployment, flattened from its group. */
+type PendingReinforcement = { turn: number; player: Player; spec: ReinforcementUnitSpec };
 
 export class GameStore {
 	units: Unit[] = $state([]);
@@ -104,7 +109,13 @@ export class GameStore {
 
 	// Immutable scenario context, set once at construction.
 	#bounds: VictorySnapshot['bounds'];
-	#startingUnitsByPlayer: Record<Player, number>;
+	// Running tally of units eliminated per player, for eliminate_units victory.
+	// A cumulative kill count, independent of the starting roster and reinforcements.
+	#eliminatedByPlayer: Record<Player, number> = $state({ 0: 0, 1: 0 });
+	// Reinforcements not yet deployed: scheduled-but-not-arrived plus any deferred
+	// because their entry hex was blocked. Flattened per-unit so a partly-blocked
+	// group can arrive piecemeal. Not reactive — no UI reads it.
+	#pendingReinforcements: PendingReinforcement[];
 
 	constructor(units: Unit[], map: MapDefinition, leaders: Leader[], config: GameStoreConfig = {}) {
 		const newGrid = new Grid(
@@ -119,10 +130,12 @@ export class GameStore {
 		this.turnLimit = config.turnLimit ?? null;
 		this.victoryConditions = config.victoryConditions ?? [];
 		this.#bounds = boundsFromCoords(map);
-		this.#startingUnitsByPlayer = {
-			0: units.filter((u) => u.player === 0).length,
-			1: units.filter((u) => u.player === 1).length
-		};
+		// Clone so the store never mutates the caller's scenario data.
+		this.#pendingReinforcements = structuredClone(config.reinforcements ?? []).flatMap((g) =>
+			g.units.map((spec) => ({ turn: g.turn, player: g.player, spec }))
+		);
+		// Deploy anything due for the first player's turn 1 (they are already active).
+		this.#processReinforcements();
 	}
 
 	static fromScenario(scenario: Scenario): GameStore {
@@ -133,7 +146,8 @@ export class GameStore {
 			{
 				firstPlayer: scenario.firstPlayer,
 				turnLimit: scenario.turnLimit,
-				victoryConditions: scenario.victoryConditions
+				victoryConditions: scenario.victoryConditions,
+				reinforcements: scenario.reinforcements
 			}
 		);
 	}
@@ -217,6 +231,18 @@ export class GameStore {
 		this.log = [...this.log, event];
 	}
 
+	// Add the just-eliminated units to the per-player kill tally. `before` is the
+	// pre-elimination array (still containing the dead) so their player is known.
+	#recordEliminations(before: readonly Unit[], eliminatedUnitIds: readonly string[]) {
+		if (eliminatedUnitIds.length === 0) return;
+		const tally = { ...this.#eliminatedByPlayer };
+		for (const id of eliminatedUnitIds) {
+			const player = before.find((u) => u.id === id)?.player;
+			if (player !== undefined) tally[player] += 1;
+		}
+		this.#eliminatedByPlayer = tally;
+	}
+
 	// Evaluate victory at the end of a full game turn. Pure core decides; the
 	// store applies the new progress and, only on a decision, records the
 	// outcome and emits a game_over event. With no conditions and no turn limit
@@ -231,7 +257,7 @@ export class GameStore {
 				strengthPoints: u.strengthPoints,
 				coordinates: u.coordinates
 			})),
-			startingUnitsByPlayer: this.#startingUnitsByPlayer,
+			eliminatedByPlayer: this.#eliminatedByPlayer,
 			bounds: this.#bounds,
 			exitedThisTurn: [] // exit action deferred; evaluator supports it for future use
 		};
@@ -251,14 +277,12 @@ export class GameStore {
 	// starting counts and cross-turn accumulators; never decides the game.
 	#conditionStatus(c: VictoryCondition): VictoryConditionStatus {
 		const frac = (n: number, d: number) => (d <= 0 ? 0 : Math.min(1, Math.max(0, n / d)));
-		const aliveOf = (p: Player) =>
-			this.units.filter((u) => u.player === p && u.strengthPoints > 0).length;
 		const base = { id: c.id, player: c.player, description: c.description };
 
 		switch (c.kind) {
 			case 'eliminate_units': {
 				const enemy: Player = c.player === 0 ? 1 : 0;
-				const destroyed = this.#startingUnitsByPlayer[enemy] - aliveOf(enemy);
+				const destroyed = this.#eliminatedByPlayer[enemy];
 				return {
 					...base,
 					text: `${destroyed} / ${c.count}`,
@@ -313,6 +337,63 @@ export class GameStore {
 			firedThisActivation: false,
 			activated: false
 		}));
+	}
+
+	// An entry hex is available iff it is on the map, the unit type may enter its
+	// terrain, and no unit (friend or foe) occupies it. A blocked hex defers the
+	// reinforcement to the owner's next turn.
+	#entryHexAvailable(type: UnitType, coords: OffsetCoordinates): boolean {
+		const hex = this.hexAt(coords);
+		if (!hex) return false;
+		if (!canUnitEnterTerrain(type, hex.terrain)) return false;
+		return this.unitAt(coords) === null;
+	}
+
+	// Expand a reinforcement spec into a full Unit with the standard runtime
+	// defaults; arrives ready to act (activated: false).
+	#expandReinforcement(spec: ReinforcementUnitSpec, player: Player): Unit {
+		const def = getUnitDefinition(spec.type);
+		return {
+			id: spec.id,
+			type: spec.type,
+			player,
+			coordinates: spec.coordinates,
+			strengthPoints: spec.strengthPoints ?? def.defaultStrengthPoints,
+			maxStrengthPoints: spec.maxStrengthPoints ?? def.defaultStrengthPoints,
+			selected: false,
+			movementPointsUsed: 0,
+			firedThisActivation: false,
+			activated: false,
+			elite: spec.elite ?? false
+		};
+	}
+
+	// Deploy every pending reinforcement that is due (its scheduled turn reached)
+	// for the currently-active player and whose entry hex is free. Units that are
+	// not yet due, or due-but-blocked, stay pending and are retried on the owner's
+	// next turn. Called from the constructor (first player's turn 1) and after the
+	// player flip in endPlayerTurn (every later player segment).
+	#processReinforcements() {
+		if (!this.grid || this.#pendingReinforcements.length === 0) return;
+		const arrived: Unit[] = [];
+		const stillPending: PendingReinforcement[] = [];
+		for (const r of this.#pendingReinforcements) {
+			const due = r.player === this.activePlayer && this.turn >= r.turn;
+			if (due && this.#entryHexAvailable(r.spec.type, r.spec.coordinates)) {
+				arrived.push(this.#expandReinforcement(r.spec, r.player));
+			} else {
+				stillPending.push(r);
+			}
+		}
+		this.#pendingReinforcements = stillPending;
+		if (arrived.length === 0) return;
+		this.units = [...this.units, ...arrived];
+		this.#emit({
+			kind: 'reinforcements_arrived',
+			turn: this.turn,
+			player: this.activePlayer,
+			units: arrived.map((u) => ({ id: u.id, type: u.type, coordinates: u.coordinates }))
+		});
 	}
 
 	#activate(id: string, rng: () => number = Math.random) {
@@ -638,6 +719,7 @@ export class GameStore {
 			return u;
 		});
 		const elim = applyEliminations(updated, postCasualtyLeaders);
+		this.#recordEliminations(updated, elim.result.eliminatedUnitIds);
 		this.units = elim.units;
 		this.leaders = elim.leaders;
 		const fireResult: FireResult = {
@@ -801,6 +883,7 @@ export class GameStore {
 
 		// M11: §10 elimination — remove units at 0 SP and orphaned leaders (no replacement).
 		const elim = applyEliminations(updated, leadersAfterCasualty);
+		this.#recordEliminations(updated, elim.result.eliminatedUnitIds);
 		this.units = elim.units;
 		this.leaders = elim.leaders;
 
@@ -856,6 +939,10 @@ export class GameStore {
 			this.turn = this.turn + 1;
 			this.#clearActivatedFlags();
 		}
+
+		// Deploy reinforcements for the player now taking their turn (after the flip
+		// and flag clear, so arrivals land with activated: false and survive).
+		this.#processReinforcements();
 
 		this.#emit({
 			kind: 'player_turn_ended',

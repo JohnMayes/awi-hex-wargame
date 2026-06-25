@@ -3,7 +3,7 @@ import type { ChargeResult } from './charge';
 import type { CommandCheckResult } from './command';
 import type { FireResult } from './combat';
 import type { MoveResult } from './movement';
-import type { Player } from './types';
+import type { Player, UnitType } from './types';
 import type { VictoryOutcome } from './victory';
 
 export type ActivationStartedEvent = {
@@ -62,6 +62,14 @@ export type GameOverEvent = {
 	outcome: VictoryOutcome;
 };
 
+export type ReinforcementsArrivedEvent = {
+	kind: 'reinforcements_arrived';
+	turn: number;
+	player: Player;
+	/** Units that actually landed this turn (after deferral filtering). */
+	units: { id: string; type: UnitType; coordinates: OffsetCoordinates }[];
+};
+
 export type LogEvent =
 	| ActivationStartedEvent
 	| MoveActionEvent
@@ -69,4 +77,5 @@ export type LogEvent =
 	| ChargeActionEvent
 	| ActivationEndedEvent
 	| PlayerTurnEndedEvent
-	| GameOverEvent;
+	| GameOverEvent
+	| ReinforcementsArrivedEvent;

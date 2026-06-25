@@ -155,7 +155,7 @@ export const PITCHED_BATTLE: Scenario = {
 			kind: 'eliminate_units',
 			id: 'blue-break-enemy',
 			player: 0,
-			description: 'Eliminate 4 of 6 enemy units',
+			description: 'Eliminate 4 enemy units',
 			count: 4
 		},
 		{
@@ -171,7 +171,7 @@ export const PITCHED_BATTLE: Scenario = {
 			kind: 'eliminate_units',
 			id: 'red-break-enemy',
 			player: 1,
-			description: 'Eliminate 4 of 6 enemy units',
+			description: 'Eliminate 4 enemy units',
 			count: 4
 		},
 		{

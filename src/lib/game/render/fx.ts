@@ -1,5 +1,10 @@
 import type { GameStore } from '$lib/game/state/gameStore.svelte';
-import type { ChargeActionEvent, FireActionEvent, LogEvent } from '../core/log';
+import type {
+	ChargeActionEvent,
+	FireActionEvent,
+	LogEvent,
+	ReinforcementsArrivedEvent
+} from '../core/log';
 import { hexToRgb, type Rgb } from './terrainStyle';
 
 /**
@@ -41,6 +46,7 @@ const COLOR_MISS = hexToRgb('#cfc8b8');
 const COLOR_MORALE = hexToRgb('#e0a324');
 const COLOR_LEADER = hexToRgb('#ffd700');
 const COLOR_ELIM = hexToRgb('#ff2d2d');
+const COLOR_REINFORCE = hexToRgb('#5fd35f');
 
 let floats: FxFloat[] = [];
 let lastLogIndex = 0;
@@ -90,11 +96,21 @@ function enqueue(lines: FxLine[], now: number) {
 	}
 }
 
+function reinforcementLines(e: ReinforcementsArrivedEvent): FxLine[] {
+	if (e.units.length === 0) return [];
+	const side = e.player === 0 ? 'BLUE' : 'RED';
+	const n = e.units.length;
+	return [
+		{ text: `${side} REINFORCEMENTS — ${n} UNIT${n === 1 ? '' : 'S'}`, color: COLOR_REINFORCE }
+	];
+}
+
 function spawnForEvent(event: LogEvent, now: number) {
 	if (event.kind === 'fire_action') enqueue(fireLines(event), now);
 	else if (event.kind === 'charge_action') enqueue(chargeLines(event), now);
 	else if (event.kind === 'activation_started' && !event.commandCheck.passed)
 		enqueue([{ text: 'OUT OF COMMAND', color: COLOR_MORALE }], now);
+	else if (event.kind === 'reinforcements_arrived') enqueue(reinforcementLines(event), now);
 }
 
 /** Turn any log events appended since the last call into floats. */

@@ -16,7 +16,7 @@ export type VictoryCondition =
 			id: string;
 			player: Player;
 			description: string;
-			/** Win when this many of the enemy's starting units have been eliminated. */
+			/** Win when this many enemy units have been eliminated (cumulative; any unit, starting or reinforcement). */
 			count: number;
 	  }
 	| {
@@ -80,8 +80,12 @@ export type VictorySnapshot = {
 	turn: number;
 	turnLimit: number | null;
 	units: ReadonlyArray<SnapshotUnit>;
-	/** Starting unit count per player, for elimination accounting. */
-	startingUnitsByPlayer: Record<Player, number>;
+	/**
+	 * Cumulative count of units eliminated per player, for elimination accounting.
+	 * A running kill tally, so it is independent of the starting roster and of any
+	 * reinforcements that arrive mid-game.
+	 */
+	eliminatedByPlayer: Record<Player, number>;
 	bounds: { minCol: number; maxCol: number; minRow: number; maxRow: number };
 	/** Units that exited this turn, by edge. Empty until the exit action is wired. */
 	exitedThisTurn: ReadonlyArray<{ unitId: string; player: Player; edge: MapEdge }>;
@@ -122,10 +126,6 @@ function controlsHexes(
 	const controls = (h: ObjectiveHex) =>
 		units.some((u) => u.player === player && u.strengthPoints > 0 && coordsEqual(u.coordinates, h));
 	return requireAll ? hexes.every(controls) : hexes.some(controls);
-}
-
-function survivingCount(player: Player, units: ReadonlyArray<SnapshotUnit>): number {
-	return units.filter((u) => u.player === player && u.strengthPoints > 0).length;
 }
 
 function totalSp(player: Player, units: ReadonlyArray<SnapshotUnit>): number {
@@ -201,9 +201,7 @@ export function evaluateVictory(
 		switch (c.kind) {
 			case 'eliminate_units': {
 				const enemy = enemyOf(c.player);
-				const destroyed =
-					snapshot.startingUnitsByPlayer[enemy] - survivingCount(enemy, snapshot.units);
-				satisfied = destroyed >= c.count;
+				satisfied = snapshot.eliminatedByPlayer[enemy] >= c.count;
 				break;
 			}
 			case 'control_hexes': {

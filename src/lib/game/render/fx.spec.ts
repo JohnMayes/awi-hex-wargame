@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import { drawFx, resetFx, syncFx } from './fx';
-import type { ActivationStartedEvent, FireActionEvent } from '../core/log';
+import type {
+	ActivationStartedEvent,
+	FireActionEvent,
+	ReinforcementsArrivedEvent
+} from '../core/log';
+import { UnitType } from '../core/types';
 import type { GameStore } from '$lib/game/state/gameStore.svelte';
 
 // fx.ts is engine-free at runtime (only type-imports LittleJS/GameStore), so it
@@ -46,6 +51,15 @@ function activationEvent(passed: boolean): ActivationStartedEvent {
 		unitId: 'blue-1',
 		commandCheck: { passed }
 	} as unknown as ActivationStartedEvent;
+}
+
+function reinforcementsEvent(player: 0 | 1, ids: string[]): ReinforcementsArrivedEvent {
+	return {
+		kind: 'reinforcements_arrived',
+		turn: 2,
+		player,
+		units: ids.map((id) => ({ id, type: UnitType.LINE_INFANTRY, coordinates: { col: 0, row: 0 } }))
+	};
 }
 
 const storeWith = (log: unknown[]) => ({ log }) as unknown as GameStore;
@@ -124,6 +138,18 @@ describe('combat FX (M13)', () => {
 		const ljs = mockLJS(0);
 		drawFx(ljs as never);
 		expect(ljs.drawTextScreen).not.toHaveBeenCalled();
+	});
+
+	it('announces reinforcement arrivals with a side label and count', () => {
+		expect.assertions(2);
+		const store = storeWith([]);
+		resetFx(store);
+		(store.log as unknown[]).push(reinforcementsEvent(1, ['r1', 'r2']));
+		syncFx(store, 0);
+		const ljs = mockLJS(0);
+		drawFx(ljs as never);
+		expect(ljs.drawTextScreen).toHaveBeenCalledTimes(1);
+		expect(ljs.drawTextScreen.mock.calls[0][0]).toBe('RED REINFORCEMENTS — 2 UNITS');
 	});
 
 	it('replays nothing already in the log at reset time', () => {

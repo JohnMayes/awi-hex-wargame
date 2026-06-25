@@ -30,21 +30,15 @@ function snapshot(opts: {
 	turn: number;
 	turnLimit?: number | null;
 	units: SnapUnit[];
-	starting?: Record<Player, number>;
+	eliminated?: Record<Player, number>;
 	bounds?: VictorySnapshot['bounds'];
 	exitedThisTurn?: VictorySnapshot['exitedThisTurn'];
 }): VictorySnapshot {
-	const starting =
-		opts.starting ??
-		({
-			0: opts.units.filter((x) => x.player === 0).length,
-			1: opts.units.filter((x) => x.player === 1).length
-		} as Record<Player, number>);
 	return {
 		turn: opts.turn,
 		turnLimit: opts.turnLimit ?? null,
 		units: opts.units,
-		startingUnitsByPlayer: starting,
+		eliminatedByPlayer: opts.eliminated ?? ({ 0: 0, 1: 0 } as Record<Player, number>),
 		bounds: opts.bounds ?? { minCol: 0, maxCol: 6, minRow: 0, maxRow: 8 },
 		exitedThisTurn: opts.exitedThisTurn ?? []
 	};
@@ -100,14 +94,12 @@ describe('evaluateVictory — eliminate_units', () => {
 		description: 'kill 2',
 		count: 2
 	};
-	const starting = { 0: 2, 1: 2 } as Record<Player, number>;
-
 	it('below threshold → no outcome', () => {
 		expect.assertions(1);
-		const units = [u('a', 0, 4, 0, 0), u('b', 0, 4, 0, 1), u('e1', 1, 4, 5, 0)]; // 1 enemy gone
+		const units = [u('a', 0, 4, 0, 0), u('e1', 1, 4, 5, 0)];
 		const r = evaluateVictory(
 			[cond],
-			snapshot({ turn: 3, units, starting, turnLimit: 15 }),
+			snapshot({ turn: 3, units, eliminated: { 0: 0, 1: 1 }, turnLimit: 15 }),
 			progress()
 		);
 		expect(r.outcome).toBeNull();
@@ -115,10 +107,10 @@ describe('evaluateVictory — eliminate_units', () => {
 
 	it('at threshold → player 0 wins by condition', () => {
 		expect.assertions(3);
-		const units = [u('a', 0, 4, 0, 0), u('b', 0, 4, 0, 1)]; // both enemies gone
+		const units = [u('a', 0, 4, 0, 0)];
 		const r = evaluateVictory(
 			[cond],
-			snapshot({ turn: 3, units, starting, turnLimit: 15 }),
+			snapshot({ turn: 3, units, eliminated: { 0: 0, 1: 2 }, turnLimit: 15 }),
 			progress()
 		);
 		expect(r.outcome?.status).toBe('won');
@@ -131,23 +123,20 @@ describe('evaluateVictory — eliminate_units', () => {
 		const units = [u('a', 0, 4, 0, 0)];
 		const r = evaluateVictory(
 			[cond],
-			snapshot({ turn: 5, units, starting, turnLimit: 15 }),
+			snapshot({ turn: 5, units, eliminated: { 0: 0, 1: 3 }, turnLimit: 15 }),
 			progress()
 		);
 		expect(r.outcome?.winner).toBe(0);
 	});
 
-	it('eliminated = SP at 0 (still in array) counts as destroyed', () => {
+	it('counts kills cumulatively, independent of the surviving roster', () => {
 		expect.assertions(1);
-		const units = [
-			u('a', 0, 4, 0, 0),
-			u('b', 0, 4, 0, 1),
-			u('e1', 1, 0, 5, 0),
-			u('e2', 1, 0, 5, 1)
-		];
+		// The enemy still fields live units (e.g. reinforcements), but the kill tally
+		// has reached the threshold — the current roster size is irrelevant.
+		const units = [u('a', 0, 4, 0, 0), u('e1', 1, 4, 5, 0), u('e2', 1, 4, 5, 1)];
 		const r = evaluateVictory(
 			[cond],
-			snapshot({ turn: 3, units, starting, turnLimit: 15 }),
+			snapshot({ turn: 3, units, eliminated: { 0: 0, 1: 2 }, turnLimit: 15 }),
 			progress()
 		);
 		expect(r.outcome?.winner).toBe(0);
@@ -394,7 +383,7 @@ describe('evaluateVictory — turn-limit tiebreak', () => {
 				turn: 15,
 				units,
 				turnLimit: 15,
-				starting: { 0: 2, 1: 2 } as Record<Player, number>
+				eliminated: { 0: 0, 1: 1 } as Record<Player, number>
 			}),
 			progress()
 		);
@@ -412,7 +401,7 @@ describe('evaluateVictory — turn-limit tiebreak', () => {
 				turn: 15,
 				units,
 				turnLimit: 15,
-				starting: { 0: 1, 1: 1 } as Record<Player, number>
+				eliminated: { 0: 0, 1: 0 } as Record<Player, number>
 			}),
 			progress()
 		);
@@ -438,12 +427,11 @@ describe('evaluateVictory — mutual satisfaction', () => {
 			{ kind: 'eliminate_units', id: 'elim-0', player: 0, description: '', count: 1 },
 			{ kind: 'eliminate_units', id: 'elim-1', player: 1, description: '', count: 1 }
 		];
-		// Each side lost one of two starting units; player 1 has more SP left.
+		// Each side has scored one kill (both satisfy count 1); player 1 has more SP.
 		const units = [u('a', 0, 1, 0, 0), u('e', 1, 4, 5, 0)];
-		const starting = { 0: 2, 1: 2 } as Record<Player, number>;
 		const r = evaluateVictory(
 			conds,
-			snapshot({ turn: 5, units, starting, turnLimit: 15 }),
+			snapshot({ turn: 5, units, eliminated: { 0: 1, 1: 1 }, turnLimit: 15 }),
 			progress()
 		);
 		expect(r.outcome?.reason).toBe('turn_limit_tiebreak');

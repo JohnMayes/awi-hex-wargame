@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { GameStore } from './gameStore.svelte';
-import { ActivationStep, type Unit } from '../core/types';
+import { ActivationStep, TerrainType, UnitType, type Unit } from '../core/types';
 import type { Leader } from '../core/command';
+import type { ReinforcementGroup } from '../core/scenario';
+import { getUnitDefinition } from '../core/unitDefinitions';
+import type { VictoryCondition } from '../core/victory';
 import { PITCHED_BATTLE, TEST_LEADERS, TEST_UNITS } from '../data/scenarios';
-import { TEST_MAP } from '../data/maps';
+import { TEST_MAP, type MapDefinition } from '../data/maps';
 
 const makeStore = () =>
 	new GameStore(structuredClone(TEST_UNITS), TEST_MAP, structuredClone(TEST_LEADERS));
@@ -1232,6 +1235,34 @@ function seqRngFactory(values: number[]) {
 	return () => values[i++];
 }
 
+// eliminate_units is a cumulative kill tally fed by real combat, so victory tests
+// must eliminate units through fire/charge rather than zeroing SP. This builds a
+// store where blue-dragoons can destroy a 1-SP red-artillery in a single charge.
+const breakCond = (count: number): VictoryCondition => ({
+	kind: 'eliminate_units',
+	id: 'blue-break-enemy',
+	player: 0,
+	description: `Eliminate ${count} enemy units`,
+	count
+});
+
+function killSetup(victoryConditions: VictoryCondition[], turnLimit: number | null = 15) {
+	const units = structuredClone(TEST_UNITS) as Unit[];
+	units.find((u) => u.id === 'blue-dragoons')!.coordinates = { col: 3, row: 1 };
+	const art = units.find((u) => u.id === 'red-artillery')!;
+	art.coordinates = { col: 4, row: 1 };
+	art.strengthPoints = 1;
+	return new GameStore(units, TEST_MAP, structuredClone(TEST_LEADERS), {
+		turnLimit,
+		victoryConditions
+	});
+}
+
+function killRedArtillery(store: GameStore) {
+	store.activateUnit('blue-dragoons');
+	store.chargeAt('red-artillery', seqRngFactory([4 / 6, 0])); // delta ≥ 3 → defender_eliminated
+}
+
 describe('player coverage sanity', () => {
 	it('has three units for player 0', () => {
 		expect.assertions(1);
@@ -1921,22 +1952,18 @@ describe('scenarios & victory', () => {
 
 	it('no victory mid-turn before a full game turn completes', () => {
 		expect.assertions(2);
-		const store = scenarioStore();
-		['red-line-1', 'red-line-2', 'red-light-inf', 'red-artillery'].forEach((id) =>
-			setSp(store, id, 0)
-		);
+		const store = killSetup([breakCond(1)]);
+		killRedArtillery(store);
 		store.endPlayerTurn(); // 0 → 1, no evaluation yet
 		expect(store.isGameOver).toBe(false);
 		store.endPlayerTurn(); // 1 → 0, full turn completes → evaluation
 		expect(store.isGameOver).toBe(true);
 	});
 
-	it('eliminating 4 enemy units wins by condition for player 0', () => {
+	it('eliminating enough enemy units wins by condition for player 0', () => {
 		expect.assertions(4);
-		const store = scenarioStore();
-		['red-line-1', 'red-line-2', 'red-light-inf', 'red-artillery'].forEach((id) =>
-			setSp(store, id, 0)
-		);
+		const store = killSetup([breakCond(1)]);
+		killRedArtillery(store);
 		advanceGameTurns(store, 1);
 		expect(store.victoryOutcome?.status).toBe('won');
 		expect(store.victoryOutcome?.winner).toBe(0);
@@ -1946,10 +1973,8 @@ describe('scenarios & victory', () => {
 
 	it('emits a single game_over event right after player_turn_ended', () => {
 		expect.assertions(3);
-		const store = scenarioStore();
-		['red-line-1', 'red-line-2', 'red-light-inf', 'red-artillery'].forEach((id) =>
-			setSp(store, id, 0)
-		);
+		const store = killSetup([breakCond(1)]);
+		killRedArtillery(store);
 		store.clearLog();
 		advanceGameTurns(store, 1);
 		const gameOvers = store.log.filter((e) => e.kind === 'game_over');
@@ -1988,10 +2013,8 @@ describe('scenarios & victory', () => {
 
 	it('after the game is over, actions and turn advance are inert', () => {
 		expect.assertions(4);
-		const store = scenarioStore();
-		['red-line-1', 'red-line-2', 'red-light-inf', 'red-artillery'].forEach((id) =>
-			setSp(store, id, 0)
-		);
+		const store = killSetup([breakCond(1)]);
+		killRedArtillery(store);
 		advanceGameTurns(store, 1);
 		const turnAtEnd = store.turn;
 		const logLenAtEnd = store.log.length;
@@ -2004,32 +2027,26 @@ describe('scenarios & victory', () => {
 });
 
 describe('victoryStatus (M13)', () => {
-	const setSp = (store: GameStore, id: string, sp: number) => {
-		store.units = store.units.map((u) => (u.id === id ? { ...u, strengthPoints: sp } : u));
-	};
 	const moveTo = (store: GameStore, id: string, col: number, row: number) => {
 		store.units = store.units.map((u) => (u.id === id ? { ...u, coordinates: { col, row } } : u));
 	};
 
 	it('reports eliminate progress as destroyed / needed', () => {
 		expect.assertions(3);
-		const store = GameStore.fromScenario(PITCHED_BATTLE);
-		setSp(store, 'red-line-1', 0);
-		setSp(store, 'red-line-2', 0);
+		const store = killSetup([breakCond(2)]);
+		killRedArtillery(store); // 1 kill toward 2
 		const s = store.victoryStatus.find((c) => c.id === 'blue-break-enemy')!;
-		expect(s.text).toBe('2 / 4');
+		expect(s.text).toBe('1 / 2');
 		expect(s.fraction).toBeCloseTo(0.5);
 		expect(s.met).toBe(false);
 	});
 
 	it('marks an eliminate condition met once the count is reached', () => {
 		expect.assertions(2);
-		const store = GameStore.fromScenario(PITCHED_BATTLE);
-		['red-line-1', 'red-line-2', 'red-light-inf', 'red-artillery'].forEach((id) =>
-			setSp(store, id, 0)
-		);
+		const store = killSetup([breakCond(1)]);
+		killRedArtillery(store);
 		const s = store.victoryStatus.find((c) => c.id === 'blue-break-enemy')!;
-		expect(s.text).toBe('4 / 4');
+		expect(s.text).toBe('1 / 1');
 		expect(s.met).toBe(true);
 	});
 
@@ -2066,5 +2083,247 @@ describe('combat log coords (M13)', () => {
 		const ev = store.log.find((e) => e.kind === 'charge_action');
 		expect(ev?.kind === 'charge_action' ? ev.attackerCoords : null).toEqual({ col: 3, row: 1 });
 		expect(ev?.kind === 'charge_action' ? ev.defenderCoords : null).toEqual({ col: 4, row: 1 });
+	});
+});
+
+describe('GameStore reinforcements', () => {
+	// Build a store from the standard test fixtures plus a reinforcement schedule.
+	const reinfStore = (
+		reinforcements: ReinforcementGroup[],
+		victoryConditions: VictoryCondition[] = []
+	) =>
+		new GameStore(structuredClone(TEST_UNITS), TEST_MAP, structuredClone(TEST_LEADERS), {
+			reinforcements,
+			victoryConditions
+		});
+
+	// A free OPEN hex on TEST_MAP (units start only at cols 0 and 5).
+	const FREE = { col: 3, row: 3 };
+	// Occupied by blue-light-inf in TEST_UNITS.
+	const OCCUPIED = { col: 0, row: 1 };
+	const has = (store: GameStore, id: string) => store.units.some((u) => u.id === id);
+	const arrivalEvents = (store: GameStore) =>
+		store.log.filter((e) => e.kind === 'reinforcements_arrived');
+
+	it('deploys a turn-1 group for the first player at construction, ready to act', () => {
+		expect.assertions(5);
+		const store = reinfStore([
+			{
+				turn: 1,
+				player: 0,
+				units: [{ id: 'reinf-1', type: UnitType.LINE_INFANTRY, coordinates: FREE }]
+			}
+		]);
+		const u = store.units.find((x) => x.id === 'reinf-1');
+		expect(u?.coordinates).toEqual(FREE);
+		expect(u?.activated).toBe(false);
+		expect(u?.movementPointsUsed).toBe(0);
+		expect(u?.strengthPoints).toBe(getUnitDefinition(UnitType.LINE_INFANTRY).defaultStrengthPoints);
+		store.activateUnit('reinf-1');
+		expect(store.activeUnitId).toBe('reinf-1');
+	});
+
+	it('withholds a later-turn group until the owner reaches that turn', () => {
+		expect.assertions(2);
+		const store = reinfStore([
+			{
+				turn: 3,
+				player: 0,
+				units: [{ id: 'reinf-late', type: UnitType.HORSE, coordinates: FREE }]
+			}
+		]);
+		store.endPlayerTurn(); // p1 t1
+		store.endPlayerTurn(); // p0 t2
+		expect(has(store, 'reinf-late')).toBe(false);
+		store.endPlayerTurn(); // p1 t2
+		store.endPlayerTurn(); // p0 t3 — arrives
+		expect(has(store, 'reinf-late')).toBe(true);
+	});
+
+	it('deploys on the owning player segment, not the other player on the same turn', () => {
+		expect.assertions(2);
+		const store = reinfStore([
+			{
+				turn: 2,
+				player: 1,
+				units: [{ id: 'reinf-red', type: UnitType.HORSE, coordinates: FREE }]
+			}
+		]);
+		store.endPlayerTurn(); // p1 t1
+		store.endPlayerTurn(); // p0 t2 — not player 1's segment
+		expect(has(store, 'reinf-red')).toBe(false);
+		store.endPlayerTurn(); // p1 t2 — arrives
+		expect(has(store, 'reinf-red')).toBe(true);
+	});
+
+	it('defers a unit whose entry hex is occupied until the hex clears', () => {
+		expect.assertions(3);
+		const store = reinfStore([
+			{
+				turn: 1,
+				player: 0,
+				units: [{ id: 'reinf-blocked', type: UnitType.LINE_INFANTRY, coordinates: OCCUPIED }]
+			}
+		]);
+		// Blocked at construction → held off-map.
+		expect(has(store, 'reinf-blocked')).toBe(false);
+		// Clear the hex by relocating the occupant.
+		store.units = store.units.map((u) =>
+			u.id === 'blue-light-inf' ? { ...u, coordinates: { col: 1, row: 1 } } : u
+		);
+		store.endPlayerTurn(); // p1 t1 — not player 0's segment
+		expect(has(store, 'reinf-blocked')).toBe(false);
+		store.endPlayerTurn(); // p0 t2 — hex now free, arrives
+		expect(has(store, 'reinf-blocked')).toBe(true);
+	});
+
+	it('never deploys a unit onto impassable terrain', () => {
+		expect.assertions(2);
+		const lakeMap: MapDefinition = [
+			{ col: 0, row: 0, terrain: TerrainType.OPEN },
+			{ col: 1, row: 0, terrain: TerrainType.LAKE }
+		];
+		const store = new GameStore([], lakeMap, [], {
+			reinforcements: [
+				{
+					turn: 1,
+					player: 0,
+					units: [
+						{ id: 'reinf-drowned', type: UnitType.LINE_INFANTRY, coordinates: { col: 1, row: 0 } }
+					]
+				}
+			]
+		});
+		expect(has(store, 'reinf-drowned')).toBe(false);
+		store.endPlayerTurn(); // p1 t1
+		store.endPlayerTurn(); // p0 t2 — still impassable, stays pending
+		expect(has(store, 'reinf-drowned')).toBe(false);
+	});
+
+	it('arrives a partly-blocked group piecemeal', () => {
+		expect.assertions(4);
+		const store = reinfStore([
+			{
+				turn: 1,
+				player: 0,
+				units: [
+					{ id: 'reinf-free', type: UnitType.LINE_INFANTRY, coordinates: FREE },
+					{ id: 'reinf-held', type: UnitType.LINE_INFANTRY, coordinates: OCCUPIED }
+				]
+			}
+		]);
+		expect(has(store, 'reinf-free')).toBe(true);
+		expect(has(store, 'reinf-held')).toBe(false);
+		// Clear the blocked hex, advance to player 0's next turn.
+		store.units = store.units.map((u) =>
+			u.id === 'blue-light-inf' ? { ...u, coordinates: { col: 1, row: 1 } } : u
+		);
+		store.endPlayerTurn(); // p1 t1
+		store.endPlayerTurn(); // p0 t2 — held unit arrives
+		expect(has(store, 'reinf-held')).toBe(true);
+		expect(store.units.filter((u) => u.id.startsWith('reinf-')).length).toBe(2);
+	});
+
+	it('emits a reinforcements_arrived event for landings, but not on a fully-deferred turn', () => {
+		expect.assertions(4);
+		const arriveStore = reinfStore([
+			{
+				turn: 1,
+				player: 0,
+				units: [{ id: 'reinf-1', type: UnitType.DRAGOONS, coordinates: FREE }]
+			}
+		]);
+		const events = arrivalEvents(arriveStore);
+		expect(events).toHaveLength(1);
+		const ev = events[0];
+		expect(ev.kind === 'reinforcements_arrived' ? ev.player : null).toBe(0);
+		expect(ev.kind === 'reinforcements_arrived' ? ev.units.map((u) => u.id) : null).toEqual([
+			'reinf-1'
+		]);
+		// A group blocked at construction emits nothing.
+		const deferredStore = reinfStore([
+			{
+				turn: 1,
+				player: 0,
+				units: [{ id: 'reinf-blocked', type: UnitType.LINE_INFANTRY, coordinates: OCCUPIED }]
+			}
+		]);
+		expect(arrivalEvents(deferredStore)).toHaveLength(0);
+	});
+
+	it('does not move the eliminate_units bar when a reinforcement merely arrives', () => {
+		expect.assertions(1);
+		// eliminate_units is a kill tally, so an arriving (un-killed) reinforcement
+		// leaves progress at zero — the threshold is roster-independent.
+		const condition: VictoryCondition = {
+			kind: 'eliminate_units',
+			id: 'kill-red',
+			player: 0,
+			description: 'Eliminate 1 red unit',
+			count: 1
+		};
+		const store = reinfStore(
+			[
+				{
+					turn: 1,
+					player: 1,
+					units: [{ id: 'reinf-red', type: UnitType.HORSE, coordinates: FREE }]
+				}
+			],
+			[condition]
+		);
+		store.endPlayerTurn(); // p1 t1 — red reinforcement arrives, no kills
+		const status = store.victoryStatus.find((s) => s.id === 'kill-red');
+		expect(status?.met).toBe(false);
+	});
+
+	it('lets a reinforcement satisfy a control_hexes objective', () => {
+		expect.assertions(1);
+		const condition: VictoryCondition = {
+			kind: 'control_hexes',
+			id: 'hold-center',
+			player: 0,
+			description: 'Hold the center',
+			hexes: [FREE],
+			requireAll: true,
+			atTurn: null
+		};
+		const store = reinfStore(
+			[
+				{
+					turn: 1,
+					player: 0,
+					units: [{ id: 'reinf-holder', type: UnitType.LINE_INFANTRY, coordinates: FREE }]
+				}
+			],
+			[condition]
+		);
+		const status = store.victoryStatus.find((s) => s.id === 'hold-center');
+		expect(status?.met).toBe(true);
+	});
+});
+
+describe('GameStore eliminate_units kill tally', () => {
+	it('advances eliminate progress when a unit is eliminated in combat', () => {
+		expect.assertions(2);
+		const condition: VictoryCondition = {
+			kind: 'eliminate_units',
+			id: 'kill-1',
+			player: 0,
+			description: 'Eliminate 1 red unit',
+			count: 1
+		};
+		const units = structuredClone(TEST_UNITS) as Unit[];
+		units.find((u) => u.id === 'blue-dragoons')!.coordinates = { col: 3, row: 1 };
+		const art = units.find((u) => u.id === 'red-artillery')!;
+		art.coordinates = { col: 4, row: 1 };
+		art.strengthPoints = 1; // a single hit eliminates it
+		const store = new GameStore(units, TEST_MAP, structuredClone(TEST_LEADERS), {
+			victoryConditions: [condition]
+		});
+		expect(store.victoryStatus.find((s) => s.id === 'kill-1')?.met).toBe(false);
+		store.activateUnit('blue-dragoons');
+		store.chargeAt('red-artillery', seqRngFactory([0.2, 0]));
+		expect(store.victoryStatus.find((s) => s.id === 'kill-1')?.met).toBe(true);
 	});
 });
