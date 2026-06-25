@@ -454,3 +454,41 @@ describe('resolveCharge — no-retreat conversion', () => {
 		expect(r.defenderDamage).toBe(2);
 	});
 });
+
+describe('resolveCharge — entrenchments', () => {
+	// 5×5 open grid with the defender at (2,2) entrenched on `defEdges`.
+	function entrenchedGrid(defEdges: number[]): { grid: Grid<HexCell>; dCoord: OffsetCoordinates } {
+		const dCoord = { col: 2, row: 2 };
+		const cells: HexCell[] = [];
+		for (let col = 0; col < 5; col++)
+			for (let row = 0; row < 5; row++)
+				cells.push(
+					col === dCoord.col && row === dCoord.row
+						? HexCell.create({ col, row, terrain: TerrainType.OPEN, entrenchedEdges: defEdges })
+						: HexCell.create({ col, row, terrain: TerrainType.OPEN })
+				);
+		return { grid: new Grid(HexCell, cells), dCoord };
+	}
+
+	it('defender entrenched toward the attacker: attacker score reduced by 1', () => {
+		expect.assertions(1);
+		const { grid, dCoord } = entrenchedGrid([0]); // edge 0 faces the dir-0 neighbour
+		const aCoord = offsetAlong(grid, dCoord, 0, 1)!;
+		const a = unit('a', UnitType.LINE_INFANTRY, 0, aCoord);
+		const d = unit('d', UnitType.LINE_INFANTRY, 1, dCoord);
+		// Both roll 1 (rng=0). attackerScore = 1 + 4 SP − 1 entrenchment = 4.
+		const r = resolveCharge(a, d, aCoord, grid, [a, d], seqRng([0, 0]));
+		expect(r.attackerScore).toBe(4);
+	});
+
+	it('defender entrenched toward a different edge: no effect', () => {
+		expect.assertions(1);
+		const { grid, dCoord } = entrenchedGrid([3]); // entrenched away from the attacker
+		const aCoord = offsetAlong(grid, dCoord, 0, 1)!;
+		const a = unit('a', UnitType.LINE_INFANTRY, 0, aCoord);
+		const d = unit('d', UnitType.LINE_INFANTRY, 1, dCoord);
+		// attackerScore = 1 + 4 SP, no entrenchment penalty = 5.
+		const r = resolveCharge(a, d, aCoord, grid, [a, d], seqRng([0, 0]));
+		expect(r.attackerScore).toBe(5);
+	});
+});

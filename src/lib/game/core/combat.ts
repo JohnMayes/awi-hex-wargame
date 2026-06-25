@@ -1,6 +1,6 @@
 import type { Grid } from 'honeycomb-grid';
 import type { LeaderCasualtyResult } from './command';
-import { HexCell, hexDistance } from './hex';
+import { HexCell, hexDistance, isEntrenchedToward } from './hex';
 import { hasLineOfSight } from './los';
 import type { MoraleResult } from './morale';
 import { getTerrainCoverModifier } from './terrain';
@@ -25,6 +25,9 @@ export type FireResult = {
 const ARTILLERY_LONG_RANGE_PENALTY = -0.15;
 const ARTILLERY_LONG_RANGE_MIN_DIST = 3;
 const DOUBLE_DAMAGE_CHANCE = 1 / 6;
+// Cover for a target whose entrenched edge faces the firer (matches woods/town cover,
+// and stacks with it). Folded into `coverModifier`, so it surfaces in FireResult.
+const ENTRENCHMENT_COVER_MODIFIER = -0.15;
 
 /**
  * Returns the enemy units the firing unit may legally fire on, per rules §6.2:
@@ -74,7 +77,9 @@ export function resolveFireAction(
 	const dist = hexDistance(attackerHex, targetHex);
 
 	const baseHitChance = def.baseHitChance;
-	const coverModifier = getTerrainCoverModifier(targetHex.terrain);
+	const coverModifier =
+		getTerrainCoverModifier(targetHex.terrain) +
+		(isEntrenchedToward(targetHex, attackerHex) ? ENTRENCHMENT_COVER_MODIFIER : 0);
 	const longRangeModifier =
 		attacker.type === UnitType.ARTILLERY && dist >= ARTILLERY_LONG_RANGE_MIN_DIST
 			? ARTILLERY_LONG_RANGE_PENALTY

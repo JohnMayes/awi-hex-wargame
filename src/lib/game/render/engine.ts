@@ -64,6 +64,13 @@ const PENDING_COMBAT_ALPHA = 0.85;
 // Leader / command legibility.
 const LEADER_PIP_COLOR = hexToRgb('#ffd700'); // gold marker on led units
 const COMMAND_COLOR = hexToRgb('#ffd700'); // gold command-radius outline
+// Entrenchments: a bold earth-brown line drawn along a dug-in hex edge.
+const ENTRENCHMENT_COLOR = hexToRgb('#5a3a1e'); // dark earth-brown
+const ENTRENCHMENT_WIDTH = 8; // world units; thicker than the hex border
+// honeycomb's `corners[]` run in the opposite handedness to our `directions[]` index, so
+// the edge facing direction `d` is corners[i]→corners[i+1] with i = (7 − d) % 6 (a
+// reflection, not a rotation — verified against the installed honeycomb geometry).
+const cornerStartForDir = (d: number) => (7 - d) % 6;
 
 /** honeycomb pixel point -> LittleJS world-space vec2 (Y-flip via boardGeometry). */
 function toWorld(p: { x: number; y: number }) {
@@ -275,6 +282,22 @@ function gameRender() {
 			const corners = hex.corners.map((c) => toWorld(c));
 			if (highlightKeys.has(hexKey({ col: hex.col, row: hex.row }))) drawPoly(corners, bright, 0);
 			else drawPoly(corners, dim, 0);
+		}
+	}
+
+	// Entrenchments: a bold line along each dug-in hex edge (above terrain, under counters).
+	const entrenchColor = color(ENTRENCHMENT_COLOR);
+	for (const hex of grid) {
+		if (hex.entrenchedEdges.size === 0) continue;
+		const corners = hex.corners;
+		for (const d of hex.entrenchedEdges) {
+			const i = cornerStartForDir(d);
+			LJS.drawLine(
+				toWorld(corners[i]),
+				toWorld(corners[(i + 1) % 6]),
+				ENTRENCHMENT_WIDTH,
+				entrenchColor
+			);
 		}
 	}
 

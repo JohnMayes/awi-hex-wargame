@@ -386,3 +386,56 @@ describe('resolveFireAction — RNG-driven outcomes', () => {
 		expect(calls).toBe(1);
 	});
 });
+
+describe('resolveFireAction — entrenchments', () => {
+	// 9×9 grid with one entrenched hex at `coord` (entrenched on `edges`, terrain `terrain`).
+	function entrenchedGrid(
+		coord: OffsetCoordinates,
+		edges: number[],
+		terrain = TerrainType.OPEN
+	): Grid<HexCell> {
+		const cells: HexCell[] = [];
+		for (let col = 0; col < 9; col++)
+			for (let row = 0; row < 9; row++)
+				cells.push(
+					col === coord.col && row === coord.row
+						? HexCell.create({ col, row, terrain, entrenchedEdges: edges })
+						: HexCell.create({ col, row, terrain: TerrainType.OPEN })
+				);
+		return new Grid(HexCell, cells);
+	}
+
+	// Firer sits at ANCHOR; the target is its dir-0 neighbour, so from the target the
+	// firer lies along the opposite edge, dir 3.
+	const TGT = (grid: Grid<HexCell>) => offsetAlong(grid, ANCHOR, 0, 1)!;
+
+	it('target entrenched toward the firer: coverModifier −0.15', () => {
+		expect.assertions(1);
+		const probe = buildGrid(openRect(9, 9));
+		const grid = entrenchedGrid(TGT(probe), [3]);
+		const firer = unit('a', UnitType.LINE_INFANTRY, 0, ANCHOR);
+		const enemy = unit('e', UnitType.LINE_INFANTRY, 1, TGT(probe));
+		const r = resolveFireAction(firer, enemy, grid, () => 0.99);
+		expect(r.coverModifier).toBeCloseTo(-0.15, 10);
+	});
+
+	it('target entrenched toward a different edge: no cover', () => {
+		expect.assertions(1);
+		const probe = buildGrid(openRect(9, 9));
+		const grid = entrenchedGrid(TGT(probe), [0]); // faces away from the firer
+		const firer = unit('a', UnitType.LINE_INFANTRY, 0, ANCHOR);
+		const enemy = unit('e', UnitType.LINE_INFANTRY, 1, TGT(probe));
+		const r = resolveFireAction(firer, enemy, grid, () => 0.99);
+		expect(r.coverModifier).toBe(0);
+	});
+
+	it('entrenched in woods toward the firer: stacks with terrain cover to −0.30', () => {
+		expect.assertions(1);
+		const probe = buildGrid(openRect(9, 9));
+		const grid = entrenchedGrid(TGT(probe), [3], TerrainType.WOODS);
+		const firer = unit('a', UnitType.LINE_INFANTRY, 0, ANCHOR);
+		const enemy = unit('e', UnitType.LIGHT_INFANTRY, 1, TGT(probe));
+		const r = resolveFireAction(firer, enemy, grid, () => 0.99);
+		expect(r.coverModifier).toBeCloseTo(-0.3, 10);
+	});
+});

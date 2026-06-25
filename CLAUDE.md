@@ -38,14 +38,14 @@ All tests require assertions (`expect.requireAssertions` is enabled).
 
 ```
 core/    → Pure logic, no Svelte dependency
-  types.ts            Enums (TerrainType, UnitType, HexFacing), Unit/Leader types
+  types.ts            Enums (TerrainType, UnitType), Unit/Leader types
   unitDefinitions.ts  Data table: per-unit-type stats (movement, range, hit chance, actions, charge rules)
   hex.ts              HexCell class extending honeycomb-grid's defineHex (flat-top, 60px, topLeft origin)
-  facing.ts           Front/rear zone calculation from hexside facing direction
   terrain.ts          Terrain effect definitions (LOS, cover, entry restrictions, elevation)
   movement.ts         Movement validation, pathfinding, valid target calculation
   los.ts              Line of sight tracing (center-to-center, blocking checks)
-  combat.ts           Firing and charge resolution
+  combat.ts           Firing resolution (hit chance, cover, damage)
+  charge.ts           Charge eligibility, pathing, and opposed resolution
   morale.ts           Morale checks on taking hits
   retreat.ts          Retreat hex selection
   command.ts          Leaders, command radius, command checks
@@ -81,7 +81,7 @@ Uses `honeycomb-grid` library. HexCell extends `defineHex` with flat-top orienta
 
 ## Game Rules
 
-`rules/living-rules.md` is the authoritative game rules document. It defines unit types, terrain effects, facing, sequence of play, firing, charging, LOS, command, morale, and victory conditions. Section 14 has digital implementation notes. Consult this when implementing game mechanics.
+`rules/living-rules.md` is the authoritative game rules document. It defines unit types, terrain effects, sequence of play, firing, charging, LOS, command, morale, and victory conditions. Section 14 has digital implementation notes. Consult this when implementing game mechanics.
 
 ## Roadmap
 

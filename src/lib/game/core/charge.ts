@@ -1,6 +1,6 @@
 import type { Grid, OffsetCoordinates } from 'honeycomb-grid';
 import type { LeaderCasualtyResult } from './command';
-import { HexCell, directions } from './hex';
+import { HexCell, directions, isEntrenchedToward } from './hex';
 import type { MoraleResult } from './morale';
 import { canUnitEnterTerrain, terrainDefinitions } from './terrain';
 import { getUnitDefinition } from './unitDefinitions';
@@ -39,6 +39,10 @@ const CAVALRY_TYPES: ReadonlySet<UnitType> = new Set([
 function isCavalry(type: UnitType): boolean {
 	return CAVALRY_TYPES.has(type);
 }
+
+// Charge-defense bonus for a defender whose entrenched edge faces the attacker.
+// Applied to the attacker's score, like `dtModifier`; stacks with difficult terrain.
+const ENTRENCHMENT_CHARGE_MODIFIER = -1;
 
 /**
  * Eligibility check for a single attacker/defender pair, ignoring spatial
@@ -181,15 +185,21 @@ export function resolveCharge(
 ): ChargeResult {
 	const attackerDef = getUnitDefinition(attacker.type);
 	const defenderHex = grid.getHex(defender.coordinates)!;
+	const attackerOriginHex = grid.getHex(attackerOrigin);
 	const defenderOnDifficult = terrainDefinitions[defenderHex.terrain].isDifficultTerrain;
+	// Entrenchment faces the attacker's approach (bearing from its origin); see hex.ts.
+	const entrenchedAgainstCharge =
+		attackerOriginHex != null && isEntrenchedToward(defenderHex, attackerOriginHex);
 
 	const chargeBonus = attackerDef.charge.canCharge ? attackerDef.charge.chargeBonus : 0;
 	const dtModifier = defenderOnDifficult ? -1 : 0;
+	const entrenchModifier = entrenchedAgainstCharge ? ENTRENCHMENT_CHARGE_MODIFIER : 0;
 
 	const attackerRoll = rollD6(rng);
 	const defenderRoll = rollD6(rng);
 
-	const attackerScore = attackerRoll + attacker.strengthPoints + chargeBonus + dtModifier;
+	const attackerScore =
+		attackerRoll + attacker.strengthPoints + chargeBonus + dtModifier + entrenchModifier;
 	const defenderScore = defenderRoll + defender.strengthPoints;
 	const delta = attackerScore - defenderScore;
 

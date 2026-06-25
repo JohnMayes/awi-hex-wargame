@@ -28,6 +28,19 @@ Hexes may contain terrain features that affect movement, combat, and line of sig
 
 Only **one unit may occupy a hex** at any time. Units may not move through hexes occupied by other units, with the exception of Light Infantry (see Unit Types).
 
+### 2.1 Hexside Features: Entrenchments
+
+Beyond whole-hex terrain, a hex may be **entrenched** along one or more of its six **hexsides** — field fortifications such as earthworks, redoubts, and fieldworks that were a defining feature of Horse and Musket warfare, from the lines of Fontenoy to the redoubts of Yorktown and Borodino.
+
+An entrenchment belongs to the hex it protects and **faces a particular hexside**. It benefits the unit occupying that hex only against attacks that **cross the entrenched hexside** — attacks coming from the direction the works face. An enemy attacking from an un-entrenched side gains no defensive benefit for the target. This is the whole tactical point: entrenchments reward the attacker who maneuvers around them to strike an open flank.
+
+A unit occupying an entrenched hex receives, against fire or a charge crossing an entrenched hexside:
+
+- **Fire**: the firing unit suffers **-15% to hit** (cover), exactly as for woods or town. This **stacks** with any cover from the hex's own terrain.
+- **Charge**: the entrenchment applies a **-1 modifier to the attacker's charge score**, as for a defender in difficult terrain (and stacks with it).
+
+Entrenchments have **no effect on movement or line of sight** — they are low works that friendly troops cross freely and that do not block fire passing over them. They are placed by the scenario, and a hex may be entrenched on more than one side.
+
 ---
 
 ## 3. Unit Types
@@ -174,6 +187,7 @@ The unit fires at a single eligible target. To be eligible, the target must be:
 When a unit fires, the system resolves whether a hit is scored based on the unit's base hit chance, modified by circumstances:
 
 - **Target in cover** (woods, town, walls, etc.): -15% hit chance
+- **Target entrenched against the firer** (fire crosses an entrenched hexside, see §2.1): -15% hit chance, stacking with terrain cover
 - **Artillery at long range** (3+ hexes): -15% hit chance
 
 A successful hit inflicts **1 SP of damage** to the target. An exceptionally effective volley (roughly a 1-in-6 additional chance on a hit) may inflict **2 SP of damage** instead, representing a particularly devastating round of fire.
@@ -194,6 +208,7 @@ The attacker's score is calculated from a base value plus the attacker's current
 
 - **Horse (heavy cavalry) charging**: +1
 - **Defender in difficult terrain**: -1
+- **Defender entrenched against the charge** (charge crosses an entrenched hexside, see §2.1): -1
 
 The defender's score is calculated from a base value plus the defender's current SP.
 
@@ -316,6 +331,8 @@ Games are played for a set number of turns as specified by the scenario, typical
 | Marsh/Lake | Impassable                    | N/A                       | Blocked   | None                     |
 | River      | Only at bridge/ford           | None                      | Clear     | All (at crossing)        |
 | Road       | +1 hex if entire move on road | None                      | Clear     | All                      |
+
+**Entrenchments** are a **hexside** feature, not a hex terrain type: they sit on individual hexsides and give the occupying unit cover from fire and a charge-defense bonus against attacks crossing that side, with no effect on movement or LOS — see §2.1.
 
 ---
 

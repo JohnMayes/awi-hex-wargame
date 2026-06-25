@@ -2,7 +2,11 @@ import { TerrainType } from '../core/types';
 import type { HexCell } from '../core/hex';
 import type { OffsetCoordinates } from 'honeycomb-grid';
 
-export type MapDefinition = (Pick<HexCell, 'terrain'> & OffsetCoordinates)[];
+// `entrenchedEdges` lists direction indices (0..5, indexing `directions` in
+// core/hex.ts) of this hex's edges that are dug in — authored as a plain array,
+// stored as a Set on the HexCell.
+export type MapDefinition = (Pick<HexCell, 'terrain'> &
+	OffsetCoordinates & { entrenchedEdges?: readonly number[] })[];
 
 export const TEST_MAP: MapDefinition = [
 	{ col: 0, row: 0, terrain: TerrainType.WOODS },
@@ -45,10 +49,19 @@ const PITCHED_BATTLE_FEATURES: Record<string, TerrainType> = {
 	'2,6': TerrainType.WOODS
 };
 
+// Entrenched edges by hex "col,row" → edge direction indices (indexing `directions`
+// in core/hex.ts). Demo data so the feature is visible/playable: the central hill is
+// dug in on two opposite faces, giving a defender there cover + charge-defense against
+// attacks crossing those edges. Self-symmetric, so neither side is favoured.
+const PITCHED_BATTLE_ENTRENCHMENTS: Record<string, readonly number[]> = {
+	'3,4': [2, 5]
+};
+
 export const PITCHED_BATTLE_MAP: MapDefinition = Array.from({ length: 7 }, (_, col) =>
 	Array.from({ length: 9 }, (_, row) => ({
 		col,
 		row,
-		terrain: PITCHED_BATTLE_FEATURES[`${col},${row}`] ?? TerrainType.OPEN
+		terrain: PITCHED_BATTLE_FEATURES[`${col},${row}`] ?? TerrainType.OPEN,
+		entrenchedEdges: PITCHED_BATTLE_ENTRENCHMENTS[`${col},${row}`]
 	}))
 ).flat();

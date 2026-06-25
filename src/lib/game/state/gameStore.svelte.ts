@@ -120,7 +120,14 @@ export class GameStore {
 	constructor(units: Unit[], map: MapDefinition, leaders: Leader[], config: GameStoreConfig = {}) {
 		const newGrid = new Grid(
 			HexCell,
-			map.map((cell) => HexCell.create({ col: cell.col, row: cell.row, terrain: cell.terrain }))
+			map.map((cell) =>
+				HexCell.create({
+					col: cell.col,
+					row: cell.row,
+					terrain: cell.terrain,
+					entrenchedEdges: cell.entrenchedEdges
+				})
+			)
 		);
 
 		this.grid = newGrid;
