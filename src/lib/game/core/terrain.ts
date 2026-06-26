@@ -6,7 +6,6 @@ export type TerrainDefinition = {
 	readonly isImpassable: boolean;
 	readonly isElevated: boolean;
 	readonly isDifficultTerrain: boolean;
-	readonly isRoad: boolean;
 	// null = all units may enter; array = only these unit types may enter
 	readonly allowedUnitTypes: readonly UnitType[] | null;
 };
@@ -18,7 +17,6 @@ export const terrainDefinitions: Readonly<Record<TerrainType, TerrainDefinition>
 		isImpassable: false,
 		isElevated: false,
 		isDifficultTerrain: false,
-		isRoad: false,
 		allowedUnitTypes: null
 	},
 	[TerrainType.WOODS]: {
@@ -27,7 +25,6 @@ export const terrainDefinitions: Readonly<Record<TerrainType, TerrainDefinition>
 		isImpassable: false,
 		isElevated: false,
 		isDifficultTerrain: false,
-		isRoad: false,
 		allowedUnitTypes: [UnitType.LIGHT_INFANTRY]
 	},
 	[TerrainType.TOWN]: {
@@ -36,7 +33,6 @@ export const terrainDefinitions: Readonly<Record<TerrainType, TerrainDefinition>
 		isImpassable: false,
 		isElevated: false,
 		isDifficultTerrain: false,
-		isRoad: false,
 		allowedUnitTypes: [UnitType.LINE_INFANTRY, UnitType.LIGHT_INFANTRY]
 	},
 	[TerrainType.MARSH]: {
@@ -45,7 +41,6 @@ export const terrainDefinitions: Readonly<Record<TerrainType, TerrainDefinition>
 		isImpassable: true,
 		isElevated: false,
 		isDifficultTerrain: false,
-		isRoad: false,
 		allowedUnitTypes: null
 	},
 	[TerrainType.LAKE]: {
@@ -54,7 +49,6 @@ export const terrainDefinitions: Readonly<Record<TerrainType, TerrainDefinition>
 		isImpassable: true,
 		isElevated: false,
 		isDifficultTerrain: false,
-		isRoad: false,
 		allowedUnitTypes: null
 	},
 	[TerrainType.RIVER]: {
@@ -63,7 +57,6 @@ export const terrainDefinitions: Readonly<Record<TerrainType, TerrainDefinition>
 		isImpassable: true,
 		isElevated: false,
 		isDifficultTerrain: false,
-		isRoad: false,
 		allowedUnitTypes: null
 	},
 	[TerrainType.FORD]: {
@@ -72,7 +65,6 @@ export const terrainDefinitions: Readonly<Record<TerrainType, TerrainDefinition>
 		isImpassable: false,
 		isElevated: false,
 		isDifficultTerrain: false,
-		isRoad: false,
 		allowedUnitTypes: null
 	},
 	[TerrainType.BRIDGE]: {
@@ -81,16 +73,6 @@ export const terrainDefinitions: Readonly<Record<TerrainType, TerrainDefinition>
 		isImpassable: false,
 		isElevated: false,
 		isDifficultTerrain: false,
-		isRoad: false,
-		allowedUnitTypes: null
-	},
-	[TerrainType.ROAD]: {
-		blocksLOS: false,
-		providesCover: false,
-		isImpassable: false,
-		isElevated: false,
-		isDifficultTerrain: false,
-		isRoad: true,
 		allowedUnitTypes: null
 	},
 	[TerrainType.HILLTOP]: {
@@ -99,7 +81,6 @@ export const terrainDefinitions: Readonly<Record<TerrainType, TerrainDefinition>
 		isImpassable: false,
 		isElevated: true,
 		isDifficultTerrain: true,
-		isRoad: false,
 		allowedUnitTypes: null
 	},
 	// A razed town (see scenario torchRule). Behaves exactly like OPEN — burning a
@@ -111,7 +92,6 @@ export const terrainDefinitions: Readonly<Record<TerrainType, TerrainDefinition>
 		isImpassable: false,
 		isElevated: false,
 		isDifficultTerrain: false,
-		isRoad: false,
 		allowedUnitTypes: null
 	}
 };

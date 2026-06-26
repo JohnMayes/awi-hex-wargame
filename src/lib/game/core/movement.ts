@@ -1,5 +1,5 @@
 import type { Grid, OffsetCoordinates } from 'honeycomb-grid';
-import { HexCell, coordsEqual, directions } from './hex';
+import { HexCell, coordsEqual, directions, roadConnects } from './hex';
 import { getUnitDefinition } from './unitDefinitions';
 import { canUnitEnterTerrain, terrainDefinitions } from './terrain';
 import type { Unit } from './types';
@@ -49,8 +49,6 @@ export function getValidMoveTargets(
 	const startHex = grid.getHex(unit.coordinates);
 	if (!startHex) return [];
 
-	const startDef = terrainDefinitions[startHex.terrain];
-
 	const hexMap = new Map<string, HexCell>();
 	for (const hex of grid) hexMap.set(cubeKey(hex.q, hex.r), hex);
 
@@ -73,7 +71,7 @@ export function getValidMoveTargets(
 	const visited = new Map<string, number>();
 	const results = new Map<string, MoveTarget>();
 
-	const seedModes: Mode[] = startDef.isRoad ? ['NORMAL', 'ROAD_ONLY'] : ['NORMAL'];
+	const seedModes: Mode[] = startHex.roadEdges.size > 0 ? ['NORMAL', 'ROAD_ONLY'] : ['NORMAL'];
 	const queue: State[] = seedModes.map((mode) => ({ hex: startHex, cost: 0, mode }));
 
 	const considerEndpoint = (hex: HexCell, cost: number, usesRoad: boolean) => {
@@ -111,7 +109,7 @@ export function getValidMoveTargets(
 			}
 
 			if (mode === 'ROAD_ONLY') {
-				if (!terrainDefinitions[neighbor.terrain].isRoad) continue;
+				if (!roadConnects(hex, neighbor)) continue;
 				// Road movement may not move adjacent to an enemy at any step (rules §2)
 				if (enemyAdjKeys.has(neighborKey)) continue;
 			}

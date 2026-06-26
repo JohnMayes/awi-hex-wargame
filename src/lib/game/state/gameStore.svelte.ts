@@ -143,7 +143,8 @@ export class GameStore {
 					col: cell.col,
 					row: cell.row,
 					terrain: cell.terrain,
-					entrenchedEdges: cell.entrenchedEdges
+					entrenchedEdges: cell.entrenchedEdges,
+					roadEdges: cell.roadEdges
 				})
 			)
 		);

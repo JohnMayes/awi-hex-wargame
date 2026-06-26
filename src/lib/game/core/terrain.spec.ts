@@ -10,15 +10,15 @@ import { TerrainType, UnitType } from './types';
 
 describe('terrainDefinitions', () => {
 	it('has an entry for every TerrainType enum value', () => {
-		expect.assertions(11);
+		expect.assertions(10);
 		for (const type of Object.values(TerrainType)) {
 			expect(terrainDefinitions[type]).toBeDefined();
 		}
 	});
 
-	it('has exactly 11 terrain types defined', () => {
+	it('has exactly 10 terrain types defined', () => {
 		expect.assertions(1);
-		expect(Object.keys(terrainDefinitions)).toHaveLength(11);
+		expect(Object.keys(terrainDefinitions)).toHaveLength(10);
 	});
 });
 
@@ -241,33 +241,6 @@ describe('canUnitEnterTerrain', () => {
 		});
 	});
 
-	describe('ROAD — all units may enter', () => {
-		it('LINE_INFANTRY may enter', () => {
-			expect.assertions(1);
-			expect(canUnitEnterTerrain(UnitType.LINE_INFANTRY, TerrainType.ROAD)).toBe(true);
-		});
-		it('LIGHT_INFANTRY may enter', () => {
-			expect.assertions(1);
-			expect(canUnitEnterTerrain(UnitType.LIGHT_INFANTRY, TerrainType.ROAD)).toBe(true);
-		});
-		it('DRAGOONS may enter', () => {
-			expect.assertions(1);
-			expect(canUnitEnterTerrain(UnitType.DRAGOONS, TerrainType.ROAD)).toBe(true);
-		});
-		it('LIGHT_HORSE may enter', () => {
-			expect.assertions(1);
-			expect(canUnitEnterTerrain(UnitType.LIGHT_HORSE, TerrainType.ROAD)).toBe(true);
-		});
-		it('HORSE may enter', () => {
-			expect.assertions(1);
-			expect(canUnitEnterTerrain(UnitType.HORSE, TerrainType.ROAD)).toBe(true);
-		});
-		it('ARTILLERY may enter', () => {
-			expect.assertions(1);
-			expect(canUnitEnterTerrain(UnitType.ARTILLERY, TerrainType.ROAD)).toBe(true);
-		});
-	});
-
 	describe('HILLTOP — all units may enter', () => {
 		it('LINE_INFANTRY may enter', () => {
 			expect.assertions(1);
@@ -335,10 +308,6 @@ describe('doesTerrainBlockLOS', () => {
 		expect.assertions(1);
 		expect(doesTerrainBlockLOS(TerrainType.BRIDGE)).toBe(false);
 	});
-	it('ROAD does not block LOS', () => {
-		expect.assertions(1);
-		expect(doesTerrainBlockLOS(TerrainType.ROAD)).toBe(false);
-	});
 });
 
 // ─── getTerrainCoverModifier ────────────────────────────────────────────────
@@ -379,10 +348,6 @@ describe('getTerrainCoverModifier', () => {
 	it('BRIDGE provides no cover (0)', () => {
 		expect.assertions(1);
 		expect(getTerrainCoverModifier(TerrainType.BRIDGE)).toBe(0);
-	});
-	it('ROAD provides no cover (0)', () => {
-		expect.assertions(1);
-		expect(getTerrainCoverModifier(TerrainType.ROAD)).toBe(0);
 	});
 });
 
@@ -425,10 +390,6 @@ describe('getTerrainElevation', () => {
 		expect.assertions(1);
 		expect(getTerrainElevation(TerrainType.BRIDGE)).toBe(0);
 	});
-	it('ROAD has elevation 0', () => {
-		expect.assertions(1);
-		expect(getTerrainElevation(TerrainType.ROAD)).toBe(0);
-	});
 });
 
 // ─── terrainDefinitions property checks ────────────────────────────────────
@@ -470,53 +431,6 @@ describe('isDifficultTerrain', () => {
 		expect.assertions(1);
 		expect(terrainDefinitions[TerrainType.BRIDGE].isDifficultTerrain).toBe(false);
 	});
-	it('ROAD is not difficult terrain', () => {
-		expect.assertions(1);
-		expect(terrainDefinitions[TerrainType.ROAD].isDifficultTerrain).toBe(false);
-	});
-});
-
-describe('isRoad', () => {
-	it('ROAD is a road', () => {
-		expect.assertions(1);
-		expect(terrainDefinitions[TerrainType.ROAD].isRoad).toBe(true);
-	});
-	it('OPEN is not a road', () => {
-		expect.assertions(1);
-		expect(terrainDefinitions[TerrainType.OPEN].isRoad).toBe(false);
-	});
-	it('WOODS is not a road', () => {
-		expect.assertions(1);
-		expect(terrainDefinitions[TerrainType.WOODS].isRoad).toBe(false);
-	});
-	it('TOWN is not a road', () => {
-		expect.assertions(1);
-		expect(terrainDefinitions[TerrainType.TOWN].isRoad).toBe(false);
-	});
-	it('MARSH is not a road', () => {
-		expect.assertions(1);
-		expect(terrainDefinitions[TerrainType.MARSH].isRoad).toBe(false);
-	});
-	it('LAKE is not a road', () => {
-		expect.assertions(1);
-		expect(terrainDefinitions[TerrainType.LAKE].isRoad).toBe(false);
-	});
-	it('RIVER is not a road', () => {
-		expect.assertions(1);
-		expect(terrainDefinitions[TerrainType.RIVER].isRoad).toBe(false);
-	});
-	it('FORD is not a road', () => {
-		expect.assertions(1);
-		expect(terrainDefinitions[TerrainType.FORD].isRoad).toBe(false);
-	});
-	it('BRIDGE is not a road', () => {
-		expect.assertions(1);
-		expect(terrainDefinitions[TerrainType.BRIDGE].isRoad).toBe(false);
-	});
-	it('HILLTOP is not a road', () => {
-		expect.assertions(1);
-		expect(terrainDefinitions[TerrainType.HILLTOP].isRoad).toBe(false);
-	});
 });
 
 describe('isImpassable', () => {
@@ -551,10 +465,6 @@ describe('isImpassable', () => {
 	it('BRIDGE is not impassable', () => {
 		expect.assertions(1);
 		expect(terrainDefinitions[TerrainType.BRIDGE].isImpassable).toBe(false);
-	});
-	it('ROAD is not impassable', () => {
-		expect.assertions(1);
-		expect(terrainDefinitions[TerrainType.ROAD].isImpassable).toBe(false);
 	});
 	it('HILLTOP is not impassable', () => {
 		expect.assertions(1);

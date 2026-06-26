@@ -11,7 +11,6 @@ export enum TerrainType {
 	RIVER = 'river',
 	FORD = 'ford',
 	BRIDGE = 'bridge',
-	ROAD = 'road',
 	HILLTOP = 'hilltop',
 	BURNED = 'burned'
 }

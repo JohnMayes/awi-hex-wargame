@@ -158,14 +158,13 @@ describe('hasLineOfSight — terrain blockers', () => {
 		expect(hasLineOfSight(from, to, grid, [])).toBe(true);
 	});
 
-	it('Marsh / Lake / River / Bridge / Road / Ford between do not block LOS', () => {
-		expect.assertions(6);
+	it('Marsh / Lake / River / Bridge / Ford between do not block LOS', () => {
+		expect.assertions(5);
 		for (const t of [
 			TerrainType.MARSH,
 			TerrainType.LAKE,
 			TerrainType.RIVER,
 			TerrainType.BRIDGE,
-			TerrainType.ROAD,
 			TerrainType.FORD
 		]) {
 			const layout = openRect(7, 7);

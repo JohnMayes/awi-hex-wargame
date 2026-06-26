@@ -12,12 +12,14 @@ import { unitDefinitions } from './unitDefinitions';
 
 // --- Test fixtures & helpers ---
 
-type Layout = { col: number; row: number; terrain: TerrainType };
+type Layout = { col: number; row: number; terrain: TerrainType; roadEdges?: readonly number[] };
 
 function buildGrid(layout: Layout[]): Grid<HexCell> {
 	return new Grid(
 		HexCell,
-		layout.map((c) => HexCell.create({ col: c.col, row: c.row, terrain: c.terrain }))
+		layout.map((c) =>
+			HexCell.create({ col: c.col, row: c.row, terrain: c.terrain, roadEdges: c.roadEdges })
+		)
 	);
 }
 
@@ -370,7 +372,7 @@ describe('getValidMoveTargets — road bonus', () => {
 		}
 		for (const c of layout) {
 			if ((c.col === 2 && c.row === 2) || coordsEqual(c, step1) || coordsEqual(c, step2))
-				c.terrain = TerrainType.ROAD;
+				c.roadEdges = [0, 3]; // road along the direction-0 axis (0 toward next, 3 back)
 		}
 		const grid = buildGrid(layout);
 		const u = unit('u', UnitType.LINE_INFANTRY, 0, { col: 2, row: 2 });
@@ -390,8 +392,8 @@ describe('getValidMoveTargets — road bonus', () => {
 		const step1 = cubeMap.get(`${startHex.q + dq},${startHex.r + dr}`)!;
 		const step2 = cubeMap.get(`${startHex.q + 2 * dq},${startHex.r + 2 * dr}`);
 		for (const c of layout) {
-			if ((c.col === 2 && c.row === 2) || coordsEqual(c, step1)) c.terrain = TerrainType.ROAD;
-			// step2 left as OPEN on purpose
+			if ((c.col === 2 && c.row === 2) || coordsEqual(c, step1)) c.roadEdges = [0, 3];
+			// step2 left without a road on purpose
 		}
 		const grid = buildGrid(layout);
 		const u = unit('u', UnitType.LINE_INFANTRY, 0, { col: 2, row: 2 });
@@ -416,7 +418,7 @@ describe('getValidMoveTargets — road bonus', () => {
 		}
 		for (const c of layout) {
 			if ((c.col === 2 && c.row === 2) || coordsEqual(c, step1) || coordsEqual(c, step2))
-				c.terrain = TerrainType.ROAD;
+				c.roadEdges = [0, 3]; // road along the direction-0 axis (0 toward next, 3 back)
 		}
 		const grid = buildGrid(layout);
 		// Enemy adjacent to step2
@@ -435,9 +437,9 @@ describe('getValidMoveTargets — road bonus', () => {
 	it('Unit not starting on road reports usesRoad=false on all targets', () => {
 		expect.assertions(1);
 		const layout = openRect(3, 3);
-		// All hexes open; one neighbor is road
+		// All hexes open; one neighbor has a road (the mover does not start on it)
 		const neighborOpen = layout.find((c) => c.col === 2 && c.row === 1);
-		if (neighborOpen) neighborOpen.terrain = TerrainType.ROAD;
+		if (neighborOpen) neighborOpen.roadEdges = [0, 3];
 		const grid = buildGrid(layout);
 		const u = unit('u', UnitType.LIGHT_INFANTRY, 0, { col: 1, row: 1 });
 		const targets = getValidMoveTargets(u, grid, [u]);

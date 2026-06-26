@@ -2,11 +2,15 @@ import { TerrainType } from '../core/types';
 import type { HexCell } from '../core/hex';
 import type { OffsetCoordinates } from 'honeycomb-grid';
 
-// `entrenchedEdges` lists direction indices (0..5, indexing `directions` in
-// core/hex.ts) of this hex's edges that are dug in — authored as a plain array,
-// stored as a Set on the HexCell.
+// `entrenchedEdges` / `roadEdges` list direction indices (0..5, indexing
+// `directions` in core/hex.ts) of this hex's dug-in / road-crossed edges —
+// authored as plain arrays, stored as Sets on the HexCell. Road edges must be
+// authored symmetrically across a shared edge (see `roadConnects`).
 export type MapDefinition = (Pick<HexCell, 'terrain'> &
-	OffsetCoordinates & { entrenchedEdges?: readonly number[] })[];
+	OffsetCoordinates & {
+		entrenchedEdges?: readonly number[];
+		roadEdges?: readonly number[];
+	})[];
 
 export const TEST_MAP: MapDefinition = [
 	{ col: 0, row: 0, terrain: TerrainType.WOODS },
@@ -101,13 +105,22 @@ const BUNKER_HILL_FEATURES: Record<string, TerrainType> = {
 	'5,3': TerrainType.WOODS,
 	// Charlestown (razable town), lower-left.
 	'1,6': TerrainType.TOWN,
-	'1,7': TerrainType.TOWN,
-	// Central road running south→north (interrupted by Breeds & Bunker).
-	'3,2': TerrainType.ROAD,
-	'3,3': TerrainType.ROAD,
-	'3,5': TerrainType.ROAD,
-	'3,6': TerrainType.ROAD,
-	'3,7': TerrainType.ROAD
+	'1,7': TerrainType.TOWN
+};
+
+// Central road running south→north along col 3 (interrupted by Breeds at row 4
+// and Bunker at row 1). A road overlays the hex's real terrain — these hexes stay
+// OPEN. [2, 5] are the north and south edges (verified against the flat-top
+// geometry), so each hex draws a straight vertical track; spokes meeting a hill
+// hex stop at the shared edge (the hill is not a road, so no road-move bonus onto
+// it) while consecutive road hexes connect for the bonus.
+const BUNKER_HILL_NS_ROAD = [2, 5] as const;
+const BUNKER_HILL_ROADS: Record<string, readonly number[]> = {
+	'3,2': BUNKER_HILL_NS_ROAD,
+	'3,3': BUNKER_HILL_NS_ROAD,
+	'3,5': BUNKER_HILL_NS_ROAD,
+	'3,6': BUNKER_HILL_NS_ROAD,
+	'3,7': BUNKER_HILL_NS_ROAD
 };
 
 // Entrenched edges on Breeds & Bunker Hill, facing the British (south) approach.
@@ -129,6 +142,7 @@ export const BUNKER_HILL_MAP: MapDefinition = Array.from({ length: 7 }, (_, col)
 		col,
 		row,
 		terrain: BUNKER_HILL_FEATURES[`${col},${row}`] ?? TerrainType.OPEN,
-		entrenchedEdges: BUNKER_HILL_ENTRENCHMENTS[`${col},${row}`]
+		entrenchedEdges: BUNKER_HILL_ENTRENCHMENTS[`${col},${row}`],
+		roadEdges: BUNKER_HILL_ROADS[`${col},${row}`]
 	}))
 ).flat();

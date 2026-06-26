@@ -17,17 +17,28 @@ export class HexCell extends defineHex({
 	// attacks that cross the edge it faces (charge defense + fire cover) but has no
 	// effect on movement or LOS. Empty for the vast majority of hexes.
 	entrenchedEdges: ReadonlySet<number> = new Set();
+	// Direction indices (0..5) of the edges a road crosses in this hex. A road
+	// overlays the hex's real terrain (it is not a terrain type): it grants the
+	// movement bonus (see `roadConnects`) and renders as a line through the hex
+	// center and each edge midpoint. Must be authored symmetrically — if this hex
+	// lists the edge toward a neighbor, that neighbor lists the reciprocal edge.
+	roadEdges: ReadonlySet<number> = new Set();
 
 	get elevation(): number {
 		return this.terrain === TerrainType.HILLTOP ? 1 : 0;
 	}
 
 	static create(
-		config: OffsetCoordinates & { terrain: TerrainType; entrenchedEdges?: readonly number[] }
+		config: OffsetCoordinates & {
+			terrain: TerrainType;
+			entrenchedEdges?: readonly number[];
+			roadEdges?: readonly number[];
+		}
 	) {
 		const cell = new HexCell(config);
 		cell.terrain = config.terrain;
 		if (config.entrenchedEdges?.length) cell.entrenchedEdges = new Set(config.entrenchedEdges);
+		if (config.roadEdges?.length) cell.roadEdges = new Set(config.roadEdges);
 		return cell;
 	}
 }
@@ -83,4 +94,16 @@ export function edgeToward(from: HexCell, toward: HexCell): number {
  */
 export function isEntrenchedToward(defender: HexCell, attacker: HexCell): boolean {
 	return defender.entrenchedEdges.has(edgeToward(defender, attacker));
+}
+
+/**
+ * True when a road segment crosses the shared edge between adjacent `from` and
+ * `to` — i.e. the step is "along the road" for the movement bonus. Requires both
+ * hexes to list the shared edge (the edge of `from` facing `to`, and its
+ * reciprocal on `to`), so a half-authored road never grants the bonus.
+ * `edgeToward` is exact for adjacent hexes.
+ */
+export function roadConnects(from: HexCell, to: HexCell): boolean {
+	const d = edgeToward(from, to);
+	return from.roadEdges.has(d) && to.roadEdges.has((d + 3) % 6);
 }

@@ -7,7 +7,8 @@ import {
 	getNeighbors,
 	directions,
 	edgeToward,
-	isEntrenchedToward
+	isEntrenchedToward,
+	roadConnects
 } from './hex';
 import { TerrainType } from './types';
 
@@ -133,5 +134,19 @@ describe('isEntrenchedToward', () => {
 		});
 		expect(isEntrenchedToward(defender, cubeNeighbor(grid, center, 0)!)).toBe(true);
 		expect(isEntrenchedToward(defender, cubeNeighbor(grid, center, 3)!)).toBe(false);
+	});
+});
+
+describe('roadConnects', () => {
+	it('is true only when both hexes list the shared edge (symmetric)', () => {
+		expect.assertions(3);
+		const grid = openGrid(7, 7);
+		const center = grid.getHex({ col: 3, row: 3 })!;
+		const nb = cubeNeighbor(grid, center, 0)!; // edgeToward(center, nb) === 0; reciprocal 3
+		const road = (c: HexCell, edges: number[]) =>
+			HexCell.create({ col: c.col, row: c.row, terrain: TerrainType.OPEN, roadEdges: edges });
+		expect(roadConnects(road(center, [0]), road(nb, [3]))).toBe(true);
+		expect(roadConnects(road(center, [0]), road(nb, [0]))).toBe(false); // nb lacks reciprocal
+		expect(roadConnects(road(center, [1]), road(nb, [3]))).toBe(false); // from lacks facing edge
 	});
 });

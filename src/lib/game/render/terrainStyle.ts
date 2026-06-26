@@ -17,13 +17,15 @@ export const terrainHexColors: Record<TerrainType, string> = {
 	[TerrainType.RIVER]: '#6f95ad',
 	[TerrainType.FORD]: '#a9b7b5',
 	[TerrainType.BRIDGE]: '#a48f7a',
-	[TerrainType.ROAD]: '#c8b79c',
 	[TerrainType.HILLTOP]: '#b6a87f',
 	[TerrainType.BURNED]: '#3a3330'
 };
 
 /** Hex border color (black). */
 export const hexStrokeHex = '#000000';
+
+/** Road stroke color — a dirt track drawn over the hex's real terrain. */
+export const roadStrokeHex = '#8a6d3b';
 
 /** Parse a `#rrggbb` string into normalized 0..1 RGB. */
 export function hexToRgb(hex: string): Rgb {

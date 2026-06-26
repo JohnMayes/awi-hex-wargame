@@ -1,7 +1,7 @@
 import type { GameStore } from '$lib/game/state/gameStore.svelte';
 import { hexDistance } from '../core/hex';
 import { hexPixelToWorld } from './boardGeometry';
-import { terrainFill, hexToRgb, hexStrokeHex, type Rgb } from './terrainStyle';
+import { terrainFill, hexToRgb, hexStrokeHex, roadStrokeHex, type Rgb } from './terrainStyle';
 import { counterPrimitives, spAnchor, type Primitive, type Vec } from './counters';
 import { resolveBoardClick } from './boardInput';
 import { drawFx, resetFx, syncFx } from './fx';
@@ -67,6 +67,10 @@ const COMMAND_COLOR = hexToRgb('#ffd700'); // gold command-radius outline
 // Entrenchments: a bold earth-brown line drawn along a dug-in hex edge.
 const ENTRENCHMENT_COLOR = hexToRgb('#5a3a1e'); // dark earth-brown
 const ENTRENCHMENT_WIDTH = 8; // world units; thicker than the hex border
+// Roads: a dirt track drawn as spokes from the hex center to each road-edge
+// midpoint, so congruent road hexes meet at the shared edge midpoint and connect.
+const ROAD_COLOR = hexToRgb(roadStrokeHex);
+const ROAD_WIDTH = 6; // world units; thinner than an entrenchment
 // honeycomb's `corners[]` run in the opposite handedness to our `directions[]` index, so
 // the edge facing direction `d` is corners[i]→corners[i+1] with i = (7 − d) % 6 (a
 // reflection, not a rotation — verified against the installed honeycomb geometry).
@@ -282,6 +286,21 @@ function gameRender() {
 			const corners = hex.corners.map((c) => toWorld(c));
 			if (highlightKeys.has(hexKey({ col: hex.col, row: hex.row }))) drawPoly(corners, bright, 0);
 			else drawPoly(corners, dim, 0);
+		}
+	}
+
+	// Roads: a line from the hex center through each road-edge midpoint (above
+	// terrain, under counters). Adjacent road hexes share an edge midpoint, so the
+	// spokes meet and the road reads as continuous across hexes.
+	const roadColor = color(ROAD_COLOR);
+	for (const hex of grid) {
+		if (hex.roadEdges.size === 0) continue;
+		const c = hex.corners;
+		const centerW = toWorld({ x: hex.x, y: hex.y });
+		for (const d of hex.roadEdges) {
+			const i = cornerStartForDir(d);
+			const mid = { x: (c[i].x + c[(i + 1) % 6].x) / 2, y: (c[i].y + c[(i + 1) % 6].y) / 2 };
+			LJS.drawLine(centerW, toWorld(mid), ROAD_WIDTH, roadColor);
 		}
 	}
 
