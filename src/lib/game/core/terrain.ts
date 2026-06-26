@@ -101,6 +101,18 @@ export const terrainDefinitions: Readonly<Record<TerrainType, TerrainDefinition>
 		isDifficultTerrain: true,
 		isRoad: false,
 		allowedUnitTypes: null
+	},
+	// A razed town (see scenario torchRule). Behaves exactly like OPEN — burning a
+	// TOWN hex strips its cover and LOS block via the normal terrain reads — but is a
+	// distinct type so it renders as charred ground and is countable for victory.
+	[TerrainType.BURNED]: {
+		blocksLOS: false,
+		providesCover: false,
+		isImpassable: false,
+		isElevated: false,
+		isDifficultTerrain: false,
+		isRoad: false,
+		allowedUnitTypes: null
 	}
 };
 

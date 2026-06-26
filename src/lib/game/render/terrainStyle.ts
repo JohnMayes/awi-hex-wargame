@@ -18,7 +18,8 @@ export const terrainHexColors: Record<TerrainType, string> = {
 	[TerrainType.FORD]: '#a9b7b5',
 	[TerrainType.BRIDGE]: '#a48f7a',
 	[TerrainType.ROAD]: '#c8b79c',
-	[TerrainType.HILLTOP]: '#b6a87f'
+	[TerrainType.HILLTOP]: '#b6a87f',
+	[TerrainType.BURNED]: '#3a3330'
 };
 
 /** Hex border color (black). */

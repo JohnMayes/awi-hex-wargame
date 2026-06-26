@@ -1,9 +1,14 @@
 <script lang="ts">
+	import { page } from '$app/state';
 	import { initGameStore } from '$lib/game/state/gameStore.svelte';
 	import LittleBoard from '$lib/game/render/LittleBoard.svelte';
-	import { PITCHED_BATTLE } from '$lib/game/data/scenarios';
+	import { SCENARIOS, PITCHED_BATTLE } from '$lib/game/data/scenarios';
 
-	const store = initGameStore(PITCHED_BATTLE);
+	// Pick the scenario from `?scenario=<id>` (e.g. ?scenario=bunker-hill), defaulting
+	// to the pitched battle. `page` from $app/state resolves the same URL on server and
+	// client, so the choice is hydration-safe. A richer in-app picker is later polish.
+	const scenarioId = page.url.searchParams.get('scenario');
+	const store = initGameStore((scenarioId && SCENARIOS[scenarioId]) || PITCHED_BATTLE);
 
 	// Pointer-events discipline for the LJS chrome overlay: stop chrome presses AND
 	// releases from bubbling to `document`, where LittleJS's input listeners live.

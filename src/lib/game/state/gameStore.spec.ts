@@ -2327,3 +2327,70 @@ describe('GameStore eliminate_units kill tally', () => {
 		expect(store.victoryStatus.find((s) => s.id === 'kill-1')?.met).toBe(true);
 	});
 });
+
+describe('GameStore — dwell-to-torch (scenario torchRule)', () => {
+	const TOWN_AT = { col: 1, row: 1 };
+	const townMap: MapDefinition = [];
+	for (let col = 0; col < 3; col++)
+		for (let row = 0; row < 3; row++)
+			townMap.push({
+				col,
+				row,
+				terrain: col === 1 && row === 1 ? TerrainType.TOWN : TerrainType.OPEN
+			});
+
+	const britAt = (col: number, row: number): Unit => ({
+		id: 'brit',
+		type: UnitType.LINE_INFANTRY,
+		player: 1,
+		coordinates: { col, row },
+		strengthPoints: 4,
+		maxStrengthPoints: 4,
+		selected: false,
+		movementPointsUsed: 0,
+		firedThisActivation: false,
+		activated: false,
+		elite: false
+	});
+
+	// Each full game turn is two endPlayerTurn calls (player 0 then player 1).
+	const advanceRounds = (store: GameStore, rounds: number) => {
+		for (let i = 0; i < rounds * 2; i++) store.endPlayerTurn();
+	};
+
+	it('razes a TOWN hex held by the torch player for dwellTurns rounds', () => {
+		expect.assertions(2);
+		const store = new GameStore([britAt(1, 1)], townMap, [], {
+			firstPlayer: 0,
+			torchRule: { dwellTurns: 2, player: 1 }
+		});
+		expect(store.hexAt(TOWN_AT)?.terrain).toBe(TerrainType.TOWN);
+		advanceRounds(store, 2);
+		expect(store.hexAt(TOWN_AT)?.terrain).toBe(TerrainType.BURNED);
+	});
+
+	it('does not raze if the hex is vacated before the threshold (counter resets)', () => {
+		expect.assertions(1);
+		const store = new GameStore([britAt(1, 1)], townMap, [], {
+			firstPlayer: 0,
+			torchRule: { dwellTurns: 2, player: 1 }
+		});
+		advanceRounds(store, 1); // dwell → 1
+		store.units = store.units.map((u) =>
+			u.id === 'brit' ? { ...u, coordinates: { col: 0, row: 0 } } : u
+		);
+		advanceRounds(store, 2);
+		expect(store.hexAt(TOWN_AT)?.terrain).toBe(TerrainType.TOWN);
+	});
+
+	it('ignores a town held by the other player', () => {
+		expect.assertions(1);
+		const colUnit: Unit = { ...britAt(1, 1), id: 'col', player: 0 };
+		const store = new GameStore([colUnit], townMap, [], {
+			firstPlayer: 0,
+			torchRule: { dwellTurns: 2, player: 1 }
+		});
+		advanceRounds(store, 3);
+		expect(store.hexAt(TOWN_AT)?.terrain).toBe(TerrainType.TOWN);
+	});
+});

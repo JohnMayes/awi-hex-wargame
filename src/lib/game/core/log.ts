@@ -70,6 +70,14 @@ export type ReinforcementsArrivedEvent = {
 	units: { id: string; type: UnitType; coordinates: OffsetCoordinates }[];
 };
 
+export type HexBurnedEvent = {
+	kind: 'hex_burned';
+	turn: number;
+	player: Player;
+	/** The razed hex (was TOWN, now BURNED). */
+	coordinates: OffsetCoordinates;
+};
+
 export type LogEvent =
 	| ActivationStartedEvent
 	| MoveActionEvent
@@ -78,4 +86,5 @@ export type LogEvent =
 	| ActivationEndedEvent
 	| PlayerTurnEndedEvent
 	| GameOverEvent
-	| ReinforcementsArrivedEvent;
+	| ReinforcementsArrivedEvent
+	| HexBurnedEvent;

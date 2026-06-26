@@ -65,3 +65,70 @@ export const PITCHED_BATTLE_MAP: MapDefinition = Array.from({ length: 7 }, (_, c
 		entrenchedEdges: PITCHED_BATTLE_ENTRENCHMENTS[`${col},${row}`]
 	}))
 ).flat();
+
+// Bunker Hill (accurate map, 17 June 1775) — 7 cols × 9 rows, north = row 0
+// (Causeway / Mystic River), British attack from the south (Boston Harbour, high
+// rows). Adapted from the ARW-series map; see docs/bunker-hill-conversion.md.
+// Non-OPEN hexes only; everything else is plains. School Hill is woods (accurate
+// variant). Charlestown (TOWN) is razable via the scenario torchRule.
+const BUNKER_HILL_FEATURES: Record<string, TerrainType> = {
+	// Water: Mystic River bay (NE), Boston Harbour (S), harbour shore (SW).
+	'0,0': TerrainType.LAKE,
+	'6,0': TerrainType.LAKE,
+	'6,1': TerrainType.LAKE,
+	'6,2': TerrainType.LAKE,
+	'0,6': TerrainType.LAKE,
+	'0,7': TerrainType.LAKE,
+	'0,8': TerrainType.LAKE,
+	'1,8': TerrainType.LAKE,
+	'5,8': TerrainType.LAKE,
+	'6,8': TerrainType.LAKE,
+	// Hills: Bunker (upper-centre), Breeds (centre), Moulton's (lower-right).
+	'2,1': TerrainType.HILLTOP,
+	'3,1': TerrainType.HILLTOP,
+	'2,4': TerrainType.HILLTOP,
+	'3,4': TerrainType.HILLTOP,
+	'4,4': TerrainType.HILLTOP,
+	'6,6': TerrainType.HILLTOP,
+	'6,7': TerrainType.HILLTOP,
+	// Woods: School Hill (left-centre) + scattered stands.
+	'0,4': TerrainType.WOODS,
+	'2,0': TerrainType.WOODS,
+	'5,0': TerrainType.WOODS,
+	'1,2': TerrainType.WOODS,
+	'4,2': TerrainType.WOODS,
+	'2,3': TerrainType.WOODS,
+	'5,3': TerrainType.WOODS,
+	// Charlestown (razable town), lower-left.
+	'1,6': TerrainType.TOWN,
+	'1,7': TerrainType.TOWN,
+	// Central road running south→north (interrupted by Breeds & Bunker).
+	'3,2': TerrainType.ROAD,
+	'3,3': TerrainType.ROAD,
+	'3,5': TerrainType.ROAD,
+	'3,6': TerrainType.ROAD,
+	'3,7': TerrainType.ROAD
+};
+
+// Entrenched edges on Breeds & Bunker Hill, facing the British (south) approach.
+// Directions 0/4/5 are the southern arc on our flat-top offset grid (verified:
+// those neighbours sit at greater screen-Y). Combat is bearing-based, so this
+// protects the defenders against any attack coming from the south.
+const BUNKER_HILL_SOUTH_ARC = [0, 4, 5] as const;
+const BUNKER_HILL_ENTRENCHMENTS: Record<string, readonly number[]> = {
+	'2,1': BUNKER_HILL_SOUTH_ARC,
+	'3,1': BUNKER_HILL_SOUTH_ARC,
+	'2,4': BUNKER_HILL_SOUTH_ARC,
+	'3,4': BUNKER_HILL_SOUTH_ARC,
+	'4,4': BUNKER_HILL_SOUTH_ARC,
+	'5,4': BUNKER_HILL_SOUTH_ARC // rightmost Colonial line (open ground, still dug in)
+};
+
+export const BUNKER_HILL_MAP: MapDefinition = Array.from({ length: 7 }, (_, col) =>
+	Array.from({ length: 9 }, (_, row) => ({
+		col,
+		row,
+		terrain: BUNKER_HILL_FEATURES[`${col},${row}`] ?? TerrainType.OPEN,
+		entrenchedEdges: BUNKER_HILL_ENTRENCHMENTS[`${col},${row}`]
+	}))
+).flat();

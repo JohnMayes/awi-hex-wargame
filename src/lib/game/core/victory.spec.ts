@@ -33,6 +33,7 @@ function snapshot(opts: {
 	eliminated?: Record<Player, number>;
 	bounds?: VictorySnapshot['bounds'];
 	exitedThisTurn?: VictorySnapshot['exitedThisTurn'];
+	burnedHexes?: number;
 }): VictorySnapshot {
 	return {
 		turn: opts.turn,
@@ -40,7 +41,8 @@ function snapshot(opts: {
 		units: opts.units,
 		eliminatedByPlayer: opts.eliminated ?? ({ 0: 0, 1: 0 } as Record<Player, number>),
 		bounds: opts.bounds ?? { minCol: 0, maxCol: 6, minRow: 0, maxRow: 8 },
-		exitedThisTurn: opts.exitedThisTurn ?? []
+		exitedThisTurn: opts.exitedThisTurn ?? [],
+		burnedHexes: opts.burnedHexes ?? 0
 	};
 }
 
@@ -436,5 +438,76 @@ describe('evaluateVictory — mutual satisfaction', () => {
 		);
 		expect(r.outcome?.reason).toBe('turn_limit_tiebreak');
 		expect(r.outcome?.winner).toBe(1);
+	});
+});
+
+describe('evaluateVictory — raze', () => {
+	const razeCond: VictoryCondition = {
+		kind: 'raze',
+		id: 'raze-0',
+		player: 1,
+		description: '',
+		count: 2
+	};
+
+	it('wins when burned hexes reach the count', () => {
+		expect.assertions(2);
+		const r = evaluateVictory(
+			[razeCond],
+			snapshot({ turn: 4, units: [u('a', 0, 3, 0, 0)], burnedHexes: 2 }),
+			progress()
+		);
+		expect(r.outcome?.status).toBe('won');
+		expect(r.outcome?.winner).toBe(1);
+	});
+
+	it('does not win below the count', () => {
+		expect.assertions(1);
+		const r = evaluateVictory(
+			[razeCond],
+			snapshot({ turn: 4, units: [u('a', 0, 3, 0, 0)], burnedHexes: 1 }),
+			progress()
+		);
+		expect(r.outcome).toBeNull();
+	});
+});
+
+describe('evaluateVictory — grouped conditions (AND)', () => {
+	// British (player 1) win requires BOTH: burn ≥1 hex AND break ≥4 Colonials.
+	const britWin: VictoryCondition[] = [
+		{ kind: 'raze', id: 'r', player: 1, group: 'brit', description: '', count: 1 },
+		{ kind: 'eliminate_units', id: 'e', player: 1, group: 'brit', description: '', count: 4 }
+	];
+	const survivor = [u('a', 0, 3, 0, 0)];
+
+	it('wins only when every member of the group is satisfied', () => {
+		expect.assertions(2);
+		const r = evaluateVictory(
+			britWin,
+			snapshot({ turn: 4, units: survivor, eliminated: { 0: 4, 1: 0 }, burnedHexes: 1 }),
+			progress()
+		);
+		expect(r.outcome?.status).toBe('won');
+		expect(r.outcome?.winner).toBe(1);
+	});
+
+	it('does not win when only the raze half is met', () => {
+		expect.assertions(1);
+		const r = evaluateVictory(
+			britWin,
+			snapshot({ turn: 4, units: survivor, eliminated: { 0: 2, 1: 0 }, burnedHexes: 1 }),
+			progress()
+		);
+		expect(r.outcome).toBeNull();
+	});
+
+	it('does not win when only the eliminate half is met (no hex burned)', () => {
+		expect.assertions(1);
+		const r = evaluateVictory(
+			britWin,
+			snapshot({ turn: 4, units: survivor, eliminated: { 0: 4, 1: 0 }, burnedHexes: 0 }),
+			progress()
+		);
+		expect(r.outcome).toBeNull();
 	});
 });

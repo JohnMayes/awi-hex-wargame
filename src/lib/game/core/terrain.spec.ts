@@ -10,15 +10,15 @@ import { TerrainType, UnitType } from './types';
 
 describe('terrainDefinitions', () => {
 	it('has an entry for every TerrainType enum value', () => {
-		expect.assertions(10);
+		expect.assertions(11);
 		for (const type of Object.values(TerrainType)) {
 			expect(terrainDefinitions[type]).toBeDefined();
 		}
 	});
 
-	it('has exactly 10 terrain types defined', () => {
+	it('has exactly 11 terrain types defined', () => {
 		expect.assertions(1);
-		expect(Object.keys(terrainDefinitions)).toHaveLength(10);
+		expect(Object.keys(terrainDefinitions)).toHaveLength(11);
 	});
 });
 

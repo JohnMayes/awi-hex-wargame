@@ -24,6 +24,17 @@ export type ReinforcementUnitSpec = {
 	elite?: boolean;
 };
 
+/**
+ * Optional scenario rule: a `player` unit that holds a TOWN hex for `dwellTurns`
+ * consecutive game turns razes it (terrain → BURNED). Scenario-scoped — only set it
+ * on battles that want town-burning (e.g. Bunker Hill / Charlestown). TOWN is the
+ * only flammable terrain, so the rule needs no per-hex list.
+ */
+export type TorchRule = {
+	dwellTurns: number;
+	player: Player;
+};
+
 /** A group of reinforcements that all arrive on the same game turn for one player. */
 export type ReinforcementGroup = {
 	/** Game turn (>= 1) the group is scheduled to arrive. */
@@ -53,4 +64,6 @@ export type Scenario = {
 	 * (occupied or impassable) is held off-map and retried each subsequent owner turn.
 	 */
 	reinforcements?: ReinforcementGroup[];
+	/** Town-burning rule (see TorchRule). Omit on scenarios without burnable towns. */
+	torchRule?: TorchRule;
 };

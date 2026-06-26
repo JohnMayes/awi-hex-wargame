@@ -22,9 +22,21 @@ import {
 } from '../core/command';
 import { applyEliminations } from '../core/elimination';
 import { checkMorale, type MoraleResult } from '../core/morale';
-import type { ReinforcementGroup, ReinforcementUnitSpec, Scenario } from '../core/scenario';
+import type {
+	ReinforcementGroup,
+	ReinforcementUnitSpec,
+	Scenario,
+	TorchRule
+} from '../core/scenario';
 import { canUnitEnterTerrain } from '../core/terrain';
-import { ActionType, ActivationStep, type Player, type Unit, type UnitType } from '../core/types';
+import {
+	ActionType,
+	ActivationStep,
+	TerrainType,
+	type Player,
+	type Unit,
+	type UnitType
+} from '../core/types';
 import { getUnitDefinition } from '../core/unitDefinitions';
 import {
 	boundsFromCoords,
@@ -58,6 +70,7 @@ export type GameStoreConfig = {
 	turnLimit?: number | null;
 	victoryConditions?: VictoryCondition[];
 	reinforcements?: ReinforcementGroup[];
+	torchRule?: TorchRule;
 };
 
 /** A single reinforcement unit awaiting deployment, flattened from its group. */
@@ -116,6 +129,11 @@ export class GameStore {
 	// because their entry hex was blocked. Flattened per-unit so a partly-blocked
 	// group can arrive piecemeal. Not reactive — no UI reads it.
 	#pendingReinforcements: PendingReinforcement[];
+	// Town-burning rule, if the scenario enables it (Bunker Hill). Null otherwise.
+	#torchRule: TorchRule | null;
+	// Per-TOWN-hex count of consecutive game turns held by the torch player. Reset to
+	// 0 whenever the hex is vacated; at #torchRule.dwellTurns the hex is razed. Not reactive.
+	#torchDwell: Map<string, number> = new Map();
 
 	constructor(units: Unit[], map: MapDefinition, leaders: Leader[], config: GameStoreConfig = {}) {
 		const newGrid = new Grid(
@@ -137,6 +155,7 @@ export class GameStore {
 		this.turnLimit = config.turnLimit ?? null;
 		this.victoryConditions = config.victoryConditions ?? [];
 		this.#bounds = boundsFromCoords(map);
+		this.#torchRule = config.torchRule ?? null;
 		// Clone so the store never mutates the caller's scenario data.
 		this.#pendingReinforcements = structuredClone(config.reinforcements ?? []).flatMap((g) =>
 			g.units.map((spec) => ({ turn: g.turn, player: g.player, spec }))
@@ -154,7 +173,8 @@ export class GameStore {
 				firstPlayer: scenario.firstPlayer,
 				turnLimit: scenario.turnLimit,
 				victoryConditions: scenario.victoryConditions,
-				reinforcements: scenario.reinforcements
+				reinforcements: scenario.reinforcements,
+				torchRule: scenario.torchRule
 			}
 		);
 	}
@@ -266,7 +286,8 @@ export class GameStore {
 			})),
 			eliminatedByPlayer: this.#eliminatedByPlayer,
 			bounds: this.#bounds,
-			exitedThisTurn: [] // exit action deferred; evaluator supports it for future use
+			exitedThisTurn: [], // exit action deferred; evaluator supports it for future use
+			burnedHexes: this.#countBurnedHexes()
 		};
 		const { progress, outcome } = evaluateVictory(
 			this.victoryConditions,
@@ -277,6 +298,53 @@ export class GameStore {
 		if (outcome) {
 			this.victoryOutcome = outcome;
 			this.#emit({ kind: 'game_over', turn: this.turn, outcome });
+		}
+	}
+
+	/** Count hexes currently razed (BURNED) — drives the raze_and_eliminate victory. */
+	#countBurnedHexes(): number {
+		if (!this.grid) return 0;
+		let n = 0;
+		for (const hex of this.grid) if (hex.terrain === TerrainType.BURNED) n += 1;
+		return n;
+	}
+
+	/**
+	 * Town-burning (scenario torchRule): a TOWN hex held by the torch player for
+	 * `dwellTurns` consecutive game turns is razed to BURNED. Called once per full game
+	 * turn from `endPlayerTurn`, before victory is evaluated. Mutating `hex.terrain` is
+	 * picked up live by the renderer and by combat/LOS (a burned town loses its cover
+	 * and LOS block). No-op unless the scenario set a torchRule.
+	 */
+	#processTorch() {
+		const rule = this.#torchRule;
+		if (!rule || !this.grid) return;
+		const occupantAt = new Map<string, Unit>();
+		for (const u of this.units) {
+			if (u.strengthPoints <= 0) continue;
+			occupantAt.set(`${u.coordinates.col},${u.coordinates.row}`, u);
+		}
+		for (const hex of this.grid) {
+			if (hex.terrain !== TerrainType.TOWN) continue;
+			const key = `${hex.col},${hex.row}`;
+			const occupant = occupantAt.get(key);
+			if (!occupant || occupant.player !== rule.player) {
+				this.#torchDwell.delete(key); // vacated (or held by the wrong side) → reset
+				continue;
+			}
+			const held = (this.#torchDwell.get(key) ?? 0) + 1;
+			if (held >= rule.dwellTurns) {
+				hex.terrain = TerrainType.BURNED;
+				this.#torchDwell.delete(key);
+				this.#emit({
+					kind: 'hex_burned',
+					turn: this.turn,
+					player: rule.player,
+					coordinates: { col: hex.col, row: hex.row }
+				});
+			} else {
+				this.#torchDwell.set(key, held);
+			}
 		}
 	}
 
@@ -327,6 +395,15 @@ export class GameStore {
 					text: `${exited} / ${c.count}`,
 					fraction: frac(exited, c.count),
 					met: exited >= c.count
+				};
+			}
+			case 'raze': {
+				const burned = this.#countBurnedHexes();
+				return {
+					...base,
+					text: `${burned} / ${c.count} razed`,
+					fraction: frac(burned, c.count),
+					met: burned >= c.count
 				};
 			}
 		}
@@ -961,6 +1038,7 @@ export class GameStore {
 
 		// A full game turn completes when the second player (1) hands back to 0.
 		if (prevPlayer === 1) {
+			this.#processTorch(); // resolve town-burning before victory reads burned hexes
 			this.#evaluateVictory();
 		}
 	}

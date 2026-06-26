@@ -12,7 +12,8 @@ export enum TerrainType {
 	FORD = 'ford',
 	BRIDGE = 'bridge',
 	ROAD = 'road',
-	HILLTOP = 'hilltop'
+	HILLTOP = 'hilltop',
+	BURNED = 'burned'
 }
 
 export enum ActivationStep {

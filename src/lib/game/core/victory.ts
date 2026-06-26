@@ -8,7 +8,12 @@ export type MapEdge = 'north' | 'south' | 'east' | 'west';
 /**
  * A scenario victory condition. Each is owned by the `player` who wins by
  * satisfying it (rules §11). The union is the single extension point for new
- * win conditions — add a member and a case in `evaluateVictory`.
+ * win conditions — add a member and a case in `isConditionSatisfied`.
+ *
+ * `group` composes conditions: ungrouped conditions each win on their own (OR,
+ * the common case); conditions of one player that share a `group` form an AND —
+ * that player wins only when *every* member of the group is satisfied. This lets
+ * a battle require, say, raze AND eliminate without a bespoke combined kind.
  */
 export type VictoryCondition =
 	| {
@@ -16,6 +21,7 @@ export type VictoryCondition =
 			id: string;
 			player: Player;
 			description: string;
+			group?: string;
 			/** Win when this many enemy units have been eliminated (cumulative; any unit, starting or reinforcement). */
 			count: number;
 	  }
@@ -24,6 +30,7 @@ export type VictoryCondition =
 			id: string;
 			player: Player;
 			description: string;
+			group?: string;
 			hexes: ObjectiveHex[];
 			/** true → must control every listed hex; false → any one suffices. */
 			requireAll: boolean;
@@ -35,6 +42,7 @@ export type VictoryCondition =
 			id: string;
 			player: Player;
 			description: string;
+			group?: string;
 			hexes: ObjectiveHex[];
 			requireAll: boolean;
 			/** Win after controlling the hex(es) for this many consecutive game turns. */
@@ -45,8 +53,18 @@ export type VictoryCondition =
 			id: string;
 			player: Player;
 			description: string;
+			group?: string;
 			edge: MapEdge;
 			/** Win when this many own units have exited off the named edge. */
+			count: number;
+	  }
+	| {
+			kind: 'raze';
+			id: string;
+			player: Player;
+			description: string;
+			group?: string;
+			/** Win when at least this many hexes have been razed (TerrainType.BURNED). */
 			count: number;
 	  };
 
@@ -89,6 +107,8 @@ export type VictorySnapshot = {
 	bounds: { minCol: number; maxCol: number; minRow: number; maxRow: number };
 	/** Units that exited this turn, by edge. Empty until the exit action is wired. */
 	exitedThisTurn: ReadonlyArray<{ unitId: string; player: Player; edge: MapEdge }>;
+	/** Count of hexes currently burned (TerrainType.BURNED), for raze conditions. */
+	burnedHexes: number;
 };
 
 export const emptyVictoryProgress = (): VictoryProgress => ({ holdStreaks: {}, exitedCounts: {} });
@@ -157,6 +177,32 @@ function tiebreak(snapshot: VictorySnapshot): VictoryOutcome {
 }
 
 /**
+ * Is a single condition satisfied this turn? Pure per-kind check. `holdStreaks`
+ * and `exitedCounts` are the cross-turn accumulators computed earlier this turn.
+ * Grouping (AND across conditions) is handled by the caller, not here.
+ */
+function isConditionSatisfied(
+	c: VictoryCondition,
+	snapshot: VictorySnapshot,
+	holdStreaks: Record<string, number>,
+	exitedCounts: Record<string, number>
+): boolean {
+	switch (c.kind) {
+		case 'eliminate_units':
+			return snapshot.eliminatedByPlayer[enemyOf(c.player)] >= c.count;
+		case 'control_hexes':
+			if (c.atTurn !== null && snapshot.turn !== c.atTurn) return false;
+			return controlsHexes(c.player, c.hexes, c.requireAll, snapshot.units);
+		case 'hold_hexes':
+			return (holdStreaks[c.id] ?? 0) >= c.consecutiveTurns;
+		case 'exit_units':
+			return (exitedCounts[c.id] ?? 0) >= c.count;
+		case 'raze':
+			return snapshot.burnedHexes >= c.count;
+	}
+}
+
+/**
  * Pure victory evaluator. Recomputes cross-turn progress (hold streaks, exit
  * counts) and decides whether the game has ended.
  *
@@ -194,33 +240,22 @@ export function evaluateVictory(
 
 	const nextProgress: VictoryProgress = { holdStreaks, exitedCounts };
 
-	// Second pass: which conditions are satisfied this turn?
-	const satisfiedByPlayer = new Map<Player, string>(); // player → first satisfied condition id
+	// Second pass: who has a satisfied win this turn? An ungrouped condition wins on
+	// its own (OR); a group of one player's conditions wins only when every member is
+	// satisfied (AND). First win per player is captured as the outcome's conditionId.
+	const satisfiedIds = new Set<string>();
+	for (const c of conditions)
+		if (isConditionSatisfied(c, snapshot, holdStreaks, exitedCounts)) satisfiedIds.add(c.id);
+
+	const groupSatisfied = (player: Player, group: string) =>
+		conditions
+			.filter((c) => c.player === player && c.group === group)
+			.every((c) => satisfiedIds.has(c.id));
+
+	const satisfiedByPlayer = new Map<Player, string>(); // player → representative winning condition id
 	for (const c of conditions) {
-		let satisfied = false;
-		switch (c.kind) {
-			case 'eliminate_units': {
-				const enemy = enemyOf(c.player);
-				satisfied = snapshot.eliminatedByPlayer[enemy] >= c.count;
-				break;
-			}
-			case 'control_hexes': {
-				if (c.atTurn !== null && snapshot.turn !== c.atTurn) break;
-				satisfied = controlsHexes(c.player, c.hexes, c.requireAll, snapshot.units);
-				break;
-			}
-			case 'hold_hexes': {
-				satisfied = holdStreaks[c.id] >= c.consecutiveTurns;
-				break;
-			}
-			case 'exit_units': {
-				satisfied = exitedCounts[c.id] >= c.count;
-				break;
-			}
-		}
-		if (satisfied && !satisfiedByPlayer.has(c.player)) {
-			satisfiedByPlayer.set(c.player, c.id);
-		}
+		const wins = c.group ? groupSatisfied(c.player, c.group) : satisfiedIds.has(c.id);
+		if (wins && !satisfiedByPlayer.has(c.player)) satisfiedByPlayer.set(c.player, c.id);
 	}
 
 	if (satisfiedByPlayer.size === 1) {
