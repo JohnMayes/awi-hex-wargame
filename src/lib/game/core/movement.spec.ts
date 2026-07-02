@@ -434,6 +434,39 @@ describe('getValidMoveTargets — road bonus', () => {
 		expect(includesCoord(coordsOf(targets), step2)).toBe(false);
 	});
 
+	it('Road carries a unit through terrain its type cannot normally enter', () => {
+		expect.assertions(3);
+		const layout = openRect(5, 5);
+		const grid0 = buildGrid(layout);
+		const startHex = grid0.getHex({ col: 2, row: 2 })!;
+		const cubeMap = buildCubeToOffset(grid0);
+		const [dq, dr] = directions[0];
+		const step1 = cubeMap.get(`${startHex.q + dq},${startHex.r + dr}`);
+		if (!step1) {
+			expect(true).toBe(true);
+			expect(true).toBe(true);
+			expect(true).toBe(true);
+			return;
+		}
+		// A road from (2,2) into an adjacent WOODS hex that Line Infantry cannot enter.
+		for (const c of layout) {
+			if ((c.col === 2 && c.row === 2) || coordsEqual(c, step1)) c.roadEdges = [0, 3];
+			if (coordsEqual(c, step1)) c.terrain = TerrainType.WOODS;
+		}
+		const grid = buildGrid(layout);
+		const u = unit('u', UnitType.LINE_INFANTRY, 0, { col: 2, row: 2 });
+		const onRoad = getValidMoveTargets(u, grid, [u]).find((t) => coordsEqual(t.coordinates, step1));
+		expect(onRoad).toBeDefined(); // reachable via the road
+		expect(onRoad?.usesRoad).toBe(true);
+		// Without the road, the same WOODS hex is off-limits to Line Infantry.
+		const noRoad = layout.map((c) => ({ ...c, roadEdges: undefined }));
+		const gridNoRoad = buildGrid(noRoad);
+		const blocked = getValidMoveTargets(u, gridNoRoad, [u]).find((t) =>
+			coordsEqual(t.coordinates, step1)
+		);
+		expect(blocked).toBeUndefined();
+	});
+
 	it('Unit not starting on road reports usesRoad=false on all targets', () => {
 		expect.assertions(1);
 		const layout = openRect(3, 3);

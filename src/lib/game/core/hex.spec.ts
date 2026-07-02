@@ -8,7 +8,8 @@ import {
 	directions,
 	edgeToward,
 	isEntrenchedToward,
-	roadConnects
+	roadConnects,
+	roadEdgesFromPaths
 } from './hex';
 import { TerrainType } from './types';
 
@@ -148,5 +149,36 @@ describe('roadConnects', () => {
 		expect(roadConnects(road(center, [0]), road(nb, [3]))).toBe(true);
 		expect(roadConnects(road(center, [0]), road(nb, [0]))).toBe(false); // nb lacks reciprocal
 		expect(roadConnects(road(center, [1]), road(nb, [3]))).toBe(false); // from lacks facing edge
+	});
+});
+
+describe('roadEdgesFromPaths', () => {
+	const inBounds = (c: { col: number; row: number }) =>
+		c.col >= 0 && c.col < 7 && c.row >= 0 && c.row < 7;
+	const road = (c: { col: number; row: number }, edges: readonly number[] = []) =>
+		HexCell.create({ col: c.col, row: c.row, terrain: TerrainType.OPEN, roadEdges: [...edges] });
+
+	it('records reciprocal edges so both hexes of a step connect', () => {
+		expect.assertions(2);
+		const a = { col: 3, row: 3 };
+		const b = { col: 3, row: 4 }; // adjacent (same column, next row)
+		const roads = roadEdgesFromPaths([[a, b]], inBounds);
+		expect(roadConnects(road(a, roads['3,3']), road(b, roads['3,4']))).toBe(true);
+		expect(roadConnects(road(b, roads['3,4']), road(a, roads['3,3']))).toBe(true);
+	});
+
+	it('throws on a non-adjacent step (catches path typos)', () => {
+		expect.assertions(1);
+		expect(() => roadEdgesFromPaths([[{ col: 0, row: 0 }, { col: 3, row: 3 }]], inBounds)).toThrow(
+			/not adjacent/
+		);
+	});
+
+	it('drops an off-board waypoint as a key but keeps the on-board stub edge', () => {
+		expect.assertions(2);
+		// {row:-1} is off-board: authors a north-exit stub on the top-row hex.
+		const roads = roadEdgesFromPaths([[{ col: 3, row: -1 }, { col: 3, row: 0 }]], inBounds);
+		expect(roads['3,-1']).toBeUndefined();
+		expect(roads['3,0']).toEqual([2]); // edge 2 = toward the off-board (north) hex
 	});
 });

@@ -107,3 +107,40 @@ export function roadConnects(from: HexCell, to: HexCell): boolean {
 	const d = edgeToward(from, to);
 	return from.roadEdges.has(d) && to.roadEdges.has((d + 3) % 6);
 }
+
+/**
+ * Build a `roadEdges` map (offset-coord `"col,row"` key → sorted edge direction
+ * indices) from ordered hex paths — so a road is authored as the sequence of hexes
+ * it runs through, not as hand-computed per-hex edge indices. For each consecutive
+ * pair the shared edge is derived with `edgeToward` and recorded on *both* hexes
+ * (the reciprocity `roadConnects` requires); a step between non-adjacent hexes
+ * throws, catching a path typo at load rather than as a silently broken road.
+ *
+ * Off-board waypoints (those failing `inBounds`) are allowed and drop out as keys —
+ * prefix a path with the hex just past the border to author a road running off the
+ * map edge (e.g. `{ col, row: -1 }` before the top-row hex → a north-exit stub on
+ * that hex). Does not check terrain: a road overlays whatever terrain it crosses.
+ */
+export function roadEdgesFromPaths(
+	paths: readonly (readonly OffsetCoordinates[])[],
+	inBounds: (c: OffsetCoordinates) => boolean
+): Record<string, readonly number[]> {
+	const edges = new Map<string, Set<number>>();
+	const record = (c: OffsetCoordinates, edge: number) => {
+		if (!inBounds(c)) return;
+		const key = `${c.col},${c.row}`;
+		(edges.get(key) ?? edges.set(key, new Set()).get(key)!).add(edge);
+	};
+	for (const path of paths)
+		for (let i = 0; i < path.length - 1; i++) {
+			const from = new HexCell(path[i]);
+			const to = new HexCell(path[i + 1]);
+			if (hexDistance(from, to) !== 1)
+				throw new Error(
+					`roadEdgesFromPaths: ${from.col},${from.row} and ${to.col},${to.row} are not adjacent`
+				);
+			record(path[i], edgeToward(from, to));
+			record(path[i + 1], edgeToward(to, from));
+		}
+	return Object.fromEntries([...edges].map(([key, set]) => [key, [...set].sort((a, b) => a - b)]));
+}

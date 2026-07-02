@@ -1,5 +1,5 @@
 import { TerrainType } from '../core/types';
-import type { HexCell } from '../core/hex';
+import { roadEdgesFromPaths, type HexCell } from '../core/hex';
 import type { OffsetCoordinates } from 'honeycomb-grid';
 
 // `entrenchedEdges` / `roadEdges` list direction indices (0..5, indexing
@@ -108,20 +108,26 @@ const BUNKER_HILL_FEATURES: Record<string, TerrainType> = {
 	'1,7': TerrainType.TOWN
 };
 
-// Central road running south→north along col 3 (interrupted by Breeds at row 4
-// and Bunker at row 1). A road overlays the hex's real terrain — these hexes stay
-// OPEN. [2, 5] are the north and south edges (verified against the flat-top
-// geometry), so each hex draws a straight vertical track; spokes meeting a hill
-// hex stop at the shared edge (the hill is not a road, so no road-move bonus onto
-// it) while consecutive road hexes connect for the bonus.
-const BUNKER_HILL_NS_ROAD = [2, 5] as const;
-const BUNKER_HILL_ROADS: Record<string, readonly number[]> = {
-	'3,2': BUNKER_HILL_NS_ROAD,
-	'3,3': BUNKER_HILL_NS_ROAD,
-	'3,5': BUNKER_HILL_NS_ROAD,
-	'3,6': BUNKER_HILL_NS_ROAD,
-	'3,7': BUNKER_HILL_NS_ROAD
-};
+const BUNKER_HILL_COLS = 7;
+const BUNKER_HILL_ROWS = 9;
+
+// Two roads down from the Charlestown Neck (north), one skirting each side of the
+// Bunker/Breeds hill spine (the hills were never roaded through), meeting at the
+// southern landing (3,8). Authored as the ordered hexes each road runs through;
+// roadEdgesFromPaths derives the per-hex edge indices and throws if a step isn't
+// adjacent. A leading off-board hex ({ row: -1 }) gives each road its north-edge
+// exit stub. A road overlays terrain, so a road hex keeps its own terrain (the
+// west road runs through Charlestown town 1,6/1,7).
+const rc = (col: number, row: number): OffsetCoordinates => ({ col, row });
+const BUNKER_HILL_ROADS = roadEdgesFromPaths(
+	[
+		// West: north exit -> down col 1 through Charlestown -> east to the landing
+		[rc(1, -1), rc(1, 0), rc(1, 1), rc(1, 2), rc(1, 3), rc(1, 4), rc(1, 5), rc(1, 6), rc(1, 7), rc(2, 8), rc(3, 8)], // prettier-ignore
+		// East: north exit -> east to col 5 -> down past Moulton's -> west to the landing
+		[rc(3, -1), rc(3, 0), rc(4, 1), rc(5, 1), rc(5, 2), rc(5, 3), rc(5, 4), rc(5, 5), rc(5, 6), rc(5, 7), rc(4, 8), rc(3, 8)] // prettier-ignore
+	],
+	(c) => c.col >= 0 && c.col < BUNKER_HILL_COLS && c.row >= 0 && c.row < BUNKER_HILL_ROWS
+);
 
 // Entrenched edges on Breeds & Bunker Hill, facing the British (south) approach.
 // Directions 0/4/5 are the southern arc on our flat-top offset grid (verified:
@@ -137,8 +143,8 @@ const BUNKER_HILL_ENTRENCHMENTS: Record<string, readonly number[]> = {
 	'5,4': BUNKER_HILL_SOUTH_ARC // rightmost Colonial line (open ground, still dug in)
 };
 
-export const BUNKER_HILL_MAP: MapDefinition = Array.from({ length: 7 }, (_, col) =>
-	Array.from({ length: 9 }, (_, row) => ({
+export const BUNKER_HILL_MAP: MapDefinition = Array.from({ length: BUNKER_HILL_COLS }, (_, col) =>
+	Array.from({ length: BUNKER_HILL_ROWS }, (_, row) => ({
 		col,
 		row,
 		terrain: BUNKER_HILL_FEATURES[`${col},${row}`] ?? TerrainType.OPEN,

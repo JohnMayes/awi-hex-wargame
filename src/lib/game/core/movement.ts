@@ -30,7 +30,10 @@ const offsetKey = (col: number, row: number) => `${col},${row}`;
  *
  * Pathfinding is a BFS in cube space that respects: movement allowance,
  * terrain entry, stacking, Light Infantry pass-through, and road bonus
- * (+1 when an all-road path is possible from a road start). Any unit may
+ * (+1 when an all-road path is possible from a road start). A road also lets
+ * any unit move through terrain its type could not otherwise enter (e.g. Line
+ * Infantry through woods), as long as the entire move stays on the connected
+ * road — impassable terrain (LAKE/MARSH/RIVER) is never crossed. Any unit may
  * voluntarily end its move adjacent to an enemy under normal movement —
  * the old "non-chargers may not move adjacent" rule was retired with the
  * same-hex charge model.
@@ -99,19 +102,25 @@ export function getValidMoveTargets(
 			const neighbor = hexMap.get(cubeKey(hex.q + dq, hex.r + dr));
 			if (!neighbor) continue; // off-map
 
-			if (!canUnitEnterTerrain(unit.type, neighbor.terrain)) continue;
-
 			const neighborKey = offsetKey(neighbor.col, neighbor.row);
+
+			if (mode === 'ROAD_ONLY') {
+				if (!roadConnects(hex, neighbor)) continue;
+				// A road carries any unit through terrain its type couldn't otherwise
+				// enter (e.g. Line Infantry through woods) — the whole ROAD_ONLY path
+				// starts and stays on the connected road — but never crosses truly
+				// impassable terrain (LAKE/MARSH/RIVER).
+				if (terrainDefinitions[neighbor.terrain].isImpassable) continue;
+				// Road movement may not move adjacent to an enemy at any step (rules §2)
+				if (enemyAdjKeys.has(neighborKey)) continue;
+			} else if (!canUnitEnterTerrain(unit.type, neighbor.terrain)) {
+				continue;
+			}
+
 			const occupant = unitByKey.get(neighborKey);
 			if (occupant) {
 				if (occupant.player !== unit.player) continue; // cannot enter enemy
 				if (!def.canPassThroughFriendly) continue; // blocked by friendly
-			}
-
-			if (mode === 'ROAD_ONLY') {
-				if (!roadConnects(hex, neighbor)) continue;
-				// Road movement may not move adjacent to an enemy at any step (rules §2)
-				if (enemyAdjKeys.has(neighborKey)) continue;
 			}
 
 			const newCost = cost + 1;
