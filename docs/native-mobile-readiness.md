@@ -24,6 +24,7 @@ add a native shell **when ready** (the native deps are intentionally not install
 ## Steps when packaging native
 
 ### Common (both frameworks)
+
 - **`bundleStrategy: 'single'`** — add under `kit.output` in `svelte.config.js` to collapse
   the app to a single JS/CSS request (fewer round-trips under `file://`). Deferred because
   it bloats web initial load; only worth it once native is the primary target.
@@ -32,16 +33,19 @@ add a native shell **when ready** (the native deps are intentionally not install
   `padding: env(safe-area-inset-*)` on the top/bottom bars. Cosmetic until on real hardware.
 
 ### Tauri (Rust; desktop + iOS/Android)
+
 ```sh
 pnpm add -D @tauri-apps/cli
 pnpm tauri init      # frontendDist -> ../build, devUrl -> http://localhost:5173
 pnpm tauri android init   # or: pnpm tauri ios init
 pnpm tauri android dev    # / build
 ```
+
 Point Tauri's `frontendDist` at the `adapter-static` output dir and `beforeBuildCommand`
 at `pnpm build`.
 
 ### Capacitor (web-native; iOS/Android)
+
 ```sh
 pnpm add @capacitor/core && pnpm add -D @capacitor/cli
 pnpm cap init         # webDir -> the adapter-static output dir
@@ -50,9 +54,11 @@ pnpm cap add ios && pnpm cap add android
 pnpm build && pnpm cap sync
 pnpm cap run ios      # / android
 ```
+
 Set `webDir` to the build output and run `cap sync` after every `pnpm build`.
 
 ## Notes
+
 - Keep `ssr = false`. If a specific route ever needs prerendering for a web deploy, add
   `export const prerender = true` on that route — the `onMount` engine guard still holds.
 - A native app is single-window, so the render layer's single-instance engine model (no

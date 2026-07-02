@@ -9,3 +9,10 @@
 </svelte:head>
 
 {@render children()}
+
+<style>
+	:global(body) {
+		margin: 0;
+		font-family: 'IBM Plex Sans', system-ui, sans-serif;
+	}
+</style>

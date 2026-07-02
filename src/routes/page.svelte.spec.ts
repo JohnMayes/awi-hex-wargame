@@ -3,11 +3,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 import { resetGameStore } from '$lib/game/state/gameStore.svelte';
 
-// The page renders the LittleJS board plus the DOM chrome overlay. Mounting the
-// real engine in headless Chromium would start an unstoppable RAF loop, attach
-// document listeners, and request WebGL — none of which we want in a chrome
-// test. Mock the engine to no-ops so this exercises only the DOM overlay (the
-// canvas board is covered by the render/ Node specs).
+// Launching a game mounts GameScreen → LittleBoard → the engine. Mock the engine
+// to no-ops so this integration test exercises only the menu→game view swap; the
+// chrome behaviour itself is covered by GameScreen.svelte.spec.ts.
 vi.mock('$lib/game/render/engine', () => ({
 	mountBoard: () => Promise.resolve(),
 	unmountBoard: () => {}
@@ -15,63 +13,21 @@ vi.mock('$lib/game/render/engine', () => ({
 
 import Page from './+page.svelte';
 
-describe('/+page.svelte (LittleJS)', () => {
-	// The store is a module singleton; reset so each test starts from Blue's turn.
+describe('/+page.svelte (app shell)', () => {
 	beforeEach(() => resetGameStore());
 
-	it('overlays the DOM chrome and End Turn flips the active player', async () => {
+	it('boots on the menu and New Game → scenario → Play swaps to the board', async () => {
 		render(Page);
 
-		// Name matches both 'End Turn' and the armed 'End turn? (N left)' label.
-		const endTurn = page.getByRole('button', { name: /end turn/i });
-		await expect.element(endTurn).toBeInTheDocument();
+		// The menu is the landing screen — no board chrome yet.
+		const newGame = page.getByRole('button', { name: 'New Game' });
+		await expect.element(newGame).toBeInTheDocument();
 
-		// Blue (player 0) starts; End Turn hands off to Red (player 1). Scope to the
-		// top bar (role banner) — the objectives dialog also lists "Blue"/"Red".
-		const banner = page.getByRole('banner');
-		await expect.element(banner.getByText('Blue')).toBeInTheDocument();
-		// Un-activated units remain, so the first press only arms the soft-confirm;
-		// the second press actually ends the turn.
-		await endTurn.click();
-		await endTurn.click();
-		await expect.element(banner.getByText('Red')).toBeInTheDocument();
-	});
+		await newGame.click();
+		await page.getByRole('button', { name: /pitched battle/i }).click();
+		await page.getByRole('button', { name: 'Play' }).click();
 
-	it('survives unmount/remount — chrome re-renders and End Turn still flips', async () => {
-		// HMR (and navigation) unmount then remount the board, driving
-		// mountBoard/unmountBoard. The page must compose cleanly again afterward.
-		const first = render(Page);
+		// Now on the game screen: the top bar's End Turn control is present.
 		await expect.element(page.getByRole('button', { name: /end turn/i })).toBeInTheDocument();
-		first.unmount();
-
-		render(Page);
-		const endTurn = page.getByRole('button', { name: /end turn/i });
-		await expect.element(endTurn).toBeInTheDocument();
-		const banner = page.getByRole('banner');
-		await expect.element(banner.getByText('Blue')).toBeInTheDocument();
-		// First press arms the soft-confirm (units remain), second ends the turn.
-		await endTurn.click();
-		await endTurn.click();
-		await expect.element(banner.getByText('Red')).toBeInTheDocument();
-	});
-
-	// Regression: the chrome must stop press AND release events (mousedown/up,
-	// touchstart/end) from reaching `document`, where the real engine's input
-	// listeners live. The touchend leak in particular let the engine preventDefault
-	// the synthesized click, leaving chrome buttons dead to touch.
-	it('swallows chrome press/release events so they never reach document', async () => {
-		expect.assertions(5); // 1 presence check + 4 swallowed event types
-		render(Page);
-		const endTurn = page.getByRole('button', { name: /end turn/i });
-		await expect.element(endTurn).toBeInTheDocument();
-		const el = endTurn.element();
-
-		for (const type of ['mousedown', 'mouseup', 'touchstart', 'touchend']) {
-			const spy = vi.fn();
-			document.addEventListener(type, spy);
-			el.dispatchEvent(new Event(type, { bubbles: true, cancelable: true }));
-			document.removeEventListener(type, spy);
-			expect(spy, `${type} should be swallowed before document`).not.toHaveBeenCalled();
-		}
 	});
 });
