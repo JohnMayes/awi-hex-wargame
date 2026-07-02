@@ -19,6 +19,10 @@ pnpm test         # Run all tests once (CI mode)
 pnpm test:unit    # Run tests in watch mode (Vitest)
 ```
 
+## Build target
+
+Ships as a **static SPA**: `@sveltejs/adapter-static` with `fallback: 'index.html'` (`svelte.config.js`) and `ssr = false` in `src/routes/+layout.ts`. There is no server surface. `pnpm build` emits a self-contained static bundle deployable to any static host — and structured so a native shell (Tauri/Capacitor) can wrap it later. Native tooling is intentionally not yet a dependency; see `docs/native-mobile-readiness.md` for the steps to add it when ready.
+
 ## Code Style
 
 Prettier with: tabs, single quotes, no trailing commas, 100 char print width. Svelte files use the `svelte` parser. Run `pnpm format` to auto-format.

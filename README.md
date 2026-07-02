@@ -12,6 +12,10 @@ pnpm test         # Run all tests
 pnpm format       # Auto-format with Prettier
 ```
 
+## Native-mobile readiness
+
+The app builds as a **static SPA** (`adapter-static`, `ssr = false`), so `pnpm build` produces a self-contained client bundle a native shell (Tauri/Capacitor) can wrap. The SvelteKit side is ready today; native tooling is a future opt-in whose deps are **not yet installed**. See [`docs/native-mobile-readiness.md`](docs/native-mobile-readiness.md).
+
 ## Game Rules
 
 `rules/living-rules.md` is the authoritative rules document. All implementation should be validated against it.

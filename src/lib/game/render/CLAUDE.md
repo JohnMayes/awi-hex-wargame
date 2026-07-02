@@ -11,7 +11,7 @@ This directory is the **LittleJS rendering layer** — the game's sole renderer.
 The sibling `../LittleJS-AI/` repo (and its `CLAUDE.md`) assume a **global `<script>`, no-bundler, standalone-`games/`-folder, 4-space-indent** workflow. **Ours is the opposite** — do not copy its setup/structure conventions verbatim. Here:
 
 - **ESM via Vite.** Import from the `littlejsengine` npm package (a namespace object, referred to as `LJS` in our code), never a global `<script>` tag. Engine globals are accessed as `LJS.drawPoly`, `LJS.vec2`, etc.
-- **Client-only mount.** `engineInit` touches `document`, so call it **only inside `onMount`** (we use `await import('littlejsengine')` there). The page stays SSR'd; the engine simply never runs server-side. Never call engine APIs at module top level or in a `$derived`/`$effect` that can run during SSR.
+- **Client-only mount.** `engineInit` touches `document`, so call it **only inside `onMount`** (we use `await import('littlejsengine')` there). The app builds as a **static SPA** (`ssr = false` in `src/routes/+layout.ts`), so there is no server render at all — but `onMount` + the dynamic import remain the real guard: they keep the engine out of any non-browser context (SSR here, and equally the build-time render if prerender is ever re-enabled). Never call engine APIs at module top level or in a `$derived`/`$effect` that can run outside the browser.
 - **Project style:** tabs + the repo Prettier config (`pnpm format`). Not 4-space.
 - **Validate `.svelte`** with the Svelte MCP autofixer before finishing (see root `CLAUDE.md`).
 
@@ -25,6 +25,18 @@ The sibling `../LittleJS-AI/` repo (and its `CLAUDE.md`) assume a **global `<scr
 - **Board a11y is a documented gap (R7 decision).** The canvas is an opaque bitmap with no keyboard/AT affordance; board interaction is touch/pointer only. The accessible controls (End Turn / Move / Fire, status) live in the DOM chrome as real `<button>`s. We label `mainCanvas` with `aria-label="Game board"` but do **not** provide keyboard/screen-reader board navigation — deferred/ticketed, appropriate for a mobile-first touch game.
 - **HMR:** the engine can't be hot-patched cleanly (would stack a second loop), so `LittleBoard.svelte` forces a full reload via `import.meta.hot.accept(() => location.reload())`.
 - **`setDebugWatermark` may be stripped** from production builds — call it guarded: `LJS.setDebugWatermark?.(false)`.
+
+## Native-mobile notes (Tauri/Capacitor readiness)
+
+The build is a static SPA precisely so a native shell can wrap it (see `docs/native-mobile-readiness.md`). The render layer is already most of the way there — **don't re-solve these:**
+
+- **DPR canvas fix, touch-only input, gesture suppression** are already handled (see the resize/DPR bullet above). A webview is just another browser context, so they carry over.
+- **Background pause carries over.** The `visibilitychange` → `setPaused` path also fires when a Capacitor/Tauri app is backgrounded (webviews dispatch `visibilitychange`), so there's no extra native lifecycle hook to wire for the "stop rendering when hidden" case.
+
+Two things are **deliberately deferred** to native-packaging time (out of scope until then):
+
+- **Safe-area insets.** The DOM chrome bars in `+page.svelte` don't yet honor `env(safe-area-inset-*)` / `viewport-fit=cover` — they'd sit under a notch/home-indicator on real devices. Cosmetic until running on hardware.
+- **`bundleStrategy: 'single'`** (under `kit.output`) collapses the app to one JS/CSS request — good for `file://` serving, but bloats web initial load, so add it only when packaging native.
 
 ## The store contract (the only coupling)
 
