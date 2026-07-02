@@ -1013,6 +1013,11 @@ export class GameStore {
 		if (this.activeUnitId !== null) {
 			this.#finishActivation();
 		}
+		// A merely-selected (never-activated) unit isn't touched by #finishActivation,
+		// so clear its selection + preview here or its highlights bleed into the next
+		// player's turn.
+		this.units = this.units.map((u) => (u.selected ? { ...u, selected: false } : u));
+		this.pendingAction = null;
 
 		const prevTurn = this.turn;
 		const prevPlayer = this.activePlayer;
