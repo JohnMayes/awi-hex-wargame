@@ -31,6 +31,9 @@ let active = false;
 let wantActive = false;
 let currentStore: GameStore | null = null;
 let bounds: Bounds | null = null;
+// Dev-only debug overlay (hex col,row labels + state snapshot). Toggled by 'D';
+// the whole feature is dead-code-eliminated from production via import.meta.env.DEV.
+let debug = false;
 
 // Largest backing-store the engine may allocate. The engine default (1920×1080)
 // caps `mainCanvasSize` and then sets CSS size to maxSize/devicePixelRatio, so on
@@ -208,6 +211,33 @@ function drawCommandOverlay(store: GameStore) {
 	}
 }
 
+/** Dev debug overlay: a col,row label on every hex (in the scenario coordinate
+ * format `{ col, row }`) plus a top-left state snapshot. Toggled by 'D'; only
+ * reachable in dev builds (see the `import.meta.env.DEV` guard in gameUpdate). */
+function drawDebug(store: GameStore) {
+	if (!LJS || !store.grid) return;
+	const fill = color(SP_TEXT_FILL);
+	const outline = color(SP_TEXT_OUTLINE);
+	// Per-hex coordinate label, drawn at the hex center in world space.
+	for (const hex of store.grid) {
+		LJS.drawText(`${hex.col},${hex.row}`, toWorld({ x: hex.x, y: hex.y }), 18, fill, 3, outline);
+	}
+	// State snapshot, screen-space top-left (below the ~52px DOM top bar). Coords
+	// print in the scenario `{ col, row }` format so positions read off directly.
+	const lines = [
+		`Turn ${store.turn} · ${store.activePlayer === 0 ? 'Blue' : 'Red'}`,
+		...store.units.map(
+			(u) =>
+				`${u.type} {${u.coordinates.col},${u.coordinates.row}} SP${u.strengthPoints}${u.activated ? ' ·act' : ''}`
+		)
+	];
+	let y = 80;
+	for (const line of lines) {
+		LJS.drawTextScreen(line, LJS.vec2(10, y), 14, fill, 3, outline, 'left');
+		y += 20;
+	}
+}
+
 /** Board pixel extents + center, from hex corners. */
 function computeBounds(store: GameStore): Bounds {
 	const pts = [...store.grid!].flatMap((h) => h.corners);
@@ -229,6 +259,7 @@ function computeBounds(store: GameStore): Bounds {
 // `mousePos` is world-space and routes touch, so tap == click for free.
 function gameUpdate() {
 	if (!active || !LJS || !currentStore) return;
+	if (import.meta.env.DEV && LJS.keyWasPressed('KeyD')) debug = !debug;
 	if (LJS.mouseWasPressed(0)) resolveBoardClick(LJS.mousePos, currentStore);
 }
 
@@ -367,6 +398,8 @@ function gameRender() {
 	// Floating combat-result text (above counters), driven by new log events.
 	syncFx(currentStore, LJS.time);
 	drawFx(LJS);
+
+	if (import.meta.env.DEV && debug) drawDebug(currentStore);
 }
 
 function noop() {}
