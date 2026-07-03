@@ -169,15 +169,31 @@ describe('roadEdgesFromPaths', () => {
 
 	it('throws on a non-adjacent step (catches path typos)', () => {
 		expect.assertions(1);
-		expect(() => roadEdgesFromPaths([[{ col: 0, row: 0 }, { col: 3, row: 3 }]], inBounds)).toThrow(
-			/not adjacent/
-		);
+		expect(() =>
+			roadEdgesFromPaths(
+				[
+					[
+						{ col: 0, row: 0 },
+						{ col: 3, row: 3 }
+					]
+				],
+				inBounds
+			)
+		).toThrow(/not adjacent/);
 	});
 
 	it('drops an off-board waypoint as a key but keeps the on-board stub edge', () => {
 		expect.assertions(2);
 		// {row:-1} is off-board: authors a north-exit stub on the top-row hex.
-		const roads = roadEdgesFromPaths([[{ col: 3, row: -1 }, { col: 3, row: 0 }]], inBounds);
+		const roads = roadEdgesFromPaths(
+			[
+				[
+					{ col: 3, row: -1 },
+					{ col: 3, row: 0 }
+				]
+			],
+			inBounds
+		);
 		expect(roads['3,-1']).toBeUndefined();
 		expect(roads['3,0']).toEqual([2]); // edge 2 = toward the off-board (north) hex
 	});
