@@ -3,7 +3,13 @@
 // test suite): `pnpm playtest [games]` (default 1000). Reproducible: game i uses
 // seed i, so the whole table is byte-identical across runs.
 import { SCENARIOS } from '../src/lib/game/data/scenarios';
-import { runGame, randomPolicy, type GameOutcome } from '../src/lib/game/sim/playout';
+import {
+	runGame,
+	randomPolicy,
+	heuristicPolicy,
+	type GameOutcome,
+	type Policy
+} from '../src/lib/game/sim/playout';
 import { mulberry32 } from '../src/lib/game/core/rng';
 
 const N = Number(process.argv[2]) || 1000;
@@ -16,11 +22,9 @@ const median = (xs: number[]) => {
 };
 const pct = (n: number) => `${((100 * n) / N).toFixed(1)}%`;
 
-console.log(`Playtest: random vs random, ${N} games/scenario (seed i per game i)\n`);
-
-for (const scenario of Object.values(SCENARIOS)) {
+function report(label: string, scenario: (typeof SCENARIOS)[string], blue: Policy, red: Policy) {
 	const games: GameOutcome[] = Array.from({ length: N }, (_, seed) =>
-		runGame(scenario, randomPolicy, randomPolicy, mulberry32(seed))
+		runGame(scenario, blue, red, mulberry32(seed))
 	);
 
 	const wins = [0, 0];
@@ -35,11 +39,20 @@ for (const scenario of Object.values(SCENARIOS)) {
 	// Elimination rate: games where at least one side was wiped out entirely.
 	const elim = games.filter((g) => Math.min(...g.survivingSpByPlayer) === 0).length;
 
-	console.log(`── ${scenario.name} (${scenario.id}, turnLimit ${scenario.turnLimit}) ──`);
+	console.log(`  [${label}]`);
 	console.log(
-		`  win blue (P0): ${pct(wins[0])}   win red (P1): ${pct(wins[1])}   draw: ${pct(draws)}`
+		`    win blue (P0): ${pct(wins[0])}   win red (P1): ${pct(wins[1])}   draw: ${pct(draws)}`
 	);
-	console.log(`  turns: mean ${mean(turns).toFixed(1)}, median ${median(turns)}`);
-	console.log(`  surviving SP: blue ${mean(sp0).toFixed(1)}, red ${mean(sp1).toFixed(1)}`);
-	console.log(`  elimination rate: ${pct(elim)}\n`);
+	console.log(`    turns: mean ${mean(turns).toFixed(1)}, median ${median(turns)}`);
+	console.log(`    surviving SP: blue ${mean(sp0).toFixed(1)}, red ${mean(sp1).toFixed(1)}`);
+	console.log(`    elimination rate: ${pct(elim)}`);
+}
+
+console.log(`Playtest: ${N} games/scenario (seed i per game i)\n`);
+
+for (const scenario of Object.values(SCENARIOS)) {
+	console.log(`── ${scenario.name} (${scenario.id}, turnLimit ${scenario.turnLimit}) ──`);
+	report('random vs random', scenario, randomPolicy, randomPolicy);
+	report('heuristic vs heuristic', scenario, heuristicPolicy, heuristicPolicy);
+	console.log('');
 }

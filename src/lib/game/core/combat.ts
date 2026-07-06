@@ -59,18 +59,14 @@ export function getValidFireTargets(
 	return results;
 }
 
-/**
- * Resolves a single fire action against an eligible target. Pure: does not
- * mutate inputs and does not enforce eligibility (caller filters via
- * `getValidFireTargets`). The RNG is consumed up to twice — once for the hit
- * roll and (only on a hit) once more for the doubled-damage roll.
- */
-export function resolveFireAction(
+/** Hit-chance breakdown for a fire action — the analytic core shared by
+ * `resolveFireAction` (which then rolls) and `expectedFireDamage` (which
+ * integrates instead of sampling). Single source of truth for the modifiers. */
+function fireModifiers(
 	attacker: Unit,
 	target: Unit,
-	grid: Grid<HexCell>,
-	rng: () => number = Math.random
-): FireResult {
+	grid: Grid<HexCell>
+): Pick<FireResult, 'baseHitChance' | 'coverModifier' | 'longRangeModifier' | 'finalHitChance'> {
 	const def = getUnitDefinition(attacker.type);
 	const attackerHex = grid.getHex(attacker.coordinates)!;
 	const targetHex = grid.getHex(target.coordinates)!;
@@ -84,9 +80,35 @@ export function resolveFireAction(
 		attacker.type === UnitType.ARTILLERY && dist >= ARTILLERY_LONG_RANGE_MIN_DIST
 			? ARTILLERY_LONG_RANGE_PENALTY
 			: 0;
-	const finalHitChance = Math.max(
-		0,
-		Math.min(1, baseHitChance + coverModifier + longRangeModifier)
+	const finalHitChance = Math.max(0, Math.min(1, baseHitChance + coverModifier + longRangeModifier));
+	return { baseHitChance, coverModifier, longRangeModifier, finalHitChance };
+}
+
+/**
+ * Expected SP damage from one fire action, computed analytically (hit chance ×
+ * mean damage-on-hit) rather than by sampling. Used by AI policies to rank and
+ * gate targets without an RNG roll. Ignores morale/leader knock-on effects.
+ */
+export function expectedFireDamage(attacker: Unit, target: Unit, grid: Grid<HexCell>): number {
+	return fireModifiers(attacker, target, grid).finalHitChance * (1 + DOUBLE_DAMAGE_CHANCE);
+}
+
+/**
+ * Resolves a single fire action against an eligible target. Pure: does not
+ * mutate inputs and does not enforce eligibility (caller filters via
+ * `getValidFireTargets`). The RNG is consumed up to twice — once for the hit
+ * roll and (only on a hit) once more for the doubled-damage roll.
+ */
+export function resolveFireAction(
+	attacker: Unit,
+	target: Unit,
+	grid: Grid<HexCell>,
+	rng: () => number = Math.random
+): FireResult {
+	const { baseHitChance, coverModifier, longRangeModifier, finalHitChance } = fireModifiers(
+		attacker,
+		target,
+		grid
 	);
 
 	const hit = rng() < finalHitChance;
