@@ -4,8 +4,8 @@ How the two sibling projects (`../Hex-Wargame-JavaScript`, `../CAPH`) implement
 computer opponents, and how the same concepts drop into our engine. Written
 2026-07-06.
 
-**Bottom line up front:** both are *rule-based heuristic policies with no tree
-search* — a fixed decision procedure run once per unit. That is exactly the
+**Bottom line up front:** both are _rule-based heuristic policies with no tree
+search_ — a fixed decision procedure run once per unit. That is exactly the
 "greedy / 1-ply per-activation play" the [evaluation doc](./ai-opponent-evaluation.md)
 already flagged as our laziest shippable opponent (M15). Neither project has an
 eval function, minimax, or MCTS. They are concrete proof that a heuristic policy
@@ -17,7 +17,7 @@ is enough for a playable hex-wargame opponent, and both slot into our existing
 ## 1. Hex-Wargame-JavaScript (`js/AI.js`, 214 lines)
 
 **Model: scenario-scripted goals + odds-gated attack.** The distinguishing idea
-is that the *scenario designer* supplies AI intent as data.
+is that the _scenario designer_ supplies AI intent as data.
 
 ### Movement — goal-seeking with engage-override (`AI_unit_move`)
 
@@ -35,7 +35,7 @@ reach, close with them." Objective comes from scenario data, not code.
 
 - Iterate hexes holding an enemy stack. For each, build an attack plan and greedily
   add friendly units (`battle_matcher`) until combat **odds** (`Σ attacker combat
-  / Σ defender combat`) clear a threshold.
+/ Σ defender combat`) clear a threshold.
 - **Only attack if `odds > 1`**; otherwise abort and touch nothing.
 - After a won combat, `try_pursuit` picks a random pursuit target/hex.
 
@@ -70,11 +70,11 @@ Guarded by an `action-made` flag, in strict priority order:
 6. Fallback → mark the last unit inactive so the turn can end.
 
 Within a matched rule, the unit is chosen **at random** among that type's
-candidates. `level-2-ai` interleaves: run *one* `basic-ai` action for red, hand
+candidates. `level-2-ai` interleaves: run _one_ `basic-ai` action for red, hand
 control back to the player, repeat; drain all red units only once the player is
 out. Ends the turn on objective-reached or mutual exhaustion.
 
-**Takeaways:** (1) priority by unit *capability/role* is a cheap, legible policy;
+**Takeaways:** (1) priority by unit _capability/role_ is a cheap, legible policy;
 (2) "fire whenever a target is in range" is a strong default for ranged units;
 (3) it leans entirely on unit roles rather than map objectives — the weakness the
 JS project's goal hexes fix.
@@ -85,13 +85,13 @@ JS project's goal hexes fix.
 
 The interfaces both projects hand-rolled, we already have:
 
-| Their concept | Our equivalent (already built) |
-| --- | --- |
-| enumerate a unit's reachable hexes / targets | `getValidMoveTargets`, `getValidFireTargets`, `getValidChargeTargets` |
-| "run the AI for a side" | the `Policy` type + `runGame` loop in `sim/playout.ts` |
-| combat odds / attack-worth test | `resolveFireAction` exposes `finalHitChance`; expected damage is **closed-form** = `finalHitChance × (1 + DOUBLE_DAMAGE_CHANCE)` — no sampling needed |
-| `AI.csv` per-group goal hex | scenario `VictoryCondition` already carries objective geometry: `control_hexes`/`hold_hexes` `.hexes`, `exit_units` `.edge` (see `victory.ts`). Per-group intent maps to `condition.group`. |
-| random tie-break | the `rng` already threaded through `Policy` |
+| Their concept                                | Our equivalent (already built)                                                                                                                                                              |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| enumerate a unit's reachable hexes / targets | `getValidMoveTargets`, `getValidFireTargets`, `getValidChargeTargets`                                                                                                                       |
+| "run the AI for a side"                      | the `Policy` type + `runGame` loop in `sim/playout.ts`                                                                                                                                      |
+| combat odds / attack-worth test              | `resolveFireAction` exposes `finalHitChance`; expected damage is **closed-form** = `finalHitChance × (1 + DOUBLE_DAMAGE_CHANCE)` — no sampling needed                                       |
+| `AI.csv` per-group goal hex                  | scenario `VictoryCondition` already carries objective geometry: `control_hexes`/`hold_hexes` `.hexes`, `exit_units` `.edge` (see `victory.ts`). Per-group intent maps to `condition.group`. |
+| random tie-break                             | the `rng` already threaded through `Policy`                                                                                                                                                 |
 
 Neither project needs anything we lack. The AI is just another `Policy` — a
 drop-in sibling of the existing `randomPolicy`, testable **immediately** with the
@@ -107,7 +107,6 @@ math with `resolveFireAction`). Over 300 games/scenario it beats `randomPolicy`
 more lethal than random (SP actually changes hands, eliminations appear) with a
 ~56–61% first-player edge — consistent with the seat-order effect the evaluation
 doc flagged. Design below.
-
 
 Combine the best of both — CAPH's priority ordering, JS's goal-seeking and
 odds-gating — as one `Policy` in `sim/playout.ts`. Per activation:
@@ -141,7 +140,7 @@ than the pure-random unit pick.
 
 ### Ceiling
 
-Both reference AIs are shallow: they play one unit's best *immediate* move with no
+Both reference AIs are shallow: they play one unit's best _immediate_ move with no
 lookahead and lose to any coordinated line. That is the known trade — ship the
 heuristic policy, measure it against `randomPolicy` in the harness, and only add
 search (shallow alpha-beta or MCTS) if it plays too weakly. See

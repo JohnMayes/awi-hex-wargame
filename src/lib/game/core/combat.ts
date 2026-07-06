@@ -80,7 +80,10 @@ function fireModifiers(
 		attacker.type === UnitType.ARTILLERY && dist >= ARTILLERY_LONG_RANGE_MIN_DIST
 			? ARTILLERY_LONG_RANGE_PENALTY
 			: 0;
-	const finalHitChance = Math.max(0, Math.min(1, baseHitChance + coverModifier + longRangeModifier));
+	const finalHitChance = Math.max(
+		0,
+		Math.min(1, baseHitChance + coverModifier + longRangeModifier)
+	);
 	return { baseHitChance, coverModifier, longRangeModifier, finalHitChance };
 }
 

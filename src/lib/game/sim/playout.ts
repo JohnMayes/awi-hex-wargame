@@ -106,7 +106,11 @@ function goalHexes(store: GameStore, unit: Unit): OffsetCoordinates[] {
 	return [...enemies, ...objectives];
 }
 
-function minGoalDist(store: GameStore, coords: OffsetCoordinates, goals: OffsetCoordinates[]): number {
+function minGoalDist(
+	store: GameStore,
+	coords: OffsetCoordinates,
+	goals: OffsetCoordinates[]
+): number {
 	const from = store.grid!.getHex(coords)!;
 	let best = Infinity;
 	for (const g of goals) best = Math.min(best, hexDistance(from, store.grid!.getHex(g)!));
@@ -126,7 +130,9 @@ function bestAction(store: GameStore, unit: Unit, isActive: boolean): ScoredActi
 			best = { action: { kind: 'fire', unitId: unit.id, targetId: t.id }, score: ev };
 	}
 
-	const charges = isActive ? store.validChargeTargets : getValidChargeTargets(unit, grid, store.units);
+	const charges = isActive
+		? store.validChargeTargets
+		: getValidChargeTargets(unit, grid, store.units);
 	for (const d of charges) {
 		// ponytail: naive gate — charge only with an SP edge, no analytic opposed-roll EV.
 		if (unit.strengthPoints < d.strengthPoints) continue;
@@ -150,7 +156,10 @@ function bestAction(store: GameStore, unit: Unit, isActive: boolean): ScoredActi
 			}
 		}
 		if (target)
-			best = { action: { kind: 'move', unitId: unit.id, coords: target.coordinates }, score: MOVE_SCORE };
+			best = {
+				action: { kind: 'move', unitId: unit.id, coords: target.coordinates },
+				score: MOVE_SCORE
+			};
 	}
 
 	return best;
@@ -196,35 +205,7 @@ export function runGame(
 
 	while (!store.isGameOver) {
 		if (++steps > cap) throw new Error(`runGame(${scenario.id}) exceeded activation cap ${cap}`);
-		const policy = store.activePlayer === 0 ? policyBlue : policyRed;
-		const action = policy(store, rng);
-		if (action === null) {
-			store.endPlayerTurn();
-			continue;
-		}
-		if (store.activeUnitId !== action.unitId) {
-			store.activateUnit(action.unitId, rng);
-			// Failed command check auto-finishes the activation (activeUnitId back to
-			// null). Either way the unit can't act this turn — move on.
-			if (store.activationStep !== ActivationStep.ACTION) {
-				if (store.activeUnitId !== null) store.endActivation();
-				continue;
-			}
-		}
-		switch (action.kind) {
-			case 'move':
-				store.moveUnit(action.coords, rng);
-				break;
-			case 'fire':
-				store.fireAt(action.targetId, rng);
-				break;
-			case 'charge':
-				store.chargeAt(action.targetId, rng); // self-finishes the activation
-				break;
-			case 'skip':
-				store.endActivation();
-				break;
-		}
+		stepPolicy(store, store.activePlayer === 0 ? policyBlue : policyRed, rng);
 	}
 
 	return {
@@ -232,4 +213,39 @@ export function runGame(
 		turns: store.turn,
 		survivingSpByPlayer: [sumSp(store.units, 0), sumSp(store.units, 1)]
 	};
+}
+
+// Applies one policy decision to `store`. Returns false when the policy ended the
+// player's turn (endPlayerTurn), true otherwise. Extracted from runGame's loop so
+// the live GameScreen AI effect drives turns through the exact same code path.
+export function stepPolicy(store: GameStore, policy: Policy, rng: () => number): boolean {
+	const action = policy(store, rng);
+	if (action === null) {
+		store.endPlayerTurn();
+		return false;
+	}
+	if (store.activeUnitId !== action.unitId) {
+		store.activateUnit(action.unitId, rng);
+		// Failed command check auto-finishes the activation (activeUnitId back to
+		// null). Either way the unit can't act this turn — move on.
+		if (store.activationStep !== ActivationStep.ACTION) {
+			if (store.activeUnitId !== null) store.endActivation();
+			return true;
+		}
+	}
+	switch (action.kind) {
+		case 'move':
+			store.moveUnit(action.coords, rng);
+			break;
+		case 'fire':
+			store.fireAt(action.targetId, rng);
+			break;
+		case 'charge':
+			store.chargeAt(action.targetId, rng); // self-finishes the activation
+			break;
+		case 'skip':
+			store.endActivation();
+			break;
+	}
+	return true;
 }

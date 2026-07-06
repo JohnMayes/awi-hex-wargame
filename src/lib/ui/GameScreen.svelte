@@ -1,10 +1,16 @@
 <script lang="ts">
 	import type { GameStore } from '$lib/game/state/gameStore.svelte';
+	import type { Player } from '$lib/game/core/types';
+	import { heuristicPolicy, stepPolicy } from '$lib/game/sim/playout';
 	import LittleBoard from '$lib/game/render/LittleBoard.svelte';
 
 	// ponytail: palette hex literals are duplicated with ScenarioMenu.svelte; promote to
 	// CSS tokens if a third screen needs them. Two consumers isn't worth a token system yet.
-	let { store, onExit }: { store: GameStore; onExit: () => void } = $props();
+	let {
+		store,
+		onExit,
+		aiPlayers = []
+	}: { store: GameStore; onExit: () => void; aiPlayers?: Player[] } = $props();
 
 	// Pointer-events discipline for the LJS chrome overlay: stop chrome presses AND
 	// releases from bubbling to `document`, where LittleJS's input listeners live.
@@ -80,6 +86,27 @@
 		armedFor = null;
 		store.endPlayerTurn();
 	}
+
+	const AI_STEP_MS = 400; // pacing so the AI's moves are watchable
+	let aiThinking = false;
+
+	// Drive any AI-controlled side through the same public store API the human uses
+	// (via the shared stepPolicy loop). Reads only isGameOver/activePlayer, so it
+	// re-fires only on a turn-ownership change; aiThinking guards re-entry. With both
+	// sides AI the loop simply continues across the turn flip and plays the whole game.
+	$effect(() => {
+		const over = store.isGameOver;
+		const player = store.activePlayer;
+		if (over || !aiPlayers.includes(player) || aiThinking) return;
+		aiThinking = true;
+		(async () => {
+			while (!store.isGameOver && aiPlayers.includes(store.activePlayer)) {
+				stepPolicy(store, heuristicPolicy, Math.random);
+				await new Promise((r) => setTimeout(r, AI_STEP_MS));
+			}
+			aiThinking = false;
+		})();
+	});
 </script>
 
 {#snippet topBar()}
@@ -101,7 +128,7 @@
 			class="end-turn"
 			data-armed={endTurnArmed}
 			onclick={handleEndTurn}
-			disabled={store.isGameOver}
+			disabled={store.isGameOver || aiPlayers.includes(store.activePlayer)}
 			>{endTurnArmed ? `End turn? (${unitsLeft} left)` : 'End Turn'}</button
 		>
 	</header>

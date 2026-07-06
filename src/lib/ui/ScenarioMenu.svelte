@@ -1,9 +1,10 @@
 <script lang="ts">
 	import { SCENARIOS } from '$lib/game/data/scenarios';
 	import type { Scenario } from '$lib/game/core/scenario';
+	import type { Player } from '$lib/game/core/types';
 
 	// ponytail: palette hex literals are shared with GameScreen.svelte (see note there).
-	let { onPlay }: { onPlay: (scenario: Scenario) => void } = $props();
+	let { onPlay }: { onPlay: (scenario: Scenario, aiPlayers: Player[]) => void } = $props();
 
 	const scenarios = Object.values(SCENARIOS);
 
@@ -13,6 +14,10 @@
 	// would throw. A $derived lookup hands `onPlay` the raw module constant.
 	let selectedId = $state<string | null>(null);
 	const selected = $derived(selectedId ? SCENARIOS[selectedId] : null);
+
+	// Which sides the AI controls. Default: play vs the AI as Blue (red is AI).
+	let aiSides = $state<Record<Player, boolean>>({ 0: false, 1: true });
+	const chosenAi = () => ([0, 1] as Player[]).filter((p) => aiSides[p]);
 
 	const playerName = (p: number) => (p === 0 ? 'Blue' : 'Red');
 
@@ -82,7 +87,17 @@
 					</div>
 				{/each}
 			</div>
-			<button class="primary play" onclick={() => selected && onPlay(selected)}>Play</button>
+			<h3 class="detail-heading">Players</h3>
+			<div class="control-row">
+				{#each [0, 1] as Player[] as p (p)}
+					<button class="ctrl" data-player={p} onclick={() => (aiSides[p] = !aiSides[p])}
+						>{playerName(p)}: {aiSides[p] ? 'AI' : 'Human'}</button
+					>
+				{/each}
+			</div>
+			<button class="primary play" onclick={() => selected && onPlay(selected, chosenAi())}
+				>Play</button
+			>
 		</div>
 	{/if}
 </main>
@@ -300,6 +315,37 @@
 		position: absolute;
 		left: 0.25rem;
 		color: #8a8275;
+	}
+	.control-row {
+		display: flex;
+		gap: 0.75rem;
+		margin-bottom: 0.5rem;
+	}
+	.ctrl {
+		appearance: none;
+		flex: 1;
+		background: #1d2126;
+		border: 1px solid #3a3530;
+		border-radius: 4px;
+		padding: 0.625rem 0.75rem;
+		color: #b8b0a0;
+		font: inherit;
+		font-size: 0.8125rem;
+		font-weight: 600;
+		cursor: pointer;
+		transition:
+			border-color 80ms ease,
+			color 80ms ease;
+	}
+	.ctrl[data-player='0'] {
+		border-left: 3px solid #5a8fe6;
+	}
+	.ctrl[data-player='1'] {
+		border-left: 3px solid #e06a6a;
+	}
+	.ctrl:hover {
+		border-color: #c9a227;
+		color: #e8e1d1;
 	}
 	.play {
 		margin: 1.25rem auto 0;
