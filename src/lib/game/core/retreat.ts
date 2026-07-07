@@ -1,5 +1,5 @@
 import type { Grid, OffsetCoordinates } from 'honeycomb-grid';
-import { HexCell, directions } from './hex';
+import { HexCell, directions, riverBlocks } from './hex';
 import { canUnitEnterTerrain } from './terrain';
 import type { Unit } from './types';
 
@@ -48,6 +48,7 @@ export function getRetreatHex(
 		const neighbor = hexMap.get(`${defenderHex.q + dq},${defenderHex.r + dr}`);
 		if (!neighbor) continue;
 		if (!canUnitEnterTerrain(defender.type, neighbor.terrain)) continue;
+		if (riverBlocks(defenderHex, neighbor)) continue; // can't retreat across an unbridged river
 		if (occupied.has(`${neighbor.col},${neighbor.row}`)) continue;
 
 		const score = dq * pushQ + dr * pushR + ds * pushS;

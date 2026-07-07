@@ -1,5 +1,5 @@
 import type { Grid, OffsetCoordinates } from 'honeycomb-grid';
-import { HexCell, coordsEqual, directions, roadConnects } from './hex';
+import { HexCell, coordsEqual, directions, roadConnects, riverBlocks } from './hex';
 import { getUnitDefinition } from './unitDefinitions';
 import { canUnitEnterTerrain, terrainDefinitions } from './terrain';
 import type { Unit } from './types';
@@ -40,7 +40,8 @@ const offsetKey = (col: number, row: number) => `${col},${row}`;
  * (+1 when an all-road path is possible from a road start). A road also lets
  * any unit move through terrain its type could not otherwise enter (e.g. Line
  * Infantry through woods), as long as the entire move stays on the connected
- * road — impassable terrain (LAKE/MARSH/RIVER) is never crossed. Any unit may
+ * road — impassable terrain (LAKE/MARSH) is never crossed, and a river edge is
+ * crossable only at a bridge/ford (see `riverBlocks`). Any unit may
  * voluntarily end its move adjacent to an enemy under normal movement —
  * the old "non-chargers may not move adjacent" rule was retired with the
  * same-hex charge model.
@@ -112,12 +113,16 @@ export function getValidMoveTargets(
 
 			const neighborKey = offsetKey(neighbor.col, neighbor.row);
 
+			// A river on the shared edge blocks the step in either mode — a road over
+			// an unbridged river still can't cross (only a bridge/ford crossing does).
+			if (riverBlocks(hex, neighbor)) continue;
+
 			if (mode === 'ROAD_ONLY') {
 				if (!roadConnects(hex, neighbor)) continue;
 				// A road carries any unit through terrain its type couldn't otherwise
 				// enter (e.g. Line Infantry through woods) — the whole ROAD_ONLY path
 				// starts and stays on the connected road — but never crosses truly
-				// impassable terrain (LAKE/MARSH/RIVER).
+				// impassable terrain (LAKE/MARSH).
 				if (terrainDefinitions[neighbor.terrain].isImpassable) continue;
 				// Road movement may not move adjacent to an enemy at any step (rules §2)
 				if (enemyAdjKeys.has(neighborKey)) continue;

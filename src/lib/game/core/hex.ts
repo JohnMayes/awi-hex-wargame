@@ -23,6 +23,15 @@ export class HexCell extends defineHex({
 	// center and each edge midpoint. Must be authored symmetrically — if this hex
 	// lists the edge toward a neighbor, that neighbor lists the reciprocal edge.
 	roadEdges: ReadonlySet<number> = new Set();
+	// Direction indices (0..5) of this hex's edges a river runs along — a hex-side
+	// feature (not a terrain type) that blocks movement/charge/retreat across the
+	// edge (see `riverBlocks`) but has no effect on LOS or combat. Authored
+	// symmetrically like roads; a crossing on the same edge (below) makes it passable.
+	riverEdges: ReadonlySet<number> = new Set();
+	// Direction indices (0..5) of river edges that carry a bridge or ford — the
+	// crossing exception that makes an otherwise-impassable river edge passable.
+	// Bridge vs ford is a rendering-only distinction; both cross identically.
+	crossingEdges: ReadonlySet<number> = new Set();
 
 	get elevation(): number {
 		return this.terrain === TerrainType.HILLTOP ? 1 : 0;
@@ -33,12 +42,16 @@ export class HexCell extends defineHex({
 			terrain: TerrainType;
 			entrenchedEdges?: readonly number[];
 			roadEdges?: readonly number[];
+			riverEdges?: readonly number[];
+			crossingEdges?: readonly number[];
 		}
 	) {
 		const cell = new HexCell(config);
 		cell.terrain = config.terrain;
 		if (config.entrenchedEdges?.length) cell.entrenchedEdges = new Set(config.entrenchedEdges);
 		if (config.roadEdges?.length) cell.roadEdges = new Set(config.roadEdges);
+		if (config.riverEdges?.length) cell.riverEdges = new Set(config.riverEdges);
+		if (config.crossingEdges?.length) cell.crossingEdges = new Set(config.crossingEdges);
 		return cell;
 	}
 }
@@ -109,6 +122,20 @@ export function roadConnects(from: HexCell, to: HexCell): boolean {
 }
 
 /**
+ * True when a step from adjacent `from` to `to` is blocked by a river on their
+ * shared edge — i.e. both hexes list the edge as a river and neither lists it as
+ * a crossing (bridge/ford). Uses the same reciprocal `(d + 3) % 6` pairing as
+ * `roadConnects`, so a half-authored river never blocks. The single gate for
+ * movement, charge, and retreat; rivers do not affect LOS or combat.
+ */
+export function riverBlocks(from: HexCell, to: HexCell): boolean {
+	const d = edgeToward(from, to);
+	const r = (d + 3) % 6;
+	if (!(from.riverEdges.has(d) && to.riverEdges.has(r))) return false;
+	return !(from.crossingEdges.has(d) && to.crossingEdges.has(r));
+}
+
+/**
  * Build a `roadEdges` map (offset-coord `"col,row"` key → sorted edge direction
  * indices) from ordered hex paths — so a road is authored as the sequence of hexes
  * it runs through, not as hand-computed per-hex edge indices. For each consecutive
@@ -143,4 +170,36 @@ export function roadEdgesFromPaths(
 			record(path[i + 1], edgeToward(to, from));
 		}
 	return Object.fromEntries([...edges].map(([key, set]) => [key, [...set].sort((a, b) => a - b)]));
+}
+
+/**
+ * Build a river/crossing edge map (offset-coord `"col,row"` key → sorted edge
+ * direction indices) from `[west, east]` hex pairs straddling the river. A river
+ * runs *between* two hexes (unlike a road, which runs *through* a hex's center),
+ * so it is authored as the adjacent pairs the water separates: for each pair the
+ * shared edge is derived with `edgeToward` and recorded reciprocally on both
+ * hexes (the pairing `riverBlocks` requires). Non-adjacent pairs throw, and
+ * off-board hexes (failing `inBounds`) drop out — mirrors `roadEdgesFromPaths`.
+ */
+export function riverEdgesFromPairs(
+	pairs: readonly (readonly [OffsetCoordinates, OffsetCoordinates])[],
+	inBounds: (c: OffsetCoordinates) => boolean
+): Record<string, readonly number[]> {
+	const edges = new Map<string, Set<number>>();
+	const record = (c: OffsetCoordinates, edge: number) => {
+		if (!inBounds(c)) return;
+		const key = `${c.col},${c.row}`;
+		(edges.get(key) ?? edges.set(key, new Set()).get(key)!).add(edge);
+	};
+	for (const [a, b] of pairs) {
+		const from = new HexCell(a);
+		const to = new HexCell(b);
+		if (hexDistance(from, to) !== 1)
+			throw new Error(
+				`riverEdgesFromPairs: ${a.col},${a.row} and ${b.col},${b.row} are not adjacent`
+			);
+		record(a, edgeToward(from, to));
+		record(b, edgeToward(to, from));
+	}
+	return Object.fromEntries([...edges].map(([key, set]) => [key, [...set].sort((x, y) => x - y)]));
 }

@@ -6,19 +6,33 @@ import {
 	rollDifficultTerrainCheck,
 	type MoveTarget
 } from './movement';
-import { HexCell, coordsEqual, directions } from './hex';
+import { HexCell, coordsEqual, directions, riverEdgesFromPairs } from './hex';
 import { TerrainType, UnitType, type Player, type Unit } from './types';
 import { unitDefinitions } from './unitDefinitions';
 
 // --- Test fixtures & helpers ---
 
-type Layout = { col: number; row: number; terrain: TerrainType; roadEdges?: readonly number[] };
+type Layout = {
+	col: number;
+	row: number;
+	terrain: TerrainType;
+	roadEdges?: readonly number[];
+	riverEdges?: readonly number[];
+	crossingEdges?: readonly number[];
+};
 
 function buildGrid(layout: Layout[]): Grid<HexCell> {
 	return new Grid(
 		HexCell,
 		layout.map((c) =>
-			HexCell.create({ col: c.col, row: c.row, terrain: c.terrain, roadEdges: c.roadEdges })
+			HexCell.create({
+				col: c.col,
+				row: c.row,
+				terrain: c.terrain,
+				roadEdges: c.roadEdges,
+				riverEdges: c.riverEdges,
+				crossingEdges: c.crossingEdges
+			})
 		)
 	);
 }
@@ -589,5 +603,52 @@ describe('getValidMoveTargets — off-map exit (allowExit)', () => {
 		const u = unit('u', UnitType.LINE_INFANTRY, 0, { col: 1, row: 1 });
 		const targets = getValidMoveTargets(u, grid, [u], 1, true);
 		expect(targets.some((t) => t.isExit)).toBe(false);
+	});
+});
+
+describe('getValidMoveTargets — river edges', () => {
+	// Every adjacent col-0 ↔ col-1 pair on a 2×3 open grid — the full set of edges a
+	// river down that boundary must dam. Discovered from the grid so adjacency is exact.
+	function crossColumnPairs(): [OffsetCoordinates, OffsetCoordinates][] {
+		const grid = buildGrid(openRect(2, 3));
+		const pairs: [OffsetCoordinates, OffsetCoordinates][] = [];
+		for (const hex of grid) {
+			if (hex.col !== 0) continue;
+			for (let d = 0; d < 6; d++) {
+				const nb = neighborOffset(grid, { col: hex.col, row: hex.row }, d);
+				if (nb && nb.col === 1) pairs.push([{ col: hex.col, row: hex.row }, nb]);
+			}
+		}
+		return pairs;
+	}
+
+	function riverLayout(crossing?: [OffsetCoordinates, OffsetCoordinates]): Layout[] {
+		const pairs = crossColumnPairs();
+		const river = riverEdgesFromPairs(pairs, () => true);
+		const cross = crossing ? riverEdgesFromPairs([crossing], () => true) : {};
+		return openRect(2, 3).map((c) => ({
+			...c,
+			riverEdges: river[`${c.col},${c.row}`],
+			crossingEdges: cross[`${c.col},${c.row}`]
+		}));
+	}
+
+	it('an unbridged river seals the boundary — no col-1 hex is reachable', () => {
+		expect.assertions(1);
+		const grid = buildGrid(riverLayout());
+		const u = unit('u', UnitType.LIGHT_HORSE, 0, { col: 0, row: 1 }); // plenty of MP
+		const reached = coordsOf(getValidMoveTargets(u, grid, [u]));
+		expect(reached.some((c) => c.col === 1)).toBe(false);
+	});
+
+	it('a crossing edge lets the unit reach the far hex over the bridge', () => {
+		expect.assertions(1);
+		const start = { col: 0, row: 1 };
+		// Bridge the (0,1) edge toward its col-1 neighbour in direction 0.
+		const far = neighborOffset(buildGrid(openRect(2, 3)), start, 0)!;
+		const grid = buildGrid(riverLayout([start, far]));
+		const u = unit('u', UnitType.LIGHT_HORSE, 0, start);
+		const reached = coordsOf(getValidMoveTargets(u, grid, [u]));
+		expect(includesCoord(reached, far)).toBe(true);
 	});
 });

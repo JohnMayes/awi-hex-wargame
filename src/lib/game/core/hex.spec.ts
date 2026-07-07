@@ -9,7 +9,9 @@ import {
 	edgeToward,
 	isEntrenchedToward,
 	roadConnects,
-	roadEdgesFromPaths
+	roadEdgesFromPaths,
+	riverBlocks,
+	riverEdgesFromPairs
 } from './hex';
 import { TerrainType } from './types';
 
@@ -196,5 +198,74 @@ describe('roadEdgesFromPaths', () => {
 		);
 		expect(roads['3,-1']).toBeUndefined();
 		expect(roads['3,0']).toEqual([2]); // edge 2 = toward the off-board (north) hex
+	});
+});
+
+describe('riverBlocks', () => {
+	const grid = openGrid(7, 7);
+	const center = grid.getHex({ col: 3, row: 3 })!;
+	const nb = cubeNeighbor(grid, center, 0)!; // edgeToward(center, nb) === 0; reciprocal 3
+	// Reuse center/nb coords so cube bearing (and thus edgeToward) matches the pair.
+	const at = (c: HexCell, edges: { river?: number[]; crossing?: number[] }) =>
+		HexCell.create({
+			col: c.col,
+			row: c.row,
+			terrain: TerrainType.OPEN,
+			riverEdges: edges.river,
+			crossingEdges: edges.crossing
+		});
+
+	it('blocks when both hexes list the shared edge as a river (symmetric)', () => {
+		expect.assertions(1);
+		expect(riverBlocks(at(center, { river: [0] }), at(nb, { river: [3] }))).toBe(true);
+	});
+
+	it('does not block a half-authored river (one side missing the reciprocal)', () => {
+		expect.assertions(2);
+		expect(riverBlocks(at(center, { river: [0] }), at(nb, { river: [0] }))).toBe(false);
+		expect(riverBlocks(at(center, {}), at(nb, { river: [3] }))).toBe(false);
+	});
+
+	it('does not block when a bridge/ford crossing covers the river edge', () => {
+		expect.assertions(1);
+		const from = at(center, { river: [0], crossing: [0] });
+		const to = at(nb, { river: [3], crossing: [3] });
+		expect(riverBlocks(from, to)).toBe(false);
+	});
+
+	it('has no effect on a non-river edge', () => {
+		expect.assertions(1);
+		expect(riverBlocks(at(center, {}), at(nb, {}))).toBe(false);
+	});
+});
+
+describe('riverEdgesFromPairs', () => {
+	const inBounds = (c: { col: number; row: number }) =>
+		c.col >= 0 && c.col < 7 && c.row >= 0 && c.row < 7;
+	const at = (c: { col: number; row: number }, edges: readonly number[] = []) =>
+		HexCell.create({ col: c.col, row: c.row, terrain: TerrainType.OPEN, riverEdges: [...edges] });
+
+	it('records reciprocal river edges so a pair blocks both ways', () => {
+		expect.assertions(2);
+		const a = { col: 3, row: 3 };
+		const b = { col: 3, row: 4 }; // adjacent (same column, next row)
+		const river = riverEdgesFromPairs([[a, b]], inBounds);
+		expect(riverBlocks(at(a, river['3,3']), at(b, river['3,4']))).toBe(true);
+		expect(riverBlocks(at(b, river['3,4']), at(a, river['3,3']))).toBe(true);
+	});
+
+	it('throws on a non-adjacent pair (catches authoring typos)', () => {
+		expect.assertions(1);
+		expect(() =>
+			riverEdgesFromPairs(
+				[
+					[
+						{ col: 0, row: 0 },
+						{ col: 3, row: 3 }
+					]
+				],
+				inBounds
+			)
+		).toThrow(/not adjacent/);
 	});
 });

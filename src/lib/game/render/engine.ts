@@ -1,7 +1,15 @@
 import type { GameStore } from '$lib/game/state/gameStore.svelte';
 import { hexDistance } from '../core/hex';
 import { hexPixelToWorld } from './boardGeometry';
-import { terrainFill, hexToRgb, hexStrokeHex, roadStrokeHex, type Rgb } from './terrainStyle';
+import {
+	terrainFill,
+	terrainHexColors,
+	hexToRgb,
+	hexStrokeHex,
+	roadStrokeHex,
+	type Rgb
+} from './terrainStyle';
+import { TerrainType } from '../core/types';
 import { counterPrimitives, spAnchor, type Primitive, type Vec } from './counters';
 import { resolveBoardClick } from './boardInput';
 import { drawFx, resetFx, syncFx } from './fx';
@@ -76,6 +84,12 @@ const ENTRENCHMENT_WIDTH = 8; // world units; thicker than the hex border
 // midpoint, so congruent road hexes meet at the shared edge midpoint and connect.
 const ROAD_COLOR = hexToRgb(roadStrokeHex);
 const ROAD_WIDTH = 6; // world units; thinner than an entrenchment
+// Rivers: a blue line along each river hex-edge; a bridge/ford crossing draws a
+// tan deck over the same edge so the bridged span reads apart from open water.
+const RIVER_COLOR = hexToRgb(terrainHexColors[TerrainType.RIVER]);
+const RIVER_WIDTH = 9; // world units; a touch bolder than an entrenchment
+const CROSSING_COLOR = hexToRgb(terrainHexColors[TerrainType.BRIDGE]);
+const CROSSING_WIDTH = 11;
 // honeycomb's `corners[]` run in the opposite handedness to our `directions[]` index, so
 // the edge facing direction `d` is corners[i]→corners[i+1] with i = (7 − d) % 6 (a
 // reflection, not a rotation — verified against the installed honeycomb geometry).
@@ -328,6 +342,24 @@ function gameRender() {
 				drawPoly(corners, bright, 0);
 				if (exitKeys.has(key)) drawPoly(corners, exitTint, 0);
 			} else drawPoly(corners, dim, 0);
+		}
+	}
+
+	// Rivers: a blue line along each river hex-edge (above terrain, under roads so a
+	// bridged crossing's road deck reads on top). A crossing (bridge/ford) overdraws
+	// the edge in tan to mark the span. River edges are authored on both hexes, so
+	// each edge is drawn twice (identical segment) — harmless overdraw.
+	const riverColor = color(RIVER_COLOR);
+	const crossingColor = color(CROSSING_COLOR);
+	for (const hex of grid) {
+		if (hex.riverEdges.size === 0) continue;
+		const corners = hex.corners;
+		for (const d of hex.riverEdges) {
+			const i = cornerStartForDir(d);
+			const a = toWorld(corners[i]);
+			const b = toWorld(corners[(i + 1) % 6]);
+			LJS.drawLine(a, b, RIVER_WIDTH, riverColor);
+			if (hex.crossingEdges.has(d)) LJS.drawLine(a, b, CROSSING_WIDTH, crossingColor);
 		}
 	}
 

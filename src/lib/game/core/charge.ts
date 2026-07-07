@@ -1,6 +1,6 @@
 import type { Grid, OffsetCoordinates } from 'honeycomb-grid';
 import type { LeaderCasualtyResult } from './command';
-import { HexCell, directions, isEntrenchedToward } from './hex';
+import { HexCell, directions, isEntrenchedToward, riverBlocks } from './hex';
 import type { MoraleResult } from './morale';
 import { canUnitEnterTerrain, terrainDefinitions } from './terrain';
 import { getUnitDefinition } from './unitDefinitions';
@@ -110,6 +110,10 @@ function chargePathCost(
 			const neighbor = hexMap.get(cubeKey);
 			if (!neighbor) continue;
 			visited.add(cubeKey);
+
+			// Can't charge across an unbridged river edge — including into the target
+			// hex (a charge may not enter a hex it couldn't reach by movement).
+			if (riverBlocks(hex, neighbor)) continue;
 
 			const offKey = `${neighbor.col},${neighbor.row}`;
 			const isTarget = offKey === targetKey;
