@@ -168,7 +168,7 @@ Facing was implemented at this milestone and later removed in the **facing refac
 - Decision order: a single satisfied side wins immediately (`condition_met`); both sides satisfying on the same turn falls through to an SP tiebreak; reaching the turn limit with no winner triggers the same tiebreak (`turn_limit_tiebreak`, or `turn_limit_draw` on equal SP). No-op contract: with no conditions and no turn limit the evaluator returns progress unchanged and a null outcome, so a default game never ends
 - `GameStore` gains `turnLimit`, `victoryConditions`, `victoryProgress`, `victoryOutcome`, and an `isGameOver` derived; `#bounds` and `#startingUnitsByPlayer` are captured once at construction. `#evaluateVictory` runs at end of each full game turn (when player 1 hands back to 0), applies the new progress, and on a decision records the outcome and emits a new `game_over` `LogEvent`. Every public mutator (`selectUnit`, `beginAction`, `moveUnit`, `fireAt`, `chargeAt`, `activateUnit`, `endActivation`, `endPlayerTurn`) early-returns once `victoryOutcome` is set
 - `initGameStore` now takes a single `Scenario` instead of raw `units`/`map`/`leaders`; the `GameStore` constructor gained an optional `GameStoreConfig` (`firstPlayer`, `turnLimit`, `victoryConditions`) so tests can still build hermetically
-- Added the **Pitched Battle** scenario: a symmetric 6-vs-6 clash on a new 7×9 `PITCHED_BATTLE_MAP` (rules §2) with a central objective hill and mirrored woods/town cover, point-symmetric under `(col, row) → (6 - col, 8 - row)`. Win by eliminating 4 of 6 enemy units or holding the hill at the end of turn 15; SP tiebreak otherwise. Exposed via a `SCENARIOS` registry; `+page.svelte` loads it and renders an outcome banner. The exit-edge action is unwired for now — `exitedThisTurn` is always empty — but the evaluator supports it for future use
+- Added the **Pitched Battle** scenario: a symmetric 6-vs-6 clash on a new 7×9 `PITCHED_BATTLE_MAP` (rules §2) with a central objective hill and mirrored woods/town cover, point-symmetric under `(col, row) → (6 - col, 8 - row)`. Win by eliminating 4 of 6 enemy units or holding the hill at the end of turn 15; SP tiebreak otherwise. Exposed via a `SCENARIOS` registry; `+page.svelte` loads it and renders an outcome banner. (The `exit_units` action was left unwired here — `exitedThisTurn` always empty — and later wired end-to-end for the White Plains conversion)
 - 23 tests in `victory.spec.ts` (bounds/edge helpers, no-op contract, each condition kind including `atTurn` gating and hold-streak reset, turn-limit tiebreak and draw, simultaneous mutual satisfaction); 9 new tests in `gameStore.spec.ts` covering victory evaluation at turn rollover, the eliminate/hold paths, mutator lockout after game over, and the `game_over` event
 
 ---
@@ -208,35 +208,25 @@ The board is the primary interface — a tap-driven, contextual model on the Lit
 
 ---
 
-### M14: Headless Sim & Playtest Harness
+### ~~M14: Headless Sim & Playtest Harness~~ COMPLETE
 
-Drive the engine to a terminal outcome with no UI, pit two automated policies against each other, and produce per-scenario balance statistics. Ships scenario playtesting now and is the **shared prerequisite for an AI opponent (M15)**. Full rationale and the MCTS-vs-minimax analysis live in `docs/ai-opponent-evaluation.md`.
+Drives the engine to a terminal outcome with no UI, pits two automated policies against each other, and produces per-scenario balance statistics — scenario playtesting plus the **shared prerequisite for the AI opponent (M15)**. Full rationale and the MCTS-vs-minimax analysis live in `docs/ai-opponent-evaluation.md`.
 
-**Design pivot (already true):** `GameStore` runs headless in Node today — `gameStore.spec.ts` (the node test project) constructs it and drives it via `activateUnit` / `endActivation` / `endPlayerTurn` with an injectable `rng`. So M14 **reuses the store as the simulator** instead of extracting a reducer. Sequential self-play needs no state cloning; reinforcements, torch, and `evaluateVictory` come for free.
+- **Reused the store as the simulator** (no reducer extraction): `GameStore` already runs headless in Node, driven via `activateUnit` / `endActivation` / `endPlayerTurn` with an injectable `rng`, so sequential self-play needs no state cloning — reinforcements, torch, and `evaluateVictory` come for free.
+- **Seeded RNG** — `core/rng.ts`: a one-line mulberry32 PRNG returning `() => number`, so a fixed seed reproduces a game exactly. The store already threads `rng` through every mutator; this makes it deterministic.
+- **Policy** — `type Policy = (store) => Action | null`: pick one un-activated unit for the active player and one legal action (move / fire / charge / skip) from the existing `core/` enumerators (`getValidMoveTargets`, `getValidFireTargets`, `getValidChargeTargets`). Shipped `randomPolicy` (uniform); the eval-driven policy landed in M15.
+- **Driver** — `sim/playout.ts`: `runGame(scenario, policyBlue, policyRed, rng) → GameOutcome`. Loops while `!isGameOver`, asks the active player's policy for an action, applies it through the store, and returns `{ outcome, turns, survivingSpByPlayer }`.
+- **Harness** — `scripts/playtest.ts` (`pnpm playtest`), run via `vite-node` (reuses Vite + the svelte plugin for the `.svelte.ts` runes transform — no new dep). Runs `runGame` N times per scenario across seeds and prints a per-scenario table: win rate by side, draw rate, mean/median turns, mean surviving SP per side, elimination rate.
+- **Report** — the random-vs-random baseline over 1000 games each for both scenarios (Pitched Battle, Bunker Hill) lives in the "M14 Results" section of `docs/ai-opponent-evaluation.md`: Pitched Battle is near-symmetric, Bunker Hill is red-favoured by design.
+- Tests in `sim/playout.spec.ts`: determinism (same seed → identical outcome) and termination within the turn limit. No changes to `core/` rules or store public behavior.
 
-- **Seeded RNG** — `core/rng.ts`: a one-line seedable PRNG (mulberry32) returning `() => number`, so a fixed seed reproduces a game exactly. The store already threads `rng` through every mutator; this just makes it deterministic.
-- **Policy** — `type Policy = (store) => Action | null`: pick one un-activated unit for the active player and one legal action (move / fire / charge / skip) from the existing `core/` enumerators (`getValidMoveTargets`, `getValidFireTargets`, `getValidChargeTargets`). Ship `randomPolicy` (uniform) only; the greedy/eval-driven policy is M15.
-- **Driver** — `core/playout.ts`: `runGame(scenario, policyBlue, policyRed, rng) → GameOutcome`. Loop while `!isGameOver`: ask the active player's policy for an action, apply it through the store, `endActivation` / `endPlayerTurn` as appropriate; return `{ outcome, turns, survivingSpByPlayer }`.
-- **Harness** — `scripts/playtest.ts`, run via `vite-node` (already have Vite + the svelte plugin, so `.svelte.ts` runes transform applies — no new dep). Runs `runGame` N times per scenario across seeds and prints a per-scenario table: win rate by side, draw rate, mean/median turns, mean surviving SP per side, elimination rate.
-- **Report** — run it on the 3 existing scenarios and record whether they're balanced / show a first-player advantage in a results section of `docs/ai-opponent-evaluation.md`.
+> **Known ceiling (ponytail).** Playing thousands of games through the runes store carries `$state`/`$derived` overhead per mutation. Fine for an offline playtest tool. If throughput becomes the bottleneck (or a future MCTS opponent needs cheap tree branching), extract a plain-TS reducer from the store's orchestration then — not now.
 
-**Acceptance:**
-
-- Fixed seed → identical outcome (determinism test).
-- Random-vs-random always terminates within the turn limit (no infinite games).
-- Stats table produced for all 3 scenarios over ≥1000 games each.
-- No changes to `core/` rules or store public behavior — new files only (at most, widen one store getter to expose legal targets if the policy can't get them from `core/` directly).
-- Tests: `core/playout.spec.ts` — determinism (same seed → identical outcome) + termination.
-
-**Non-goals (deferred to M15):** MCTS / minimax / any search, the evaluation function, Web Workers, state cloning/branching, extracting a pure reducer.
-
-> **Known ceiling (ponytail).** Playing thousands of games through the runes store carries `$state`/`$derived` overhead per mutation. Fine for an offline playtest tool. If throughput becomes the bottleneck (or M15's MCTS needs cheap tree branching), extract a plain-TS reducer from the store's orchestration then — not now.
-
-**Files:** `core/rng.ts`, `core/playout.ts`, `scripts/playtest.ts`, `core/playout.spec.ts`; results appended to `docs/ai-opponent-evaluation.md`. **Depends on:** M12 (done).
+**Files:** `core/rng.ts`, `sim/playout.ts`, `scripts/playtest.ts`, `sim/playout.spec.ts`; results in `docs/ai-opponent-evaluation.md`. **Depends on:** M12.
 
 ---
 
-### M15: AI Opponent ✅ shipped
+### ~~M15: AI Opponent~~ COMPLETE
 
 A rule-based heuristic opponent — no search, no eval function, no ML — synthesised from two reference hex wargames (analysis in `docs/ai-opponent-reference-implementations.md`): CAPH's role-priority ordering plus the Hex-Wargame-JS project's odds-gated attack and goal-seeking movement. Ships as a drop-in `Policy`, so it needed **zero new infrastructure** beyond M14's driver.
 

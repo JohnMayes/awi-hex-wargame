@@ -2,7 +2,7 @@ import type { Leader } from '../core/command';
 import type { ReinforcementGroup, Scenario } from '../core/scenario';
 import { UnitType, type Unit, type Player } from '../core/types';
 import { unitDefinitions } from '../core/unitDefinitions';
-import { BUNKER_HILL_MAP, PITCHED_BATTLE_MAP } from './maps';
+import { BUNKER_HILL_MAP, PITCHED_BATTLE_MAP, WHITE_PLAINS_MAP } from './maps';
 
 const sp = (type: UnitType) => unitDefinitions[type].defaultStrengthPoints;
 
@@ -319,7 +319,93 @@ export const BUNKER_HILL: Scenario = {
 	]
 };
 
+// --- White Plains (ARW series conversion) ---
+
+// Same all-foot model as Bunker Hill: Line Infantry differentiated by SP. Colonial
+// & Loyalist militia are brittle (SP 3); regulars SP 4; the optional Grenadier is elite.
+const WHITE_PLAINS_UNITS: Unit[] = [
+	// Colonials (player 0): 4 Regulars + 3 Militia at the `C` hexes. ≥2 Militia on
+	// Chatterton's Hill (1,4)/(1,5) per the scenario's historical-accuracy note.
+	bunkerInfantry('col-militia-1', 0, 1, 4, MILITIA_SP),
+	bunkerInfantry('col-militia-2', 0, 1, 5, MILITIA_SP),
+	bunkerInfantry('col-militia-3', 0, 3, 6, MILITIA_SP),
+	bunkerInfantry('col-reg-1', 0, 0, 5, REGULAR_SP),
+	bunkerInfantry('col-reg-2', 0, 3, 5, REGULAR_SP), // White Plains village
+	bunkerInfantry('col-reg-3', 0, 5, 4, REGULAR_SP),
+	bunkerInfantry('col-reg-4', 0, 5, 5, REGULAR_SP),
+	// British (player 1): 2 Loyalist Militia + 3 British Regulars at the `B` hexes (south).
+	bunkerInfantry('brit-loyalist-1', 1, 2, 9, MILITIA_SP),
+	bunkerInfantry('brit-loyalist-2', 1, 6, 9, MILITIA_SP),
+	bunkerInfantry('brit-reg-1', 1, 3, 9, REGULAR_SP),
+	bunkerInfantry('brit-reg-2', 1, 4, 9, REGULAR_SP),
+	bunkerInfantry('brit-reg-3', 1, 5, 8, REGULAR_SP)
+];
+
+// Generous radius (ARW has no command rules) — keeps command-check friction low
+// across the larger map and the Colonial run for the exit.
+const WHITE_PLAINS_LEADERS: Leader[] = [
+	{ id: 'col-washington', attachedToUnitId: 'col-reg-2', commandRadius: 6 },
+	{ id: 'brit-howe', attachedToUnitId: 'brit-reg-1', commandRadius: 6 }
+];
+
+// Turn 2: 3 British Regulars arrive at the `B` hexes (south edge); one is the
+// optional Grenadier (elite), matching the Bunker Hill precedent.
+const WHITE_PLAINS_REINFORCEMENTS: ReinforcementGroup[] = [
+	{
+		turn: 2,
+		player: 1,
+		units: [
+			{ id: 'brit-reg-4', type: UnitType.LINE_INFANTRY, coordinates: { col: 2, row: 10 } },
+			{
+				id: 'brit-grenadier',
+				type: UnitType.LINE_INFANTRY,
+				coordinates: { col: 3, row: 10 },
+				elite: true
+			},
+			{ id: 'brit-reg-5', type: UnitType.LINE_INFANTRY, coordinates: { col: 4, row: 10 } }
+		]
+	}
+];
+
+export const WHITE_PLAINS: Scenario = {
+	id: 'white-plains',
+	name: 'White Plains',
+	description:
+		'28 October 1776: Washington slips away from Howe. The Colonials win only by ' +
+		'marching 5 units off the north road AND breaking 2 British units — pull off the ' +
+		'escape or the British win. A missed opportunity for the Crown.',
+	map: WHITE_PLAINS_MAP,
+	units: WHITE_PLAINS_UNITS,
+	leaders: WHITE_PLAINS_LEADERS,
+	firstPlayer: 1,
+	turnLimit: 10,
+	turnLimitWinner: 1, // "any other result is a British victory"
+	reinforcements: WHITE_PLAINS_REINFORCEMENTS,
+	victoryConditions: [
+		// Colonial win requires BOTH (group 'col-escape', AND): exit 5 units off the
+		// north road and inflict 2 casualties first.
+		{
+			kind: 'exit_units',
+			id: 'col-escape-north',
+			player: 0,
+			group: 'col-escape',
+			description: 'March 5 units off the north road',
+			edge: 'north',
+			count: 5
+		},
+		{
+			kind: 'eliminate_units',
+			id: 'col-bloody-2',
+			player: 0,
+			group: 'col-escape',
+			description: 'Break 2 British units',
+			count: 2
+		}
+	]
+};
+
 export const SCENARIOS: Record<string, Scenario> = {
 	[PITCHED_BATTLE.id]: PITCHED_BATTLE,
-	[BUNKER_HILL.id]: BUNKER_HILL
+	[BUNKER_HILL.id]: BUNKER_HILL,
+	[WHITE_PLAINS.id]: WHITE_PLAINS
 };

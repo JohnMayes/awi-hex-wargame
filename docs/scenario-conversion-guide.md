@@ -4,7 +4,8 @@ A reusable reference for porting battles from the _American Revolutionary War se
 (`Bunker-Hill.pdf` and its eight sibling battles share one set of "series rules") into this
 project's engine. **We convert the _scenario_, not the engine** — the battle plays inside our
 rules, accepting inexactness where the two systems diverge. First applied in the Bunker Hill
-conversion (`docs/bunker-hill-conversion.md`); generalize from there.
+conversion (`docs/bunker-hill-conversion.md`), then White Plains (which added the off-map
+exit action + `turnLimitWinner`); generalize from there.
 
 ## 1. System comparison (source vs. target)
 
@@ -32,7 +33,7 @@ conversion (`docs/bunker-hill-conversion.md`); generalize from there.
 | Woods                  | `WOODS`                                           | **Light-Infantry-only in ours.** ARW woods take all foot. Where infantry must enter woods, this fails — accept woods-as-impassable-feature, or add a terrain variant (future). |
 | Swamp                  | `MARSH`                                           | Impassable in ours (ARW swamp is passable-with-cost).                                                                                                                          |
 | Lake                   | `LAKE`                                            | Impassable border.                                                                                                                                                             |
-| River (hexside)        | `RIVER` / `FORD` / `BRIDGE` hexes                 | We model crossings as hexes, not hexsides + roll.                                                                                                                              |
+| River (hexside)        | `riverEdges` + `crossingEdges` on the hex         | True hexsides: impassable river edges, crossable at a bridge/ford edge. No cross roll (dropped). See `riverBlocks`.                                                            |
 | Road                   | `ROAD`                                            | +1 move along an all-road path.                                                                                                                                                |
 | Entrenchment (hexside) | `entrenchedEdges` on the hex, facing the attacker | The shipped hexside feature.                                                                                                                                                   |
 
