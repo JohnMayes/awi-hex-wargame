@@ -1,6 +1,6 @@
 import type { OffsetCoordinates } from 'honeycomb-grid';
 import { defineHex, Orientation } from 'honeycomb-grid';
-import { TerrainType } from './types';
+import { TerrainType, type MapEdge } from './types';
 
 export function coordsEqual(a: OffsetCoordinates, b: OffsetCoordinates): boolean {
 	return a.col === b.col && a.row === b.row;
@@ -32,6 +32,10 @@ export class HexCell extends defineHex({
 	// crossing exception that makes an otherwise-impassable river edge passable.
 	// Bridge vs ford is a rendering-only distinction; both cross identically.
 	crossingEdges: ReadonlySet<number> = new Set();
+	// When set, this hex is an intentional board exit: a unit may leave the map from
+	// here, counting toward the `exit_units` victory condition for this edge. An
+	// explicit declaration (map data) — deliberately independent of roads.
+	exitEdge: MapEdge | null = null;
 
 	get elevation(): number {
 		return this.terrain === TerrainType.HILLTOP ? 1 : 0;
@@ -44,6 +48,7 @@ export class HexCell extends defineHex({
 			roadEdges?: readonly number[];
 			riverEdges?: readonly number[];
 			crossingEdges?: readonly number[];
+			exitEdge?: MapEdge | null;
 		}
 	) {
 		const cell = new HexCell(config);
@@ -52,6 +57,7 @@ export class HexCell extends defineHex({
 		if (config.roadEdges?.length) cell.roadEdges = new Set(config.roadEdges);
 		if (config.riverEdges?.length) cell.riverEdges = new Set(config.riverEdges);
 		if (config.crossingEdges?.length) cell.crossingEdges = new Set(config.crossingEdges);
+		if (config.exitEdge) cell.exitEdge = config.exitEdge;
 		return cell;
 	}
 }

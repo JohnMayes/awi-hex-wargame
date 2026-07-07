@@ -1,4 +1,4 @@
-import { TerrainType } from '../core/types';
+import { TerrainType, type MapEdge } from '../core/types';
 import { roadEdgesFromPaths, riverEdgesFromPairs, type HexCell } from '../core/hex';
 import type { OffsetCoordinates } from 'honeycomb-grid';
 
@@ -6,13 +6,15 @@ import type { OffsetCoordinates } from 'honeycomb-grid';
 // indices (0..5, indexing `directions` in core/hex.ts) of this hex's dug-in /
 // road-crossed / river / bridge-ford edges — authored as plain arrays, stored as
 // Sets on the HexCell. Road and river edges must be authored symmetrically across
-// a shared edge (see `roadConnects` / `riverBlocks`).
+// a shared edge (see `roadConnects` / `riverBlocks`). `exitEdge` marks the hex an
+// intentional board exit for that edge (see `exit_units`) — independent of roads.
 export type MapDefinition = (Pick<HexCell, 'terrain'> &
 	OffsetCoordinates & {
 		entrenchedEdges?: readonly number[];
 		roadEdges?: readonly number[];
 		riverEdges?: readonly number[];
 		crossingEdges?: readonly number[];
+		exitEdge?: MapEdge;
 	})[];
 
 export const TEST_MAP: MapDefinition = [
@@ -248,6 +250,12 @@ for (let col = 0; col < WHITE_PLAINS_COLS; col++)
 const WHITE_PLAINS_RIVER = riverEdgesFromPairs(BRONX_RIVER_PAIRS, inWhitePlains);
 const WHITE_PLAINS_CROSSINGS = riverEdgesFromPairs([[rc(1, 7), rc(2, 7)]], inWhitePlains);
 
+// Exit hexes: an intentional, road-independent declaration. The only exit is the
+// Colonial escape at (3,0) — the top of the col-3 road off the north edge, counting
+// toward the `exit_units` victory. (The west/south road stubs run off-map but are
+// NOT exits — a road leaving the map no longer implies an exit hex.)
+const WHITE_PLAINS_EXITS: Record<string, MapEdge> = { '3,0': 'north' };
+
 export const WHITE_PLAINS_MAP: MapDefinition = Array.from({ length: WHITE_PLAINS_COLS }, (_, col) =>
 	Array.from({ length: WHITE_PLAINS_ROWS }, (_, row) => ({
 		col,
@@ -255,6 +263,7 @@ export const WHITE_PLAINS_MAP: MapDefinition = Array.from({ length: WHITE_PLAINS
 		terrain: WHITE_PLAINS_FEATURES[`${col},${row}`] ?? TerrainType.OPEN,
 		roadEdges: WHITE_PLAINS_ROADS[`${col},${row}`],
 		riverEdges: WHITE_PLAINS_RIVER[`${col},${row}`],
-		crossingEdges: WHITE_PLAINS_CROSSINGS[`${col},${row}`]
+		crossingEdges: WHITE_PLAINS_CROSSINGS[`${col},${row}`],
+		exitEdge: WHITE_PLAINS_EXITS[`${col},${row}`]
 	}))
 ).flat();

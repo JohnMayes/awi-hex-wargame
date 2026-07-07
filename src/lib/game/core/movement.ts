@@ -11,8 +11,8 @@ export type MoveTarget = {
 	/**
 	 * True when moving here exits the unit off the map, rather than repositioning
 	 * it. Only emitted when the caller opts in (`allowExit`); the target sits on a
-	 * border hex whose road runs off the edge (the scenario "exit sign"). The store
-	 * removes the unit and records the exit instead of moving it.
+	 * hex explicitly declared an exit (`hex.exitEdge`) — independent of roads. The
+	 * store removes the unit and records the exit instead of moving it.
 	 */
 	isExit?: boolean;
 };
@@ -143,17 +143,10 @@ export function getValidMoveTargets(
 	}
 
 	if (allowExit) {
-		// A border hex whose road runs off the map is an exit point (the scenario
-		// "exit sign"). A unit that reaches one — or starts on it — may leave the
-		// board via that road. We mark the target isExit and drop the plain "stop
-		// here" variant, since the road ends at the edge.
-		const isExitHex = (hex: HexCell) => {
-			for (const dirIdx of hex.roadEdges) {
-				const [dq, dr] = directions[dirIdx];
-				if (!hexMap.get(cubeKey(hex.q + dq, hex.r + dr))) return true;
-			}
-			return false;
-		};
+		// An exit hex is an intentional map declaration (`hex.exitEdge`) — a unit that
+		// reaches one, or starts on it, may leave the board there. We mark the target
+		// isExit; deliberately independent of roads (a road running off-map is not an exit).
+		const isExitHex = (hex: HexCell) => hex.exitEdge != null;
 		for (const [key, target] of results) {
 			const hex = grid.getHex(target.coordinates);
 			if (hex && isExitHex(hex)) results.set(key, { ...target, isExit: true });
@@ -165,7 +158,7 @@ export function getValidMoveTargets(
 				results.set(key, {
 					coordinates: { col: startHex.col, row: startHex.row },
 					cost: 1,
-					usesRoad: true,
+					usesRoad: false,
 					isExit: true
 				});
 		}

@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
 	boundsFromCoords,
-	edgeOf,
 	emptyVictoryProgress,
 	evaluateVictory,
 	type VictoryCondition,
@@ -59,18 +58,6 @@ describe('boundsFromCoords', () => {
 		const coords = [];
 		for (let col = 0; col < 7; col++) for (let row = 0; row < 9; row++) coords.push({ col, row });
 		expect(boundsFromCoords(coords)).toEqual({ minCol: 0, maxCol: 6, minRow: 0, maxRow: 8 });
-	});
-});
-
-describe('edgeOf', () => {
-	const bounds = { minCol: 0, maxCol: 6, minRow: 0, maxRow: 8 };
-	it('classifies the four edges and interior', () => {
-		expect.assertions(5);
-		expect(edgeOf({ col: 3, row: 0 }, bounds)).toBe('north');
-		expect(edgeOf({ col: 3, row: 8 }, bounds)).toBe('south');
-		expect(edgeOf({ col: 0, row: 4 }, bounds)).toBe('west');
-		expect(edgeOf({ col: 6, row: 4 }, bounds)).toBe('east');
-		expect(edgeOf({ col: 3, row: 4 }, bounds)).toBeNull();
 	});
 });
 

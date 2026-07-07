@@ -1,9 +1,11 @@
 import { coordsEqual } from './hex';
 import type { OffsetCoordinates } from 'honeycomb-grid';
-import type { Player } from './types';
+import type { MapEdge, Player } from './types';
 
 export type ObjectiveHex = OffsetCoordinates;
-export type MapEdge = 'north' | 'south' | 'east' | 'west';
+// MapEdge is homed in ./types so both hex.ts and victory.ts can import it without a
+// cycle (victory.ts imports a value from hex.ts). Re-exported for existing importers.
+export type { MapEdge };
 
 /**
  * A scenario victory condition. Each is owned by the `player` who wins by
@@ -129,15 +131,6 @@ export function boundsFromCoords(coords: ReadonlyArray<OffsetCoordinates>) {
 		minRow: Math.min(...rows),
 		maxRow: Math.max(...rows)
 	};
-}
-
-/** The map edge a hex sits on, or null if it is interior. (north/south = row extremes.) */
-export function edgeOf(hex: OffsetCoordinates, bounds: VictorySnapshot['bounds']): MapEdge | null {
-	if (hex.row === bounds.minRow) return 'north';
-	if (hex.row === bounds.maxRow) return 'south';
-	if (hex.col === bounds.minCol) return 'west';
-	if (hex.col === bounds.maxCol) return 'east';
-	return null;
 }
 
 /** A player controls a hex iff a surviving friendly unit occupies it (no two units share a hex). */

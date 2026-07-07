@@ -40,7 +40,6 @@ import {
 import { getUnitDefinition } from '../core/unitDefinitions';
 import {
 	boundsFromCoords,
-	edgeOf,
 	emptyVictoryProgress,
 	evaluateVictory,
 	type MapEdge,
@@ -163,7 +162,8 @@ export class GameStore {
 					entrenchedEdges: cell.entrenchedEdges,
 					roadEdges: cell.roadEdges,
 					riverEdges: cell.riverEdges,
-					crossingEdges: cell.crossingEdges
+					crossingEdges: cell.crossingEdges,
+					exitEdge: cell.exitEdge
 				})
 			)
 		);
@@ -712,12 +712,13 @@ export class GameStore {
 		const activeId = this.activeUnitId;
 		const from = this.selectedUnit.coordinates;
 
-		// Off-map exit: the unit leaves the board via a border road (scenario "exit
-		// sign"). Remove it and record the exit for the exit_units victory instead of
-		// repositioning. Exiting is not a kill, so #eliminatedByPlayer is untouched.
+		// Off-map exit: the unit leaves the board via a declared exit hex. Remove it and
+		// record the exit for the exit_units victory instead of repositioning. The edge
+		// comes from the hex's own `exitEdge` declaration (not geometry). Exiting is not
+		// a kill, so #eliminatedByPlayer is untouched.
 		if (target.isExit) {
 			const borderHex = this.grid.getHex(newCords);
-			const edge = borderHex ? edgeOf(borderHex, this.#bounds) : null;
+			const edge = borderHex?.exitEdge ?? null;
 			const player = this.activePlayer;
 			this.units = this.units.filter((u) => u.id !== activeId);
 			if (edge) {

@@ -7,7 +7,7 @@ import {
 	type MoveTarget
 } from './movement';
 import { HexCell, coordsEqual, directions, riverEdgesFromPairs } from './hex';
-import { TerrainType, UnitType, type Player, type Unit } from './types';
+import { TerrainType, UnitType, type MapEdge, type Player, type Unit } from './types';
 import { unitDefinitions } from './unitDefinitions';
 
 // --- Test fixtures & helpers ---
@@ -19,6 +19,7 @@ type Layout = {
 	roadEdges?: readonly number[];
 	riverEdges?: readonly number[];
 	crossingEdges?: readonly number[];
+	exitEdge?: MapEdge;
 };
 
 function buildGrid(layout: Layout[]): Grid<HexCell> {
@@ -31,7 +32,8 @@ function buildGrid(layout: Layout[]): Grid<HexCell> {
 				terrain: c.terrain,
 				roadEdges: c.roadEdges,
 				riverEdges: c.riverEdges,
-				crossingEdges: c.crossingEdges
+				crossingEdges: c.crossingEdges,
+				exitEdge: c.exitEdge
 			})
 		)
 	);
@@ -556,20 +558,19 @@ describe('rollDifficultTerrainCheck', () => {
 });
 
 describe('getValidMoveTargets — off-map exit (allowExit)', () => {
-	// A vertical col-0 road: (0,0) has a north road edge running off the map (the
-	// "exit sign"), and the column is road-connected south. dir 2 = north ([0,-1]),
-	// dir 5 = south ([0,1]) on this flat-top topLeft grid.
-	function roadColumnGrid(): Grid<HexCell> {
+	// A vertical col-0 column with (0,0) declared an intentional north exit hex.
+	// Exit-ness is the `exitEdge` declaration, deliberately independent of roads.
+	function exitColumnGrid(): Grid<HexCell> {
 		return buildGrid([
-			{ col: 0, row: 0, terrain: TerrainType.OPEN, roadEdges: [2, 5] }, // north stub + south
-			{ col: 0, row: 1, terrain: TerrainType.OPEN, roadEdges: [2, 5] },
-			{ col: 0, row: 2, terrain: TerrainType.OPEN, roadEdges: [2] }
+			{ col: 0, row: 0, terrain: TerrainType.OPEN, exitEdge: 'north' },
+			{ col: 0, row: 1, terrain: TerrainType.OPEN },
+			{ col: 0, row: 2, terrain: TerrainType.OPEN }
 		]);
 	}
 
-	it('emits an isExit target on the border road hex when allowExit is set', () => {
+	it('emits an isExit target on the declared exit hex when allowExit is set', () => {
 		expect.assertions(2);
-		const grid = roadColumnGrid();
+		const grid = exitColumnGrid();
 		const u = unit('u', UnitType.LINE_INFANTRY, 0, { col: 0, row: 1 });
 		const targets = getValidMoveTargets(u, grid, [u], 1, true);
 		const exit = targets.find((t) => t.isExit);
@@ -579,17 +580,17 @@ describe('getValidMoveTargets — off-map exit (allowExit)', () => {
 
 	it('emits no exit targets without allowExit (default is behavior-neutral)', () => {
 		expect.assertions(2);
-		const grid = roadColumnGrid();
+		const grid = exitColumnGrid();
 		const u = unit('u', UnitType.LINE_INFANTRY, 0, { col: 0, row: 1 });
 		const targets = getValidMoveTargets(u, grid, [u], 1, false);
 		expect(targets.some((t) => t.isExit)).toBe(false);
-		// The border hex is still reachable as an ordinary stop.
+		// The exit hex is still reachable as an ordinary stop.
 		expect(includesCoord(coordsOf(targets), { col: 0, row: 0 })).toBe(true);
 	});
 
 	it('a unit standing on the exit hex may leave via it', () => {
 		expect.assertions(1);
-		const grid = roadColumnGrid();
+		const grid = exitColumnGrid();
 		const u = unit('u', UnitType.LINE_INFANTRY, 0, { col: 0, row: 0 });
 		const targets = getValidMoveTargets(u, grid, [u], 1, true);
 		expect(targets.some((t) => t.isExit && coordsEqual(t.coordinates, { col: 0, row: 0 }))).toBe(
@@ -597,12 +598,28 @@ describe('getValidMoveTargets — off-map exit (allowExit)', () => {
 		);
 	});
 
-	it('does not treat a plain border hex (no road off-map) as an exit', () => {
+	it('does not treat a plain border hex (no exitEdge) as an exit', () => {
 		expect.assertions(1);
-		const grid = buildGrid(openRect(3, 3)); // no road edges anywhere
+		const grid = buildGrid(openRect(3, 3)); // nothing declared
 		const u = unit('u', UnitType.LINE_INFANTRY, 0, { col: 1, row: 1 });
 		const targets = getValidMoveTargets(u, grid, [u], 1, true);
 		expect(targets.some((t) => t.isExit)).toBe(false);
+	});
+
+	it('a road running off the map is NOT an exit without an exitEdge (the decoupling)', () => {
+		expect.assertions(2);
+		// (0,0) has a north road edge running off the map (dir 2 = [0,-1]) but no
+		// exitEdge — under the old rule this was an exit; now it must not be.
+		const grid = buildGrid([
+			{ col: 0, row: 0, terrain: TerrainType.OPEN, roadEdges: [2, 5] },
+			{ col: 0, row: 1, terrain: TerrainType.OPEN, roadEdges: [2, 5] },
+			{ col: 0, row: 2, terrain: TerrainType.OPEN, roadEdges: [2] }
+		]);
+		const u = unit('u', UnitType.LINE_INFANTRY, 0, { col: 0, row: 1 });
+		const targets = getValidMoveTargets(u, grid, [u], 1, true);
+		expect(targets.some((t) => t.isExit)).toBe(false);
+		// The border hex is still reachable as an ordinary stop.
+		expect(includesCoord(coordsOf(targets), { col: 0, row: 0 })).toBe(true);
 	});
 });
 

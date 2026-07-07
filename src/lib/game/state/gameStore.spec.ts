@@ -2398,13 +2398,19 @@ describe('GameStore — dwell-to-torch (scenario torchRule)', () => {
 // --- White Plains: off-map exit action + turnLimitWinner ---
 
 describe('exit action + turnLimitWinner', () => {
-	// A col-0 road with a north off-map stub at (0,0) (dir 2 = north, off-map;
-	// dir 5 = south). Col 1 is plain. Player 0's runner sits on the road at (0,1);
-	// a lone enemy sits far south so it never blocks the road.
+	// A col-0 road with (0,0) declared an intentional north exit hex. Col 1 is plain.
+	// Player 0's runner sits on the road at (0,1); a lone enemy sits far south so it
+	// never blocks the road. (The road stubs are incidental — exit-ness is `exitEdge`.)
 	function exitMap(): MapDefinition {
 		const map: MapDefinition = [];
 		for (let row = 0; row < 5; row++) {
-			map.push({ col: 0, row, terrain: TerrainType.OPEN, roadEdges: row === 4 ? [2] : [2, 5] });
+			map.push({
+				col: 0,
+				row,
+				terrain: TerrainType.OPEN,
+				roadEdges: row === 4 ? [2] : [2, 5],
+				exitEdge: row === 0 ? 'north' : undefined
+			});
 			map.push({ col: 1, row, terrain: TerrainType.OPEN });
 		}
 		return map;

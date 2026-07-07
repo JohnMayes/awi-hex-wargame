@@ -105,6 +105,19 @@ describe('HexCell.entrenchedEdges', () => {
 	});
 });
 
+describe('HexCell.exitEdge', () => {
+	it('defaults to null', () => {
+		expect.assertions(1);
+		expect(HexCell.create({ col: 0, row: 0, terrain: TerrainType.OPEN }).exitEdge).toBeNull();
+	});
+
+	it('stores a declared exit edge', () => {
+		expect.assertions(1);
+		const cell = HexCell.create({ col: 0, row: 0, terrain: TerrainType.OPEN, exitEdge: 'north' });
+		expect(cell.exitEdge).toBe('north');
+	});
+});
+
 describe('edgeToward', () => {
 	it('returns the direction index of each immediate neighbor', () => {
 		expect.assertions(6);

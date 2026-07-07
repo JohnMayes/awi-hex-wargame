@@ -2,6 +2,9 @@ import type { OffsetCoordinates } from 'honeycomb-grid';
 
 export type Player = 0 | 1;
 
+/** A map's four edges — the board border a unit can exit across (see `exit_units`). */
+export type MapEdge = 'north' | 'south' | 'east' | 'west';
+
 export enum TerrainType {
 	OPEN = 'open',
 	WOODS = 'woods',

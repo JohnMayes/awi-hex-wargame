@@ -90,3 +90,25 @@ describe('WHITE_PLAINS Bronx River (hex-side)', () => {
 		expect(riverBlocks(hex(2, 9), hex(3, 9))).toBe(false); // no river between two east hexes
 	});
 });
+
+// Exit hexes are an intentional declaration, not derived from roads. The only exit
+// is (3,0) north; the west/south road stubs run off-map but are NOT exits.
+describe('WHITE_PLAINS exit hexes (decoupled from roads)', () => {
+	it('declares (3,0) as the sole north exit', () => {
+		expect.assertions(1);
+		const store = GameStore.fromScenario(WHITE_PLAINS);
+		expect(store.hexAt({ col: 3, row: 0 })!.exitEdge).toBe('north');
+	});
+
+	it('does not treat the off-map road stubs (0,7)/(0,8)/(4,10) as exits', () => {
+		expect.assertions(3);
+		const store = GameStore.fromScenario(WHITE_PLAINS);
+		for (const [col, row] of [
+			[0, 7],
+			[0, 8],
+			[4, 10]
+		]) {
+			expect(store.hexAt({ col, row })!.exitEdge).toBeNull();
+		}
+	});
+});
