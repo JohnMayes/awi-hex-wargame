@@ -22,8 +22,25 @@ describe('ScenarioMenu', () => {
 		const firstObjective = PITCHED_BATTLE.victoryConditions[0].description;
 		await expect.element(page.getByText(firstObjective).first()).toBeInTheDocument();
 
-		// Play launches the chosen scenario.
+		// Play launches the chosen scenario. Default control: Blue human, Red AI.
 		await page.getByRole('button', { name: 'Play' }).click();
-		expect(onPlay).toHaveBeenCalledWith(PITCHED_BATTLE);
+		expect(onPlay).toHaveBeenCalledWith(PITCHED_BATTLE, [1]);
+	});
+
+	it('per-side toggles set which players are AI in the onPlay payload', async () => {
+		expect.assertions(2);
+		const onPlay = vi.fn();
+		render(ScenarioMenu, { onPlay });
+
+		await page.getByRole('button', { name: 'New Game' }).click();
+		await page.getByRole('button', { name: new RegExp(PITCHED_BATTLE.name, 'i') }).click();
+
+		// Defaults: Blue = Human, Red = AI. Flip both → Blue AI, Red Human.
+		await page.getByRole('button', { name: 'Blue: Human' }).click();
+		await page.getByRole('button', { name: 'Red: AI' }).click();
+		await expect.element(page.getByRole('button', { name: 'Blue: AI' })).toBeInTheDocument();
+
+		await page.getByRole('button', { name: 'Play' }).click();
+		expect(onPlay).toHaveBeenCalledWith(PITCHED_BATTLE, [0]);
 	});
 });

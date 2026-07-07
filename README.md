@@ -236,6 +236,20 @@ Drive the engine to a terminal outcome with no UI, pit two automated policies ag
 
 ---
 
+### M15: AI Opponent ✅ shipped
+
+A rule-based heuristic opponent — no search, no eval function, no ML — synthesised from two reference hex wargames (analysis in `docs/ai-opponent-reference-implementations.md`): CAPH's role-priority ordering plus the Hex-Wargame-JS project's odds-gated attack and goal-seeking movement. Ships as a drop-in `Policy`, so it needed **zero new infrastructure** beyond M14's driver.
+
+- **Policy** — `heuristicPolicy` in `sim/playout.ts`: per activation, score each candidate (fire / charge / move / skip) on a comparable scale and take the best. Fire is gated on analytic expected damage (`expectedFireDamage` in `combat.ts`, shares the hit-chance math with `resolveFireAction` — no sampling); charge on an SP edge; movement seeks the nearest enemy or own objective hex. Beats `randomPolicy` decisively (100% / 90% by side across 300 games/scenario); tuning constants are fitted and bounded in-code.
+- **Live wiring** — `sim/playout.ts` exposes `stepPolicy` (one policy decision applied to the store, shared with `runGame`). `GameScreen.svelte` runs it in a single `$effect` for any AI-controlled side at ~400ms/action; `ScenarioMenu.svelte` offers a per-side Human/AI toggle (default: play vs AI as Blue), threaded as `aiPlayers: Player[]` through `+page.svelte`. `[]` = hot-seat, one side = vs-AI, both = auto-played AI-vs-AI.
+- **Playtest** — `scripts/playtest.ts` now prints a `heuristic vs heuristic` column beside the random baseline.
+
+**Deferred (future PRs):** difficulty levels / policy picker (the `aiPlayers` plumbing anticipates a `Record<Player, Policy>`), search-based play (MCTS / minimax — see `docs/ai-opponent-evaluation.md`), canvas input-lock during the AI turn, richer playtest metrics.
+
+**Files:** `sim/playout.ts`, `core/combat.ts` (added `expectedFireDamage`), `ui/GameScreen.svelte`, `ui/ScenarioMenu.svelte`, `routes/+page.svelte`, `scripts/playtest.ts`; tests in `sim/playout.spec.ts` + `ui/ScenarioMenu.svelte.spec.ts`. **Depends on:** M14.
+
+---
+
 ### Milestone Dependency Graph
 
 ```
