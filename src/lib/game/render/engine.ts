@@ -64,6 +64,8 @@ const PENDING_MOVE_COLOR = hexToRgb('#ffffff'); // armed move destination: white
 const PENDING_MOVE_ALPHA = 0.32;
 const PENDING_COMBAT_COLOR = hexToRgb('#7a0000'); // armed fire/charge target: dark red
 const PENDING_COMBAT_ALPHA = 0.85;
+const EXIT_COLOR = hexToRgb('#ffd166'); // off-map exit move target: gold overlay
+const EXIT_ALPHA = 0.4;
 // Leader / command legibility.
 const LEADER_PIP_COLOR = hexToRgb('#ffd700'); // gold marker on led units
 const COMMAND_COLOR = hexToRgb('#ffd700'); // gold command-radius outline
@@ -294,6 +296,11 @@ function gameRender() {
 		...currentStore.validMoveTargets.map((t) => hexKey(t.coordinates)),
 		...combatTargets.map((u) => hexKey(u.coordinates))
 	]);
+	// Exit move targets (leave the board via a border road) get a distinct gold
+	// overlay so "leave here" reads apart from an ordinary "stop here".
+	const exitKeys = new Set<string>(
+		currentStore.validMoveTargets.filter((t) => t.isExit).map((t) => hexKey(t.coordinates))
+	);
 	const highlighting = highlightKeys.size > 0;
 
 	// Base terrain, black stroke.
@@ -313,10 +320,14 @@ function gameRender() {
 	if (highlighting) {
 		const dim = color(HEX_DIM_COLOR, HEX_DIM_ALPHA);
 		const bright = color(HEX_BRIGHTEN_COLOR, HEX_BRIGHTEN_ALPHA);
+		const exitTint = color(EXIT_COLOR, EXIT_ALPHA);
 		for (const hex of grid) {
 			const corners = hex.corners.map((c) => toWorld(c));
-			if (highlightKeys.has(hexKey({ col: hex.col, row: hex.row }))) drawPoly(corners, bright, 0);
-			else drawPoly(corners, dim, 0);
+			const key = hexKey({ col: hex.col, row: hex.row });
+			if (highlightKeys.has(key)) {
+				drawPoly(corners, bright, 0);
+				if (exitKeys.has(key)) drawPoly(corners, exitTint, 0);
+			} else drawPoly(corners, dim, 0);
 		}
 	}
 

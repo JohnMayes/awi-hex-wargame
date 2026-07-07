@@ -4,7 +4,7 @@ import type { CommandCheckResult } from './command';
 import type { FireResult } from './combat';
 import type { MoveResult } from './movement';
 import type { Player, UnitType } from './types';
-import type { VictoryOutcome } from './victory';
+import type { MapEdge, VictoryOutcome } from './victory';
 
 export type ActivationStartedEvent = {
 	kind: 'activation_started';
@@ -78,6 +78,16 @@ export type HexBurnedEvent = {
 	coordinates: OffsetCoordinates;
 };
 
+export type UnitExitedEvent = {
+	kind: 'unit_exited';
+	turn: number;
+	player: Player;
+	unitId: string;
+	/** The edge the unit left by, and the border hex it left from (for render FX). */
+	edge: MapEdge;
+	coordinates: OffsetCoordinates;
+};
+
 export type LogEvent =
 	| ActivationStartedEvent
 	| MoveActionEvent
@@ -87,4 +97,5 @@ export type LogEvent =
 	| PlayerTurnEndedEvent
 	| GameOverEvent
 	| ReinforcementsArrivedEvent
-	| HexBurnedEvent;
+	| HexBurnedEvent
+	| UnitExitedEvent;

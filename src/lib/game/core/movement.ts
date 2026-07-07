@@ -8,6 +8,13 @@ export type MoveTarget = {
 	coordinates: OffsetCoordinates;
 	cost: number;
 	usesRoad: boolean;
+	/**
+	 * True when moving here exits the unit off the map, rather than repositioning
+	 * it. Only emitted when the caller opts in (`allowExit`); the target sits on a
+	 * border hex whose road runs off the edge (the scenario "exit sign"). The store
+	 * removes the unit and records the exit instead of moving it.
+	 */
+	isExit?: boolean;
 };
 
 export type MoveResult = {
@@ -46,7 +53,8 @@ export function getValidMoveTargets(
 	unit: Unit,
 	grid: Grid<HexCell>,
 	units: readonly Unit[],
-	remainingMP = getUnitDefinition(unit.type).movementAllowance
+	remainingMP = getUnitDefinition(unit.type).movementAllowance,
+	allowExit = false
 ): MoveTarget[] {
 	const def = getUnitDefinition(unit.type);
 	const startHex = grid.getHex(unit.coordinates);
@@ -126,6 +134,35 @@ export function getValidMoveTargets(
 			const newCost = cost + 1;
 			queue.push({ hex: neighbor, cost: newCost, mode });
 			considerEndpoint(neighbor, newCost, mode === 'ROAD_ONLY');
+		}
+	}
+
+	if (allowExit) {
+		// A border hex whose road runs off the map is an exit point (the scenario
+		// "exit sign"). A unit that reaches one — or starts on it — may leave the
+		// board via that road. We mark the target isExit and drop the plain "stop
+		// here" variant, since the road ends at the edge.
+		const isExitHex = (hex: HexCell) => {
+			for (const dirIdx of hex.roadEdges) {
+				const [dq, dr] = directions[dirIdx];
+				if (!hexMap.get(cubeKey(hex.q + dq, hex.r + dr))) return true;
+			}
+			return false;
+		};
+		for (const [key, target] of results) {
+			const hex = grid.getHex(target.coordinates);
+			if (hex && isExitHex(hex)) results.set(key, { ...target, isExit: true });
+		}
+		// A unit already standing on an exit hex leaves for the cost of one step.
+		if (isExitHex(startHex) && remainingMP >= 1) {
+			const key = offsetKey(startHex.col, startHex.row);
+			if (!results.has(key))
+				results.set(key, {
+					coordinates: { col: startHex.col, row: startHex.row },
+					cost: 1,
+					usesRoad: true,
+					isExit: true
+				});
 		}
 	}
 

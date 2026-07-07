@@ -2394,3 +2394,148 @@ describe('GameStore — dwell-to-torch (scenario torchRule)', () => {
 		expect(store.hexAt(TOWN_AT)?.terrain).toBe(TerrainType.TOWN);
 	});
 });
+
+// --- White Plains: off-map exit action + turnLimitWinner ---
+
+describe('exit action + turnLimitWinner', () => {
+	// A col-0 road with a north off-map stub at (0,0) (dir 2 = north, off-map;
+	// dir 5 = south). Col 1 is plain. Player 0's runner sits on the road at (0,1);
+	// a lone enemy sits far south so it never blocks the road.
+	function exitMap(): MapDefinition {
+		const map: MapDefinition = [];
+		for (let row = 0; row < 5; row++) {
+			map.push({ col: 0, row, terrain: TerrainType.OPEN, roadEdges: row === 4 ? [2] : [2, 5] });
+			map.push({ col: 1, row, terrain: TerrainType.OPEN });
+		}
+		return map;
+	}
+
+	const runner = (): Unit => ({
+		id: 'blue-runner',
+		type: UnitType.LINE_INFANTRY,
+		player: 0,
+		coordinates: { col: 0, row: 1 },
+		strengthPoints: 4,
+		maxStrengthPoints: 4,
+		selected: false,
+		movementPointsUsed: 0,
+		firedThisActivation: false,
+		activated: false,
+		elite: false
+	});
+	const foe = (): Unit => ({
+		...runner(),
+		id: 'red-foe',
+		player: 1,
+		coordinates: { col: 1, row: 4 },
+		strengthPoints: 1
+	});
+	const general: Leader = { id: 'blue-gen', attachedToUnitId: 'blue-runner', commandRadius: 5 };
+
+	function makeExitStore(
+		victoryConditions: VictoryCondition[],
+		opts: { turnLimit?: number | null; turnLimitWinner?: 0 | 1 } = {}
+	) {
+		return new GameStore([runner(), foe()], exitMap(), [general], {
+			firstPlayer: 0,
+			turnLimit: opts.turnLimit ?? 15,
+			turnLimitWinner: opts.turnLimitWinner,
+			victoryConditions
+		});
+	}
+
+	const exitNorth = (count: number): VictoryCondition => ({
+		kind: 'exit_units',
+		id: 'blue-exit',
+		player: 0,
+		description: `Exit ${count} north`,
+		edge: 'north',
+		count
+	});
+	const p1Break = (count: number): VictoryCondition => ({
+		kind: 'eliminate_units',
+		id: 'red-break',
+		player: 1,
+		description: `Break ${count}`,
+		count
+	});
+
+	it('moving off the map removes the unit and emits a unit_exited event', () => {
+		expect.assertions(3);
+		const store = makeExitStore([exitNorth(5)]);
+		store.activateUnit('blue-runner');
+		store.moveUnit({ col: 0, row: 0 }); // the exit hex
+		expect(store.units.find((u) => u.id === 'blue-runner')).toBeUndefined();
+		const exited = store.log.find((e) => e.kind === 'unit_exited');
+		expect(exited).toBeDefined();
+		expect(exited && 'edge' in exited && exited.edge).toBe('north');
+	});
+
+	it('an exit is not a kill and feeds the exit_units win (not the enemy eliminate)', () => {
+		expect.assertions(3);
+		const store = makeExitStore([exitNorth(1), p1Break(1)]);
+		store.activateUnit('blue-runner');
+		store.moveUnit({ col: 0, row: 0 });
+		store.endPlayerTurn(); // → p1
+		store.endPlayerTurn(); // → p0, full round → evaluateVictory
+		expect(store.victoryOutcome?.winner).toBe(0);
+		expect(store.victoryOutcome?.conditionId).toBe('blue-exit');
+		// The enemy's "break a blue unit" progress stayed at 0 — exiting isn't a kill.
+		const breakStatus = store.victoryStatus.find((s) => s.id === 'red-break');
+		expect(breakStatus?.text).toBe('0 / 1');
+	});
+
+	it('exit_units HUD progress reflects the accumulated count after the round', () => {
+		expect.assertions(1);
+		const store = makeExitStore([exitNorth(5)]);
+		store.activateUnit('blue-runner');
+		store.moveUnit({ col: 0, row: 0 });
+		store.endPlayerTurn();
+		store.endPlayerTurn();
+		expect(store.victoryStatus.find((s) => s.id === 'blue-exit')?.text).toBe('1 / 5');
+	});
+
+	it('turnLimitWinner takes the game at the limit, overriding the SP tiebreak', () => {
+		expect.assertions(3);
+		// Blue has more SP (4 vs 1), so a tiebreak would pick 0 — turnLimitWinner (1)
+		// must win instead. No exit happens.
+		const store = makeExitStore([exitNorth(5)], { turnLimit: 1, turnLimitWinner: 1 });
+		store.endPlayerTurn(); // p0 → p1
+		store.endPlayerTurn(); // p1 → p0, round end at/after the limit
+		expect(store.victoryOutcome?.winner).toBe(1);
+		expect(store.victoryOutcome?.reason).toBe('turn_limit_default');
+		expect(store.victoryOutcome?.conditionId).toBeNull();
+	});
+});
+
+// --- Regression: game-turn boundary is relative to the first player ---
+// With firstPlayer 1, the opening solo P1 segment must NOT be mistaken for a full
+// game turn (which previously inflated the turn counter, shortchanged P0 a turn, and
+// evaluated victory a turn early — "red wins at the beginning of turn N").
+describe('endPlayerTurn — first-player-relative game-turn boundary', () => {
+	const firstPlayerOneStore = () =>
+		new GameStore(structuredClone(TEST_UNITS), TEST_MAP, structuredClone(TEST_LEADERS), {
+			firstPlayer: 1,
+			turnLimit: 1,
+			turnLimitWinner: 0
+		});
+
+	it('the opening P1 segment does not roll the turn or end the game', () => {
+		expect.assertions(3);
+		const store = firstPlayerOneStore();
+		store.endPlayerTurn(); // P1 → P0: only one side has acted
+		expect(store.turn).toBe(1);
+		expect(store.activePlayer).toBe(0);
+		expect(store.isGameOver).toBe(false);
+	});
+
+	it('the game turn completes (roll + victory eval) only on return to the first player', () => {
+		expect.assertions(3);
+		const store = firstPlayerOneStore();
+		store.endPlayerTurn(); // P1 → P0
+		store.endPlayerTurn(); // P0 → P1: both have acted → turn 2, turn-limit reached
+		expect(store.turn).toBe(2);
+		expect(store.isGameOver).toBe(true);
+		expect(store.victoryOutcome?.winner).toBe(0); // turnLimitWinner
+	});
+});

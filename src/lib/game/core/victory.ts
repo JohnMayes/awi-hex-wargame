@@ -76,7 +76,11 @@ export type VictoryProgress = {
 	exitedCounts: Record<string, number>;
 };
 
-export type VictoryReason = 'condition_met' | 'turn_limit_tiebreak' | 'turn_limit_draw';
+export type VictoryReason =
+	| 'condition_met'
+	| 'turn_limit_tiebreak'
+	| 'turn_limit_draw'
+	| 'turn_limit_default';
 
 export type VictoryOutcome = {
 	status: 'won' | 'draw';
@@ -211,12 +215,17 @@ function isConditionSatisfied(
  *
  * Decision order: a single satisfied side wins immediately; if both sides
  * satisfy a condition on the same turn it falls through to the SP tiebreak;
- * otherwise, once the turn limit is reached with no winner, the tiebreak fires.
+ * otherwise, once the turn limit is reached with no winner, `turnLimitWinner`
+ * (if set) wins outright, else the SP tiebreak fires. `turnLimitWinner` models
+ * an asymmetric "any other result is a defender victory" scenario (e.g. White
+ * Plains: the British win unless the Colonials pull off their escape) without a
+ * bespoke condition kind.
  */
 export function evaluateVictory(
 	conditions: ReadonlyArray<VictoryCondition>,
 	snapshot: VictorySnapshot,
-	progress: VictoryProgress
+	progress: VictoryProgress,
+	turnLimitWinner: Player | null = null
 ): { progress: VictoryProgress; outcome: VictoryOutcome | null } {
 	if (conditions.length === 0 && snapshot.turnLimit === null) {
 		return { progress, outcome: null };
@@ -277,8 +286,21 @@ export function evaluateVictory(
 		return { progress: nextProgress, outcome: tiebreak(snapshot) };
 	}
 
-	// No winner: decide at the turn limit, otherwise play on.
+	// No winner: decide at the turn limit, otherwise play on. A scenario-designated
+	// turnLimitWinner takes the game by default; without one, the SP tiebreak fires.
 	if (snapshot.turnLimit !== null && snapshot.turn >= snapshot.turnLimit) {
+		if (turnLimitWinner !== null) {
+			return {
+				progress: nextProgress,
+				outcome: {
+					status: 'won',
+					winner: turnLimitWinner,
+					conditionId: null,
+					reason: 'turn_limit_default',
+					turn: snapshot.turn
+				}
+			};
+		}
 		return { progress: nextProgress, outcome: tiebreak(snapshot) };
 	}
 

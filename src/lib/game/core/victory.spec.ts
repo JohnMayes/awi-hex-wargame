@@ -420,6 +420,59 @@ describe('evaluateVictory — turn-limit tiebreak', () => {
 	});
 });
 
+// --- turn-limit default winner (White Plains: "any other result is a British win") ---
+
+describe('evaluateVictory — turnLimitWinner', () => {
+	const cond: VictoryCondition = {
+		kind: 'exit_units',
+		id: 'exit-0',
+		player: 0,
+		description: 'exit 5 north',
+		edge: 'north',
+		count: 5
+	};
+
+	it('no winner at the limit → the designated player wins outright, not by SP', () => {
+		expect.assertions(3);
+		// Player 0 has MORE SP, so an SP tiebreak would hand it to 0 — turnLimitWinner
+		// (1) must override that.
+		const units = [u('a', 0, 4, 0, 0), u('b', 0, 4, 0, 1), u('e', 1, 2, 5, 0)];
+		const r = evaluateVictory([cond], snapshot({ turn: 10, units, turnLimit: 10 }), progress(), 1);
+		expect(r.outcome?.status).toBe('won');
+		expect(r.outcome?.winner).toBe(1);
+		expect(r.outcome?.reason).toBe('turn_limit_default');
+	});
+
+	it('the owning player still wins early by meeting its condition', () => {
+		expect.assertions(2);
+		const units = [u('a', 0, 4, 0, 0), u('e', 1, 4, 5, 0)];
+		const r = evaluateVictory(
+			[cond],
+			snapshot({
+				turn: 3,
+				units,
+				turnLimit: 10,
+				exitedThisTurn: Array.from({ length: 5 }, (_, i) => ({
+					unitId: `x${i}`,
+					player: 0 as Player,
+					edge: 'north' as const
+				}))
+			}),
+			progress(),
+			1
+		);
+		expect(r.outcome?.winner).toBe(0);
+		expect(r.outcome?.reason).toBe('condition_met');
+	});
+
+	it('before the limit with no winner → game continues even with a turnLimitWinner', () => {
+		expect.assertions(1);
+		const units = [u('a', 0, 4, 0, 0), u('e', 1, 1, 5, 0)];
+		const r = evaluateVictory([cond], snapshot({ turn: 9, units, turnLimit: 10 }), progress(), 1);
+		expect(r.outcome).toBeNull();
+	});
+});
+
 // --- mutual satisfaction ---
 
 describe('evaluateVictory — mutual satisfaction', () => {

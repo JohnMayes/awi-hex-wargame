@@ -59,6 +59,12 @@ export type Scenario = {
 	turnLimit: number;
 	victoryConditions: VictoryCondition[];
 	/**
+	 * Who wins if the turn limit is reached with no victory condition met. Set it
+	 * for asymmetric "any other result is a defender victory" battles (e.g. White
+	 * Plains); omit to fall back to the surviving-SP tiebreak (the default).
+	 */
+	turnLimitWinner?: Player;
+	/**
 	 * Forces that arrive after game start. Each group is deployed at the start of
 	 * its owner's portion of the scheduled turn; a group whose entry hex is blocked
 	 * (occupied or impassable) is held off-map and retried each subsequent owner turn.

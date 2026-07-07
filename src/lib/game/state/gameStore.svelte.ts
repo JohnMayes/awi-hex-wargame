@@ -40,8 +40,10 @@ import {
 import { getUnitDefinition } from '../core/unitDefinitions';
 import {
 	boundsFromCoords,
+	edgeOf,
 	emptyVictoryProgress,
 	evaluateVictory,
+	type MapEdge,
 	type VictoryCondition,
 	type VictoryOutcome,
 	type VictoryProgress,
@@ -69,6 +71,7 @@ export type GameStoreConfig = {
 	firstPlayer?: Player;
 	turnLimit?: number | null;
 	victoryConditions?: VictoryCondition[];
+	turnLimitWinner?: Player;
 	reinforcements?: ReinforcementGroup[];
 	torchRule?: TorchRule;
 };
@@ -131,6 +134,20 @@ export class GameStore {
 	#pendingReinforcements: PendingReinforcement[];
 	// Town-burning rule, if the scenario enables it (Bunker Hill). Null otherwise.
 	#torchRule: TorchRule | null;
+	// The side that activates first each game turn. A full game turn completes when
+	// play returns to this player (both sides have acted) — the trigger for turn
+	// rollover and victory evaluation. Stored so the boundary is correct whether the
+	// first player is 0 or 1 (a firstPlayer-1 scenario's opening solo segment must
+	// not be mistaken for a whole game turn).
+	#firstPlayer: Player;
+	// Default winner at the turn limit (asymmetric scenarios); null → SP tiebreak.
+	#turnLimitWinner: Player | null;
+	// Whether any victory condition is exit_units. Gates the off-map exit action so
+	// scenarios without an exit objective (Bunker Hill's north road stubs) are unaffected.
+	#exitEnabled: boolean;
+	// Units that have exited the board since the last victory evaluation, fed as
+	// `exitedThisTurn` once per full game turn and then cleared. Not reactive.
+	#exitedSinceEval: { unitId: string; player: Player; edge: MapEdge }[] = [];
 	// Per-TOWN-hex count of consecutive game turns held by the torch player. Reset to
 	// 0 whenever the hex is vacated; at #torchRule.dwellTurns the hex is razed. Not reactive.
 	#torchDwell: Map<string, number> = new Map();
@@ -152,11 +169,14 @@ export class GameStore {
 		this.grid = newGrid;
 		this.units = units;
 		this.leaders = leaders;
-		this.activePlayer = config.firstPlayer ?? 0;
+		this.#firstPlayer = config.firstPlayer ?? 0;
+		this.activePlayer = this.#firstPlayer;
 		this.turnLimit = config.turnLimit ?? null;
 		this.victoryConditions = config.victoryConditions ?? [];
 		this.#bounds = boundsFromCoords(map);
 		this.#torchRule = config.torchRule ?? null;
+		this.#turnLimitWinner = config.turnLimitWinner ?? null;
+		this.#exitEnabled = (config.victoryConditions ?? []).some((c) => c.kind === 'exit_units');
 		// Clone so the store never mutates the caller's scenario data.
 		this.#pendingReinforcements = structuredClone(config.reinforcements ?? []).flatMap((g) =>
 			g.units.map((spec) => ({ turn: g.turn, player: g.player, spec }))
@@ -174,6 +194,7 @@ export class GameStore {
 				firstPlayer: scenario.firstPlayer,
 				turnLimit: scenario.turnLimit,
 				victoryConditions: scenario.victoryConditions,
+				turnLimitWinner: scenario.turnLimitWinner,
 				reinforcements: scenario.reinforcements,
 				torchRule: scenario.torchRule
 			}
@@ -227,7 +248,7 @@ export class GameStore {
 			unit.movementPointsUsed < def.movementAllowance;
 		if (canMove) {
 			const remainingMP = def.movementAllowance - unit.movementPointsUsed;
-			move = getValidMoveTargets(unit, this.grid, this.units, remainingMP);
+			move = getValidMoveTargets(unit, this.grid, this.units, remainingMP, this.#exitEnabled);
 		}
 
 		let fire: Unit[] = [];
@@ -287,14 +308,16 @@ export class GameStore {
 			})),
 			eliminatedByPlayer: this.#eliminatedByPlayer,
 			bounds: this.#bounds,
-			exitedThisTurn: [], // exit action deferred; evaluator supports it for future use
+			exitedThisTurn: this.#exitedSinceEval,
 			burnedHexes: this.#countBurnedHexes()
 		};
 		const { progress, outcome } = evaluateVictory(
 			this.victoryConditions,
 			snapshot,
-			this.victoryProgress
+			this.victoryProgress,
+			this.#turnLimitWinner
 		);
+		this.#exitedSinceEval = []; // consumed; accumulate afresh next round
 		this.victoryProgress = progress;
 		if (outcome) {
 			this.victoryOutcome = outcome;
@@ -687,6 +710,36 @@ export class GameStore {
 		const activeId = this.activeUnitId;
 		const from = this.selectedUnit.coordinates;
 
+		// Off-map exit: the unit leaves the board via a border road (scenario "exit
+		// sign"). Remove it and record the exit for the exit_units victory instead of
+		// repositioning. Exiting is not a kill, so #eliminatedByPlayer is untouched.
+		if (target.isExit) {
+			const borderHex = this.grid.getHex(newCords);
+			const edge = borderHex ? edgeOf(borderHex, this.#bounds) : null;
+			const player = this.activePlayer;
+			this.units = this.units.filter((u) => u.id !== activeId);
+			if (edge) {
+				this.#exitedSinceEval = [...this.#exitedSinceEval, { unitId: activeId, player, edge }];
+				this.#emit({
+					kind: 'unit_exited',
+					turn: this.turn,
+					player,
+					unitId: activeId,
+					edge,
+					coordinates: newCords
+				});
+			}
+			this.#finishActivation();
+			return {
+				unitId: activeId,
+				from,
+				to: from,
+				cost: target.cost,
+				moved: true,
+				difficultTerrainCheck: null
+			};
+		}
+
 		let dtCheck: { passed: boolean } | null = null;
 		let to: OffsetCoordinates = newCords;
 		let cost = target.cost;
@@ -1021,11 +1074,15 @@ export class GameStore {
 
 		const prevTurn = this.turn;
 		const prevPlayer = this.activePlayer;
+		const nextPlayer: Player = prevPlayer === 0 ? 1 : 0;
+		this.activePlayer = nextPlayer;
 
-		if (this.activePlayer === 0) {
-			this.activePlayer = 1;
-		} else {
-			this.activePlayer = 0;
+		// A full game turn completes when play returns to the first player — both
+		// sides have now activated once. (With firstPlayer 0 this is the 1→0 handback,
+		// as before; with firstPlayer 1 it is the 0→1 handback, so the opening solo
+		// segment is not mistaken for a whole turn.)
+		const gameTurnComplete = nextPlayer === this.#firstPlayer;
+		if (gameTurnComplete) {
 			this.turn = this.turn + 1;
 			this.#clearActivatedFlags();
 		}
@@ -1042,8 +1099,7 @@ export class GameStore {
 			nextPlayer: this.activePlayer
 		});
 
-		// A full game turn completes when the second player (1) hands back to 0.
-		if (prevPlayer === 1) {
+		if (gameTurnComplete) {
 			this.#processTorch(); // resolve town-burning before victory reads burned hexes
 			this.#evaluateVictory();
 		}
