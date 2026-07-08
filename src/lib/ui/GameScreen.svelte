@@ -3,6 +3,7 @@
 	import type { Player } from '$lib/game/core/types';
 	import { heuristicPolicy, stepPolicy } from '$lib/game/sim/playout';
 	import LittleBoard from '$lib/game/render/LittleBoard.svelte';
+	import { swallowPointer } from './swallowPointer';
 
 	// ponytail: palette hex literals are duplicated with ScenarioMenu.svelte; promote to
 	// CSS tokens if a third screen needs them. Two consumers isn't worth a token system yet.
@@ -11,23 +12,6 @@
 		onExit,
 		aiPlayers = []
 	}: { store: GameStore; onExit: () => void; aiPlayers?: Player[] } = $props();
-
-	// Pointer-events discipline for the LJS chrome overlay: stop chrome presses AND
-	// releases from bubbling to `document`, where LittleJS's input listeners live.
-	// Stopping the *down* events keeps chrome taps from registering as board input;
-	// stopping the *up* events matters on touch devices, where the engine's
-	// `touchend` handler calls `preventDefault()` — which would cancel the
-	// synthesized `click` and leave every chrome button/radio/dialog dead to touch.
-	// The button's own `onclick`/`onchange` is a separate event and still fires.
-	// An attachment (not inline handlers) keeps the static container free of a11y warnings.
-	const SWALLOWED = ['mousedown', 'mouseup', 'touchstart', 'touchend'] as const;
-	function swallowPointer(node: HTMLElement) {
-		const stop = (e: Event) => e.stopPropagation();
-		for (const type of SWALLOWED) node.addEventListener(type, stop);
-		return () => {
-			for (const type of SWALLOWED) node.removeEventListener(type, stop);
-		};
-	}
 
 	const outcomeText = $derived.by(() => {
 		const o = store.victoryOutcome;

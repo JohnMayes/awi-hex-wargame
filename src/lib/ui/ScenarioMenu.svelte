@@ -2,6 +2,7 @@
 	import { SCENARIOS } from '$lib/game/data/scenarios';
 	import type { Scenario } from '$lib/game/core/scenario';
 	import type { Player } from '$lib/game/core/types';
+	import { swallowPointer } from './swallowPointer';
 
 	// ponytail: palette hex literals are shared with GameScreen.svelte (see note there).
 	let { onPlay }: { onPlay: (scenario: Scenario, aiPlayers: Player[]) => void } = $props();
@@ -40,7 +41,7 @@
 	}
 </script>
 
-<main class="menu">
+<main class="menu" {@attach swallowPointer}>
 	{#if screen === 'home'}
 		<div class="home">
 			<h1 class="title">AWI Hex &amp; Counter</h1>
