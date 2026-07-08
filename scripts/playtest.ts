@@ -7,6 +7,7 @@ import {
 	runGame,
 	randomPolicy,
 	heuristicPolicy,
+	smartHeuristicPolicy,
 	type GameOutcome,
 	type Policy
 } from '../src/lib/game/sim/playout';
@@ -52,11 +53,51 @@ function report(label: string, scenario: (typeof SCENARIOS)[string], blue: Polic
 	console.log(formatMechanicStats(mechanicStats(games)));
 }
 
+// Paired-mirror A/B: smart vs baseline on the same seeds, each policy playing
+// each side once, so a scenario's side bias (see White Plains) cancels out.
+// Reports the challenger's net edge over the incumbent — the verdict on whether a
+// change helps. Default call is default-smart vs the naive baseline; to sweep a
+// *tuning* change, pass `makeSmartPolicy({ ...DEFAULT_SMART_TUNING, finishBonus: 0.7 })`
+// as the challenger and `smartHeuristicPolicy` as the incumbent (see the loop below).
+function abReport(
+	label: string,
+	scenario: (typeof SCENARIOS)[string],
+	challenger: Policy,
+	incumbent: Policy
+) {
+	let spEdge = 0;
+	let challengerWins = 0;
+	let incumbentWins = 0;
+	let draws = 0;
+	const tally = (g: GameOutcome, challengerPlayer: 0 | 1) => {
+		spEdge += g.survivingSpByPlayer[challengerPlayer] - g.survivingSpByPlayer[1 - challengerPlayer];
+		if (g.outcome?.status === 'won' && g.outcome.winner !== null) {
+			if (g.outcome.winner === challengerPlayer) challengerWins++;
+			else incumbentWins++;
+		} else draws++;
+	};
+	for (let seed = 0; seed < N; seed++) {
+		tally(runGame(scenario, challenger, incumbent, mulberry32(seed)), 0);
+		tally(runGame(scenario, incumbent, challenger, mulberry32(seed)), 1);
+	}
+	const g = 2 * N;
+	const edge = spEdge / g;
+	console.log(`  [A/B: ${label} · paired mirror]`);
+	console.log(
+		`    challenger win ${((100 * challengerWins) / g).toFixed(1)}%   incumbent win ${((100 * incumbentWins) / g).toFixed(1)}%   draw ${((100 * draws) / g).toFixed(1)}%`
+	);
+	console.log(
+		`    challenger net surviving-SP edge: ${edge >= 0 ? '+' : ''}${edge.toFixed(2)} per game`
+	);
+}
+
 console.log(`Playtest: ${N} games/scenario (seed i per game i)\n`);
 
 for (const scenario of Object.values(SCENARIOS)) {
 	console.log(`── ${scenario.name} (${scenario.id}, turnLimit ${scenario.turnLimit}) ──`);
 	report('random vs random', scenario, randomPolicy, randomPolicy);
-	report('heuristic vs heuristic', scenario, heuristicPolicy, heuristicPolicy);
+	report('baseline vs baseline', scenario, heuristicPolicy, heuristicPolicy);
+	report('smart vs smart', scenario, smartHeuristicPolicy, smartHeuristicPolicy);
+	abReport('smart vs baseline', scenario, smartHeuristicPolicy, heuristicPolicy);
 	console.log('');
 }

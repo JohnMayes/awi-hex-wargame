@@ -11,6 +11,8 @@ import type { LogEvent } from '../core/log';
 import { getValidMoveTargets, type MoveTarget } from '../core/movement';
 import { getValidFireTargets, expectedFireDamage } from '../core/combat';
 import { getValidChargeTargets } from '../core/charge';
+import { getTerrainCoverModifier } from '../core/terrain';
+import { unitDefinitions } from '../core/unitDefinitions';
 import { hexDistance } from '../core/hex';
 
 export type Action =
@@ -95,6 +97,34 @@ const CHARGE_BASE = 0.5; // a favourable charge's floor score; +SP-edge on top.
 // ^ safe in [0, 0.5]; >=0.9 saturates above max fire EV (~0.76) → over-charges, weaker.
 const MOVE_SCORE = 0.05; // advancing beats idling. Pure ordering tiebreak: any 0 < x < FIRE_MIN_EV works.
 
+// --- smartHeuristicPolicy tuning (target/position preferences) ---------------
+// Additive refinements layered on the baseline scores above, chosen to break
+// ties the baseline resolves by array order (which target, which destination).
+// They are sized so a move's total stays below FIRE_MIN_EV — category priority
+// (a real shot always outranks a step) is preserved by construction.
+//
+// Grouped into a tuning object (not bare constants) so a candidate tuning can be
+// A/B'd against the default *in one process*: `makeSmartPolicy({ ...DEFAULT_SMART_TUNING,
+// finishBonus: 0.7 })` plays the default head-to-head in the harness — no git
+// gymnastics. Re-sweep the values via that A/B if the action set or combat math changes.
+export type SmartTuning = {
+	finishBonus: number; // fire likely to eliminate the target (ev >= its SP): removes it for good.
+	leaderBonus: number; // target carries an attached leader: a casualty there disrupts enemy command.
+	closestEps: number; // faint tiebreak toward the nearer fire target (EV already folds in range/cover).
+	coverBonus: number; // move onto cover terrain (woods/town): reduces incoming fire.
+	inRangeBonus: number; // move that brings an enemy within our firing range (a firing position).
+	closerWeight: number; // prefer advancing nearer the goal; tiny so the move score stays < FIRE_MIN_EV.
+};
+
+export const DEFAULT_SMART_TUNING: SmartTuning = {
+	finishBonus: 0.5,
+	leaderBonus: 0.3,
+	closestEps: 0.01,
+	coverBonus: 0.02,
+	inRangeBonus: 0.02,
+	closerWeight: 0.002
+};
+
 type ScoredAction = { action: Action; score: number };
 
 // Hexes a unit should advance toward: every enemy (to engage) plus its own
@@ -168,25 +198,143 @@ function bestAction(store: GameStore, unit: Unit, isActive: boolean): ScoredActi
 	return best;
 }
 
-export const heuristicPolicy: Policy = (store) => {
-	const active = store.activeUnitId;
-	if (active !== null && store.activationStep === ActivationStep.ACTION) {
-		const unit = store.units.find((u) => u.id === active)!;
-		// One shot per activation: after firing, don't reposition — end it.
-		if (unit.firedThisActivation) return { kind: 'skip', unitId: active };
-		return bestAction(store, unit, true).action;
+// --- smartHeuristicPolicy: baseline scores + target/position preferences -----
+// Same greedy shape as bestAction, but scoring is factored into a pure
+// scoreAction() so the tie-breaks are explicit and (see below) reusable by a
+// future search.
+
+/** Shared target-preference bonus (fire + charge): prefer hitting a led unit,
+ *  since a casualty there can disrupt the enemy's command. Pure over the store. */
+function targetValue(store: GameStore, target: Unit, tuning: SmartTuning): number {
+	return store.leaders.some((l) => l.attachedToUnitId === target.id) ? tuning.leaderBonus : 0;
+}
+
+/** Hex distance from `coords` to the nearest enemy of `player` (Infinity if none). */
+function nearestEnemyDist(store: GameStore, coords: OffsetCoordinates, player: Player): number {
+	const from = store.grid!.getHex(coords)!;
+	let best = Infinity;
+	for (const u of store.units) {
+		if (u.player === player) continue;
+		best = Math.min(best, hexDistance(from, store.grid!.getHex(u.coordinates)!));
 	}
-	const fresh = store.units.filter((u) => u.player === store.activePlayer && !u.activated);
-	if (fresh.length === 0) return null;
-	// Activate the unit with the most valuable available action first (shooters
-	// with clear shots, then chargers, then units that can advance).
-	let choice = bestAction(store, fresh[0], false);
-	for (let i = 1; i < fresh.length; i++) {
-		const s = bestAction(store, fresh[i], false);
-		if (s.score > choice.score) choice = s;
+	return best;
+}
+
+// TREE-SEARCH HOOK. Pure value of one concrete action from the current position.
+// smartHeuristicPolicy takes the argmax of this over legalActions(); a future αβ
+// search would reuse it UNCHANGED as its move-ordering key (expand highest-scored
+// moves first → more cutoffs). Returns -Infinity for anything the baseline gates
+// out (weak shot, unfavourable charge, non-advancing move) so it never beats a
+// skip. The finish/leader/cover terms are deliberately the same vocabulary a leaf
+// evalState(store, player) would use (material Σ own SP − enemy SP, objective
+// control, cover) — so the eval and the ordering key can share one code path.
+function scoreAction(store: GameStore, unit: Unit, action: Action, tuning: SmartTuning): number {
+	const grid = store.grid!;
+	switch (action.kind) {
+		case 'fire': {
+			const target = store.units.find((u) => u.id === action.targetId);
+			if (!target) return -Infinity;
+			const ev = expectedFireDamage(unit, target, grid);
+			if (ev < FIRE_MIN_EV) return -Infinity; // baseline hold-fire gate
+			const finish = ev >= target.strengthPoints ? tuning.finishBonus : 0; // likely kill
+			const dist = hexDistance(grid.getHex(unit.coordinates)!, grid.getHex(target.coordinates)!);
+			return ev + finish + targetValue(store, target, tuning) - tuning.closestEps * dist;
+		}
+		case 'charge': {
+			const target = store.units.find((u) => u.id === action.targetId);
+			if (!target) return -Infinity;
+			// ponytail: same naive SP-edge gate as bestAction — no analytic opposed-roll EV.
+			if (unit.strengthPoints < target.strengthPoints) return -Infinity;
+			return (
+				CHARGE_BASE +
+				(unit.strengthPoints - target.strengthPoints) +
+				targetValue(store, target, tuning)
+			);
+		}
+		case 'move': {
+			const goals = goalHexes(store, unit);
+			const here = minGoalDist(store, unit.coordinates, goals);
+			const there = minGoalDist(store, action.coords, goals);
+			if (there >= here) return -Infinity; // only advance (baseline behaviour)
+			const hex = grid.getHex(action.coords);
+			const cover = hex && getTerrainCoverModifier(hex.terrain) < 0 ? tuning.coverBonus : 0;
+			const range = unitDefinitions[unit.type].firingRange;
+			const inRange =
+				range > 0 && nearestEnemyDist(store, action.coords, unit.player) <= range
+					? tuning.inRangeBonus
+					: 0;
+			return MOVE_SCORE - tuning.closerWeight * there + cover + inRange;
+		}
+		case 'skip':
+			return -Infinity;
 	}
-	return choice.action;
-};
+}
+
+/** Best-scoring action for `unit` via scoreAction (defaults to skip). */
+function bestSmartAction(
+	store: GameStore,
+	unit: Unit,
+	isActive: boolean,
+	tuning: SmartTuning
+): ScoredAction {
+	let best: ScoredAction = { action: { kind: 'skip', unitId: unit.id }, score: -Infinity };
+	for (const action of legalActions(store, unit, isActive)) {
+		const score = scoreAction(store, unit, action, tuning);
+		if (score > best.score) best = { action, score };
+	}
+	return best;
+}
+
+// Shared activation scaffolding: continue the mid-activation unit (one shot per
+// activation), else activate the fresh unit whose best action scores highest.
+// `best` is the only thing that varies between policies — this is also where a
+// searchPolicy would slot in (see the FUTURE note below).
+function makePolicy(
+	best: (store: GameStore, unit: Unit, isActive: boolean) => ScoredAction
+): Policy {
+	return (store) => {
+		const active = store.activeUnitId;
+		if (active !== null && store.activationStep === ActivationStep.ACTION) {
+			const unit = store.units.find((u) => u.id === active)!;
+			// One shot per activation: after firing, don't reposition — end it.
+			if (unit.firedThisActivation) return { kind: 'skip', unitId: active };
+			return best(store, unit, true).action;
+		}
+		const fresh = store.units.filter((u) => u.player === store.activePlayer && !u.activated);
+		if (fresh.length === 0) return null;
+		// Activate the unit with the most valuable available action first (shooters
+		// with clear shots, then chargers, then units that can advance).
+		let choice = best(store, fresh[0], false);
+		for (let i = 1; i < fresh.length; i++) {
+			const s = best(store, fresh[i], false);
+			if (s.score > choice.score) choice = s;
+		}
+		return choice.action;
+	};
+}
+
+// Naive greedy baseline: EV-max fire, SP-edge charge, nearest-goal move, ties by
+// array order. Kept as the fixed low-bar opponent for the A/B harness and tests.
+export const heuristicPolicy: Policy = makePolicy(bestAction);
+
+/** Build a smart policy for a given tuning. `makeSmartPolicy(candidate)` can play
+ *  `makeSmartPolicy()` head-to-head in the harness to sweep a tuning change. */
+export function makeSmartPolicy(tuning: SmartTuning = DEFAULT_SMART_TUNING): Policy {
+	return makePolicy((store, unit, isActive) => bestSmartAction(store, unit, isActive, tuning));
+}
+
+/** The default AI opponent (the game and headless driver both use this). */
+export const smartHeuristicPolicy: Policy = makeSmartPolicy();
+
+// FUTURE (tree search + αβ): add `searchPolicy = makePolicy(bestSearchAction)`,
+// where bestSearchAction runs a depth-limited minimax over legalActions() (the
+// move generator already used above), orders candidate moves by scoreAction()
+// for pruning, and scores leaf positions with a new evalState(store, player)
+// built from the same material/objective/cover terms scoreAction rewards here.
+// The one piece still missing is apply/undo: search needs to explore actions on
+// a throwaway copy of the position (GameStore.fromScenario + action replay, or a
+// lighter make/unmake) since the live store mutates in place. RNG is already
+// seed-threaded, so a fixed seed keeps search deterministic.
 
 const sumSp = (units: readonly Unit[], player: Player) =>
 	units.filter((u) => u.player === player).reduce((sum, u) => sum + u.strengthPoints, 0);

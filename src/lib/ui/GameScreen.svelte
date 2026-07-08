@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { GameStore } from '$lib/game/state/gameStore.svelte';
 	import type { Player } from '$lib/game/core/types';
-	import { heuristicPolicy, stepPolicy } from '$lib/game/sim/playout';
+	import { smartHeuristicPolicy, stepPolicy } from '$lib/game/sim/playout';
 	import LittleBoard from '$lib/game/render/LittleBoard.svelte';
 	import { swallowPointer } from './swallowPointer';
 
@@ -85,7 +85,7 @@
 		aiThinking = true;
 		(async () => {
 			while (!store.isGameOver && aiPlayers.includes(store.activePlayer)) {
-				stepPolicy(store, heuristicPolicy, Math.random);
+				stepPolicy(store, smartHeuristicPolicy, Math.random);
 				await new Promise((r) => setTimeout(r, AI_STEP_MS));
 			}
 			aiThinking = false;

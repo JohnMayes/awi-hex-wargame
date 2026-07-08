@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { runGame, randomPolicy, heuristicPolicy } from './playout';
+import { runGame, randomPolicy, heuristicPolicy, smartHeuristicPolicy } from './playout';
 import { mechanicStats } from './report';
 import { mulberry32 } from '../core/rng';
 import { SCENARIOS } from '../data/scenarios';
@@ -51,6 +51,36 @@ describe('heuristicPolicy plays better than random', () => {
 			heuristicEdge += g.survivingSpByPlayer[0] - g.survivingSpByPlayer[1];
 		}
 		expect(heuristicEdge).toBeGreaterThan(0);
+	});
+});
+
+describe('smartHeuristicPolicy', () => {
+	it.each(Object.values(SCENARIOS))('$name terminates under smartHeuristicPolicy', (scenario) => {
+		expect.assertions(1);
+		const results = Array.from({ length: 30 }, (_, seed) =>
+			runGame(scenario, smartHeuristicPolicy, smartHeuristicPolicy, mulberry32(seed))
+		);
+		expect(
+			results.every((r) => r.outcome !== null && r.turns >= 1 && r.turns <= scenario.turnLimit)
+		).toBe(true);
+	});
+
+	// The tuning must not regress strength. Paired-mirror A/B (smart and baseline
+	// each play each side on the same seed, cancelling scenario side-bias),
+	// aggregated across every scenario so one symmetric map's noise can't flip the
+	// sign. Net surviving-SP swing in smart's favour must stay positive.
+	it('does not regress vs the baseline (net SP edge > 0 across scenarios)', () => {
+		expect.assertions(1);
+		let edge = 0;
+		for (const scenario of Object.values(SCENARIOS)) {
+			for (let seed = 0; seed < 30; seed++) {
+				const a = runGame(scenario, smartHeuristicPolicy, heuristicPolicy, mulberry32(seed));
+				edge += a.survivingSpByPlayer[0] - a.survivingSpByPlayer[1];
+				const b = runGame(scenario, heuristicPolicy, smartHeuristicPolicy, mulberry32(seed));
+				edge += b.survivingSpByPlayer[1] - b.survivingSpByPlayer[0];
+			}
+		}
+		expect(edge).toBeGreaterThan(0);
 	});
 });
 
