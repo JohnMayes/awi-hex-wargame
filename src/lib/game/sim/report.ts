@@ -21,6 +21,7 @@ export type MechanicStats = {
 	unitsEliminated: number;
 	leadersLost: number;
 	unitsExited: number;
+	hexesRazed: number;
 };
 
 const empty = (): MechanicStats => ({
@@ -36,7 +37,8 @@ const empty = (): MechanicStats => ({
 	command: { checks: 0, failures: 0 },
 	unitsEliminated: 0,
 	leadersLost: 0,
-	unitsExited: 0
+	unitsExited: 0,
+	hexesRazed: 0
 });
 
 // Fold one event into the running totals. A morale check happens whenever a
@@ -78,6 +80,9 @@ function foldEvent(s: MechanicStats, e: LogEvent): void {
 		case 'unit_exited':
 			s.unitsExited++;
 			break;
+		case 'hex_burned':
+			s.hexesRazed++;
+			break;
 	}
 }
 
@@ -98,6 +103,6 @@ export function formatMechanicStats(s: MechanicStats): string {
 		`    charge: ${c.count} (elim ${c.defenderEliminated}, retreat ${c.defenderRetreats}, hold ${c.defenderHolds}, repulsed ${c.attackerRepulsed})`,
 		`    morale: ${s.morale.checks} checks, ${rate(s.morale.breaks, s.morale.checks)} broke`,
 		`    command: ${s.command.checks} checks, ${rate(s.command.failures, s.command.checks)} failed`,
-		`    casualties: ${s.unitsEliminated} units, ${s.leadersLost} leaders, ${s.unitsExited} exited`
+		`    casualties: ${s.unitsEliminated} units, ${s.leadersLost} leaders, ${s.unitsExited} exited, ${s.hexesRazed} razed`
 	].join('\n');
 }

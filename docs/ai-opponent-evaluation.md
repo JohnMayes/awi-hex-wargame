@@ -198,3 +198,45 @@ the turn limit and is decided by the SP tiebreak — elimination rate is 0% and 
 or pursue objectives. These numbers detect gross first-player / structural
 asymmetry only; meaningful balance and pacing conclusions wait for M15's
 eval-driven policy playing the same harness.
+
+## Objective-aware goal-seeking (2026-07-08)
+
+`smartHeuristicPolicy` now derives advance goals from **all** victory-condition kinds,
+not just enemies + control/hold hexes. This is **smart-only**: `heuristicPolicy` stays
+objective-blind (enemies + control/hold), keeping it the fixed low-bar incumbent the
+A/B harness and tests measure against (`goalHexes(store, unit, objectiveAware)` — smart
+passes `true`, baseline `false`). The two added kinds:
+
+- **`raze`** → still-standing TOWN hexes. Torching needs no new action: a unit on a
+  town hex has goal-distance 0, so it never advances off and dwells there until the
+  scenario `torchRule` burns it. Bunker Hill British now win via their designed raze
+  objective (`smart vs smart` red 38.5% → 56.5%, ~2 hexes burned/game).
+- **`exit_units`** → the declared exit hexes for the owning side's edge. Such a side
+  runs for the exit (enemies are dropped from its goals — they're the pursuers, and
+  chasing them drags fleers backward); the "break N" half is met incidentally by
+  disengaging fire. New `Action.isExit` step is scored above fire/charge so a unit
+  at the edge actually leaves. Exits pursued: `smart` White Plains 3 → 318 aggregate.
+
+**Verdict (paired-mirror A/B, smart vs the objective-blind baseline, 30 seeds/side):**
+smart's net **win** edge across the suite rose from **+8 → +15**; the gain is Bunker
+Hill (**+10 → +17 wins**, SP edge +71 → +116) where the British now win via the raze
+objective instead of only the turn-limit SP tiebreak. Pitched Battle is unchanged (−2,
+no objective there); White Plains is win-neutral (unwinnable — see below). Note we grade
+this by **wins, not surviving SP**: on White Plains correct play _sacrifices_ SP to flee
+(SP edge −83 there), so the old SP-swing regression test now misreads the escape scenario
+as a regression — it was switched to net-wins accordingly (`playout.spec.ts`).
+
+`exitBonus` (SmartTuning) is `1.0` by construction, not by sweep: it only has to exceed
+max fire EV (~0.76) so an available exit always wins the argmax; any higher value is
+behaviourally identical and White Plains can't be won regardless.
+
+**Known limitation — no terrain-aware routing (DEFERRED).** `minGoalDist` is
+straight-line cube distance, not path cost. Units greedily step toward whichever
+neighbour lowers it, blind to rivers/impassable hexes blocking the route beyond.
+**White Plains stays Colonial-unwinnable** as a result: the win needs 5 units off the
+north edge but a game yields at most 3 (measured over 500 games), a conjunction of
+(a) a single north exit hex `(3,0)` — the map's `exit refactor pending` — and (b) three
+river-blocked Colonials that march north into a dead-end instead of routing around.
+The ≥2-kill half is met in 41% of games, so only the exit half fails. Fix when a
+scenario justifies it: A\* over `movement.ts` costs keyed off the same `goalHexes`
+(see the `ponytail:` note on `minGoalDist`), plus widening the White Plains exit.

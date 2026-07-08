@@ -65,22 +65,53 @@ describe('smartHeuristicPolicy', () => {
 		).toBe(true);
 	});
 
-	// The tuning must not regress strength. Paired-mirror A/B (smart and baseline
-	// each play each side on the same seed, cancelling scenario side-bias),
-	// aggregated across every scenario so one symmetric map's noise can't flip the
-	// sign. Net surviving-SP swing in smart's favour must stay positive.
-	it('does not regress vs the baseline (net SP edge > 0 across scenarios)', () => {
+	// The objective-aware policy must not regress strength. Paired-mirror A/B (smart and
+	// baseline each play each side on the same seed, cancelling scenario side-bias),
+	// aggregated across every scenario so one map's noise can't flip the sign. We count
+	// WINS, not surviving SP: on an escape scenario (White Plains) correct play sacrifices
+	// SP to run for the exit, so an SP metric penalises the right move (see the
+	// objective-aware section in docs/ai-opponent-evaluation.md). Smart must win strictly
+	// more games than the baseline across the suite.
+	it('does not regress vs the baseline (net wins across scenarios)', () => {
 		expect.assertions(1);
 		let edge = 0;
+		const tally = (g: ReturnType<typeof runGame>, smartPlayer: 0 | 1) => {
+			if (g.outcome?.status === 'won' && g.outcome.winner !== null)
+				edge += g.outcome.winner === smartPlayer ? 1 : -1;
+		};
 		for (const scenario of Object.values(SCENARIOS)) {
 			for (let seed = 0; seed < 30; seed++) {
-				const a = runGame(scenario, smartHeuristicPolicy, heuristicPolicy, mulberry32(seed));
-				edge += a.survivingSpByPlayer[0] - a.survivingSpByPlayer[1];
-				const b = runGame(scenario, heuristicPolicy, smartHeuristicPolicy, mulberry32(seed));
-				edge += b.survivingSpByPlayer[1] - b.survivingSpByPlayer[0];
+				tally(runGame(scenario, smartHeuristicPolicy, heuristicPolicy, mulberry32(seed)), 0);
+				tally(runGame(scenario, heuristicPolicy, smartHeuristicPolicy, mulberry32(seed)), 1);
 			}
 		}
 		expect(edge).toBeGreaterThan(0);
+	});
+});
+
+describe('objective-aware goal-seeking', () => {
+	// raze: British dwell on the Charlestown TOWN hexes until the torchRule burns
+	// them — no explicit action, emergent from goalHexes targeting TOWN + the "only
+	// advance" rule holding a unit on a zero-distance goal. A batch must show burns.
+	it('smart torches Charlestown on Bunker Hill', () => {
+		expect.assertions(1);
+		const scenario = SCENARIOS['bunker-hill'];
+		const games = Array.from({ length: 20 }, (_, seed) =>
+			runGame(scenario, smartHeuristicPolicy, smartHeuristicPolicy, mulberry32(seed))
+		);
+		expect(mechanicStats(games).hexesRazed).toBeGreaterThan(0);
+	});
+
+	// exit: Colonials run for the north exit and leave the board. The scenario is not
+	// Colonial-winnable (single exit hex + no terrain-aware routing — see
+	// docs/ai-opponent-evaluation.md), so we assert pursuit (exits happen), not a win.
+	it('smart marches Colonials off the map on White Plains', () => {
+		expect.assertions(1);
+		const scenario = SCENARIOS['white-plains'];
+		const games = Array.from({ length: 20 }, (_, seed) =>
+			runGame(scenario, smartHeuristicPolicy, smartHeuristicPolicy, mulberry32(seed))
+		);
+		expect(mechanicStats(games).unitsExited).toBeGreaterThan(0);
 	});
 });
 

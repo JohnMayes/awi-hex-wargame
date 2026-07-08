@@ -4,7 +4,7 @@
 // Svelte-runes GameStore; core/ stays Svelte-free.
 import type { OffsetCoordinates } from 'honeycomb-grid';
 import { GameStore } from '../state/gameStore.svelte';
-import { ActivationStep, type Player, type Unit } from '../core/types';
+import { ActivationStep, TerrainType, type MapEdge, type Player, type Unit } from '../core/types';
 import type { Scenario } from '../core/scenario';
 import type { VictoryOutcome } from '../core/victory';
 import type { LogEvent } from '../core/log';
@@ -16,7 +16,7 @@ import { unitDefinitions } from '../core/unitDefinitions';
 import { hexDistance } from '../core/hex';
 
 export type Action =
-	| { kind: 'move'; unitId: string; coords: OffsetCoordinates }
+	| { kind: 'move'; unitId: string; coords: OffsetCoordinates; isExit?: boolean }
 	| { kind: 'fire'; unitId: string; targetId: string }
 	| { kind: 'charge'; unitId: string; targetId: string }
 	| { kind: 'skip'; unitId: string };
@@ -36,13 +36,20 @@ export type GameOutcome = {
 
 const pick = <T>(xs: readonly T[], rng: () => number): T => xs[Math.floor(rng() * xs.length)];
 
+// True when `unit`'s side wins (partly) by marching units off the map — gates the
+// off-map exit action so scenarios without an exit objective are unaffected. The
+// store only marks a MoveTarget `isExit` when getValidMoveTargets is passed
+// allowExit, so this same flag also gates enumeration below.
+const wantsExit = (store: GameStore, unit: Unit): boolean =>
+	store.victoryConditions.some((c) => c.kind === 'exit_units' && c.player === unit.player);
+
 // Legal actions for `unit`. For the unit already mid-activation we read the
 // store's derived targets (they account for MP already spent / having fired);
 // for a fresh unit we enumerate from core with its full allowance.
 function legalActions(store: GameStore, unit: Unit, isActive: boolean): Action[] {
 	const moves = isActive
 		? store.validMoveTargets
-		: getValidMoveTargets(unit, store.grid!, store.units);
+		: getValidMoveTargets(unit, store.grid!, store.units, undefined, wantsExit(store, unit));
 	const fires = isActive
 		? store.validFireTargets
 		: getValidFireTargets(unit, store.grid!, store.units);
@@ -50,7 +57,14 @@ function legalActions(store: GameStore, unit: Unit, isActive: boolean): Action[]
 		? store.validChargeTargets
 		: getValidChargeTargets(unit, store.grid!, store.units);
 	return [
-		...moves.map((m): Action => ({ kind: 'move', unitId: unit.id, coords: m.coordinates })),
+		...moves.map(
+			(m): Action => ({
+				kind: 'move',
+				unitId: unit.id,
+				coords: m.coordinates,
+				isExit: m.isExit
+			})
+		),
 		...fires.map((t): Action => ({ kind: 'fire', unitId: unit.id, targetId: t.id })),
 		...charges.map((t): Action => ({ kind: 'charge', unitId: unit.id, targetId: t.id }))
 	];
@@ -114,6 +128,7 @@ export type SmartTuning = {
 	coverBonus: number; // move onto cover terrain (woods/town): reduces incoming fire.
 	inRangeBonus: number; // move that brings an enemy within our firing range (a firing position).
 	closerWeight: number; // prefer advancing nearer the goal; tiny so the move score stays < FIRE_MIN_EV.
+	exitBonus: number; // take an off-map exit (exit_units objective): banks an irreversible win step.
 };
 
 export const DEFAULT_SMART_TUNING: SmartTuning = {
@@ -122,23 +137,58 @@ export const DEFAULT_SMART_TUNING: SmartTuning = {
 	closestEps: 0.01,
 	coverBonus: 0.02,
 	inRangeBonus: 0.02,
-	closerWeight: 0.002
+	closerWeight: 0.002,
+	exitBonus: 1.0 // above max fire EV (~0.76); swept in the A/B harness (Phase 3).
 };
 
 type ScoredAction = { action: Action; score: number };
 
-// Hexes a unit should advance toward: every enemy (to engage) plus its own
-// side's control/hold objective hexes. Nearest wins.
-function goalHexes(store: GameStore, unit: Unit): OffsetCoordinates[] {
-	const enemies = store.units.filter((u) => u.player !== unit.player).map((u) => u.coordinates);
-	const objectives = store.victoryConditions
-		.filter(
-			(c) => c.player === unit.player && (c.kind === 'control_hexes' || c.kind === 'hold_hexes')
-		)
+// Hexes a unit should advance toward: every enemy (to engage) plus its own side's
+// control/hold objective hexes. Nearest wins. When `objectiveAware` (smart policy
+// only — baseline stays the fixed low-bar reference per its comment), it also folds
+// in the two objective kinds that carry no hex list: exit_units (the declared exit
+// hexes for our edge) and raze (still-standing TOWN hexes to torch). Torching needs
+// no separate action — a unit on a TOWN goal has minGoalDist 0, so it never advances
+// off and dwells there until the hex burns (per the scenario torchRule).
+function goalHexes(store: GameStore, unit: Unit, objectiveAware: boolean): OffsetCoordinates[] {
+	const conds = store.victoryConditions.filter((c) => c.player === unit.player);
+	const objectives = conds
+		.filter((c) => c.kind === 'control_hexes' || c.kind === 'hold_hexes')
 		.flatMap((c) => (c as { hexes: OffsetCoordinates[] }).hexes);
-	return [...enemies, ...objectives];
+	const enemies = store.units.filter((u) => u.player !== unit.player).map((u) => u.coordinates);
+	if (!objectiveAware) return [...enemies, ...objectives];
+
+	const exitEdges = new Set(
+		conds.filter((c) => c.kind === 'exit_units').map((c) => (c as { edge: MapEdge }).edge)
+	);
+	const wantsRaze = conds.some((c) => c.kind === 'raze');
+	const exitGoals: OffsetCoordinates[] = [];
+	const townGoals: OffsetCoordinates[] = [];
+	if ((exitEdges.size > 0 || wantsRaze) && store.grid) {
+		for (const hex of store.grid) {
+			if (hex.exitEdge && exitEdges.has(hex.exitEdge))
+				exitGoals.push({ col: hex.col, row: hex.row });
+			// ponytail: raze goals are all TOWN hexes; we trust torchRule.player == the raze
+			// condition owner (true in current data — the store's torchRule has no getter).
+			else if (wantsRaze && hex.terrain === TerrainType.TOWN)
+				townGoals.push({ col: hex.col, row: hex.row });
+		}
+	}
+
+	// An exit-objective side must run for the exit — enemies sit *behind* the fleeing
+	// units (their pursuers), so including them as goals would drag units backward.
+	// The exit dominates; the "break N" half of such objectives is met incidentally by
+	// firing as they disengage. Raze/eliminate sides still chase enemies AND the town.
+	if (exitGoals.length > 0) return [...objectives, ...exitGoals];
+	return [...enemies, ...objectives, ...townGoals];
 }
 
+// ponytail: straight-line cube distance, NOT terrain-aware path cost. The unit picks
+// the neighbour that lowers this, with no idea a river/impassable hex blocks the route
+// beyond — so it can walk into a dead-end (e.g. White Plains: the three river-blocked
+// Colonials head straight north toward the exit and get trapped instead of routing
+// around). Upgrade path if a scenario needs it: A* over movement.ts costs / the
+// reachable set, keyed off the same goals. Deferred — see docs/ai-opponent-evaluation.md.
 function minGoalDist(
 	store: GameStore,
 	coords: OffsetCoordinates,
@@ -174,11 +224,13 @@ function bestAction(store: GameStore, unit: Unit, isActive: boolean): ScoredActi
 			best = { action: { kind: 'charge', unitId: unit.id, targetId: d.id }, score };
 	}
 
+	// Baseline is the fixed low-bar reference: objective-blind (no exit/raze pursuit),
+	// so it stays a stable incumbent for the A/B harness and tests.
 	const moves: MoveTarget[] = isActive
 		? store.validMoveTargets
 		: getValidMoveTargets(unit, grid, store.units);
 	if (moves.length && MOVE_SCORE > best.score) {
-		const goals = goalHexes(store, unit);
+		const goals = goalHexes(store, unit, false);
 		let target: MoveTarget | null = null;
 		let bestDist = minGoalDist(store, unit.coordinates, goals); // only move if strictly closer
 		for (const m of moves) {
@@ -252,7 +304,12 @@ function scoreAction(store: GameStore, unit: Unit, action: Action, tuning: Smart
 			);
 		}
 		case 'move': {
-			const goals = goalHexes(store, unit);
+			// Off-map exit banks an irreversible win step; score it above fire/charge and
+			// skip the advance gate (an exit hex under the unit reads as "no closer").
+			// Gated on wantsExit: only a side with the exit objective should leave (the
+			// isExit flag is set scenario-wide, for either player).
+			if (action.isExit && wantsExit(store, unit)) return tuning.exitBonus;
+			const goals = goalHexes(store, unit, true);
 			const here = minGoalDist(store, unit.coordinates, goals);
 			const there = minGoalDist(store, action.coords, goals);
 			if (there >= here) return -Infinity; // only advance (baseline behaviour)
