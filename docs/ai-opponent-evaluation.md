@@ -240,3 +240,23 @@ river-blocked Colonials that march north into a dead-end instead of routing arou
 The ≥2-kill half is met in 41% of games, so only the exit half fails. Fix when a
 scenario justifies it: A\* over `movement.ts` costs keyed off the same `goalHexes`
 (see the `ponytail:` note on `minGoalDist`), plus widening the White Plains exit.
+
+**To investigate later — victory-status / completion awareness.** The heuristic has no
+notion that an objective is already banked: on Bunker Hill it keeps sending units at the
+Charlestown TOWN hexes after the raze (`count: 1`) is met. The obvious lazy fix — skip a
+goal whose `store.victoryStatus[…].met` is true — was prototyped and **measured worse**,
+so it was NOT shipped: gating raze-when-met cost ~36 wins / 400 games (win edge +93 → +57,
+and → +41 for a "hold cover if occupying" variant). The town hexes double as flanking
+cover, so keeping units oriented at them funnels the assault up the left flank instead of
+frontally into the hill — the "waste" is the AI finding good ground. Distinctions worth
+teasing apart when revisiting:
+
+- **Cumulative vs continuous kinds.** `raze` / `exit_units` bank irreversible progress
+  (safe to stop pursuing once met); `control_hexes` / `hold_hexes` are instantaneous state
+  (must still hold the hex at turn-end eval — dropping them would abandon the objective).
+- **Objective goal vs positional value.** On Bunker Hill the two are entangled (torch
+  target == good cover). Completion awareness only helps where they're separable — e.g. a
+  future _winnable_ exit scenario, where exiting a surplus unit strips your firing line, or
+  a raze target on poor terrain. Add it gated to the specific kind that benefits, with an
+  A/B showing a win gain — not as a blanket rule. The hook is a one-liner
+  (`store.victoryStatus.some((s) => s.id === c.id && s.met)`).
