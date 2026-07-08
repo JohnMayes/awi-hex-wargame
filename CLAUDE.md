@@ -83,6 +83,8 @@ The board is drawn on a LittleJS canvas by the `render/` layer; the DOM chrome (
 
 Uses `honeycomb-grid` library. HexCell extends `defineHex` with flat-top orientation, 60px dimensions, topLeft origin. Cube coordinates (`q`, `r`) are used for neighbor lookups and distance calculations.
 
+**Preferred map size: 7 columns × 9 rows** (rules §2). Author new scenario maps at this size; shave larger source maps down to fit (see `docs/scenario-conversion-guide.md` and the note atop `src/lib/game/data/maps.ts`).
+
 ## Game Rules
 
 `rules/living-rules.md` is the authoritative game rules document. It defines unit types, terrain effects, sequence of play, firing, charging, LOS, command, morale, and victory conditions. Section 14 has digital implementation notes. Consult this when implementing game mechanics.

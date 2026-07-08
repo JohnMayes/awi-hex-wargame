@@ -2,6 +2,11 @@ import { TerrainType, type MapEdge } from '../core/types';
 import { roadEdgesFromPaths, riverEdgesFromPairs, type HexCell } from '../core/hex';
 import type { OffsetCoordinates } from 'honeycomb-grid';
 
+// PREFERRED MAP SIZE: 7 cols × 9 rows (rules §2). Author new scenario maps at this
+// size unless there's a strong reason not to — it's the target the UI and playtests
+// are tuned for. Larger source maps (e.g. an 8×11 conversion) should be shaved down
+// to fit (see White Plains below, and docs/scenario-conversion-guide.md §1).
+//
 // `entrenchedEdges` / `roadEdges` / `riverEdges` / `crossingEdges` list direction
 // indices (0..5, indexing `directions` in core/hex.ts) of this hex's dug-in /
 // road-crossed / river / bridge-ford edges — authored as plain arrays, stored as
@@ -167,62 +172,59 @@ export const BUNKER_HILL_MAP: MapDefinition = Array.from({ length: BUNKER_HILL_C
 	}))
 ).flat();
 
-// White Plains (28 Oct 1776) — 8 cols × 11 rows, north = row 0 (the Exit, on the
-// road off the top edge), British attack from the south (high rows). Adapted from
-// the ARW-series map. The Bronx River is a
+// White Plains (28 Oct 1776) — 7 cols × 9 rows (the preferred map size, rules §2),
+// north = row 0 (the Exit, on the road off the top edge), British attack from the
+// south (high rows). Adapted from the ARW-series map, whose 8×11 board was shaved to
+// fit: the right-most column and the top+bottom rows were dropped and rows renumbered
+// −1. The Bronx River is a
 // hex-side feature (riverEdges) winding diagonally down the map: it wraps the east
 // face of Chatterton's Hill, then veers west in the lower-left to exit the west edge
-// (~row 8) — isolating the west bank (cols 0-1 rows 0-8 + the top of col 2) from the
+// (~row 7) — isolating the west bank (cols 0-1 rows 0-7 + the top of col 2) from the
 // connected east bank (White Plains, the exit road, the British staging ground, and
-// the reunited bottom-left corner). The single crossing is the bridge on the (1,7)-(2,7) edge,
+// the reunited bottom-left corner). The single crossing is the bridge on the (1,6)-(2,6) edge,
 // carried by the west road. The main road winds north→south through White Plains
 // (east of the river); the west road crosses the bridge and forks off the west
 // edge. Woods are Light-Inf-only route-around scenery; swamp (MARSH) is impassable.
-const WHITE_PLAINS_COLS = 8;
-const WHITE_PLAINS_ROWS = 11;
+const WHITE_PLAINS_COLS = 7;
+const WHITE_PLAINS_ROWS = 9;
 
 const WHITE_PLAINS_FEATURES: Record<string, TerrainType> = {
 	// Chatterton's Hill (west of the river) + Wolf Pitt Hill (upper-right).
+	'1,3': TerrainType.HILLTOP,
+	'0,4': TerrainType.HILLTOP,
 	'1,4': TerrainType.HILLTOP,
-	'0,5': TerrainType.HILLTOP,
-	'1,5': TerrainType.HILLTOP,
+	'5,0': TerrainType.HILLTOP,
+	'6,0': TerrainType.HILLTOP,
 	'5,1': TerrainType.HILLTOP,
 	'6,1': TerrainType.HILLTOP,
-	'5,2': TerrainType.HILLTOP,
-	'6,2': TerrainType.HILLTOP,
 	// White Plains village (the road runs through it).
-	'3,5': TerrainType.TOWN,
+	'3,4': TerrainType.TOWN,
 	// (The Bronx River is now hex-side terrain — see WHITE_PLAINS_RIVER below.)
 	// Scattered woods (route-around; Light-Inf-only) along the edges.
-	'0,0': TerrainType.WOODS,
-	'1,0': TerrainType.WOODS,
-	'0,3': TerrainType.WOODS,
-	'7,4': TerrainType.WOODS,
-	'7,5': TerrainType.WOODS,
-	'0,9': TerrainType.WOODS,
-	'7,9': TerrainType.WOODS,
+	'0,2': TerrainType.WOODS,
+	'0,8': TerrainType.WOODS,
 	// Swamp (impassable MARSH).
-	'0,4': TerrainType.MARSH,
-	'6,4': TerrainType.MARSH,
-	'6,7': TerrainType.MARSH
+	'0,3': TerrainType.MARSH,
+	'6,3': TerrainType.MARSH,
+	'6,6': TerrainType.MARSH
 };
 
 const inWhitePlains = (c: OffsetCoordinates) =>
 	c.col >= 0 && c.col < WHITE_PLAINS_COLS && c.row >= 0 && c.row < WHITE_PLAINS_ROWS;
 
 // Main road: north exit stub (off-board (3,-1)) winding down through White Plains
-// (3,5) and off the south edge (off-board (4,11)), drifting east around rows 3-4 and
-// 6-10 (the exit road, east of the river). West road: from two west-edge stubs
-// (off-board (-1,6)/(-1,8)) it forks at (1,7), crosses the Bronx River bridge (the
-// (1,7)-(2,7) edge), and joins the main road at (4,7) — the only way the west-bank
+// (3,4) and off the south edge (off-board (4,9)), drifting east around rows 2-3 and
+// 5-8 (the exit road, east of the river). West road: from two west-edge stubs
+// (off-board (-1,5)/(-1,7)) it forks at (1,6), crosses the Bronx River bridge (the
+// (1,6)-(2,6) edge), and joins the main road at (4,6) — the only way the west-bank
 // hill units reach the north exit. Off-board waypoints give the border hexes a road
 // stub running off the map (drops as a key, keeps the on-board edge). All steps
 // cube-adjacent. (Those off-map stubs also read as exit hexes — exit refactor pending.)
 const WHITE_PLAINS_ROADS = roadEdgesFromPaths(
 	[
-		[rc(3, -1), rc(3, 0), rc(3, 1), rc(3, 2), rc(4, 3), rc(4, 4), rc(3, 4), rc(3, 5), rc(4, 6), rc(4, 7), rc(4, 8), rc(4, 9), rc(4, 10), rc(4, 11)], // prettier-ignore
-		[rc(-1, 6), rc(0, 7), rc(1, 7), rc(2, 7), rc(3, 7), rc(4, 7)],
-		[rc(-1, 8), rc(0, 8), rc(1, 7)]
+		[rc(3, -1), rc(3, 0), rc(3, 1), rc(4, 2), rc(4, 3), rc(3, 3), rc(3, 4), rc(4, 5), rc(4, 6), rc(4, 7), rc(4, 8), rc(4, 9)], // prettier-ignore
+		[rc(-1, 5), rc(0, 6), rc(1, 6), rc(2, 6), rc(3, 6), rc(4, 6)],
+		[rc(-1, 7), rc(0, 7), rc(1, 6)]
 	],
 	inWhitePlains
 );
@@ -231,10 +233,10 @@ const WHITE_PLAINS_ROADS = roadEdgesFromPaths(
 // + the NW corner) is cols 0-1 plus the top of col 2; the river is EVERY edge between
 // a west-bank hex and an on-board east-bank hex, so the barrier is watertight by
 // construction (the diagonal drift falls out automatically). The lone crossing is the
-// bridge on the (1,7)-(2,7) edge — a river edge that is also a crossing, so it renders
+// bridge on the (1,6)-(2,6) edge — a river edge that is also a crossing, so it renders
 // as a bridged river but is passable (see `riverBlocks`); the west road carries it.
 const isWestBank = (c: OffsetCoordinates) =>
-	inWhitePlains(c) && ((c.col <= 1 && c.row <= 8) || (c.col === 2 && c.row <= 3));
+	inWhitePlains(c) && ((c.col <= 1 && c.row <= 7) || (c.col === 2 && c.row <= 2));
 // Offset neighbours (col,row) on our flat-top, offset=-1 grid — even/odd columns step
 // differently. riverEdgesFromPairs re-validates adjacency, so a wrong entry throws at load.
 const offsetNeighbors = ({ col, row }: OffsetCoordinates): OffsetCoordinates[] => {
@@ -257,7 +259,7 @@ for (let col = 0; col < WHITE_PLAINS_COLS; col++)
 			if (inWhitePlains(nb) && !isWestBank(nb)) BRONX_RIVER_PAIRS.push([west, nb]);
 	}
 const WHITE_PLAINS_RIVER = riverEdgesFromPairs(BRONX_RIVER_PAIRS, inWhitePlains);
-const WHITE_PLAINS_CROSSINGS = riverEdgesFromPairs([[rc(1, 7), rc(2, 7)]], inWhitePlains);
+const WHITE_PLAINS_CROSSINGS = riverEdgesFromPairs([[rc(1, 6), rc(2, 6)]], inWhitePlains);
 
 // Exit hexes: an intentional, road-independent declaration. The only exit is the
 // Colonial escape at (3,0) — the top of the col-3 road off the north edge, counting

@@ -325,20 +325,22 @@ export const BUNKER_HILL: Scenario = {
 // & Loyalist militia are brittle (SP 3); regulars SP 4; the optional Grenadier is elite.
 const WHITE_PLAINS_UNITS: Unit[] = [
 	// Colonials (player 0): 4 Regulars + 3 Militia at the `C` hexes. ≥2 Militia on
-	// Chatterton's Hill (1,4)/(1,5) per the scenario's historical-accuracy note.
-	bunkerInfantry('col-militia-1', 0, 1, 4, MILITIA_SP),
-	bunkerInfantry('col-militia-2', 0, 1, 5, MILITIA_SP),
-	bunkerInfantry('col-militia-3', 0, 3, 6, MILITIA_SP),
-	bunkerInfantry('col-reg-1', 0, 0, 5, REGULAR_SP),
-	bunkerInfantry('col-reg-2', 0, 3, 5, REGULAR_SP), // White Plains village
-	bunkerInfantry('col-reg-3', 0, 5, 4, REGULAR_SP),
-	bunkerInfantry('col-reg-4', 0, 5, 5, REGULAR_SP),
+	// Chatterton's Hill (1,3)/(1,4) per the scenario's historical-accuracy note.
+	bunkerInfantry('col-militia-1', 0, 1, 3, MILITIA_SP),
+	bunkerInfantry('col-militia-2', 0, 1, 4, MILITIA_SP),
+	bunkerInfantry('col-militia-3', 0, 3, 5, MILITIA_SP),
+	bunkerInfantry('col-reg-1', 0, 0, 4, REGULAR_SP),
+	bunkerInfantry('col-reg-2', 0, 3, 4, REGULAR_SP), // White Plains village
+	bunkerInfantry('col-reg-3', 0, 5, 3, REGULAR_SP),
+	bunkerInfantry('col-reg-4', 0, 5, 4, REGULAR_SP),
 	// British (player 1): 2 Loyalist Militia + 3 British Regulars at the `B` hexes (south).
-	bunkerInfantry('brit-loyalist-1', 1, 2, 9, MILITIA_SP),
-	bunkerInfantry('brit-loyalist-2', 1, 6, 9, MILITIA_SP),
-	bunkerInfantry('brit-reg-1', 1, 3, 9, REGULAR_SP),
-	bunkerInfantry('brit-reg-2', 1, 4, 9, REGULAR_SP),
-	bunkerInfantry('brit-reg-3', 1, 5, 8, REGULAR_SP)
+	// The center line sits on row 7 so the south edge (row 8) is clear for the turn-2
+	// reinforcements to enter (the map shave dropped the old dedicated reserve row).
+	bunkerInfantry('brit-loyalist-1', 1, 2, 7, MILITIA_SP),
+	bunkerInfantry('brit-loyalist-2', 1, 6, 8, MILITIA_SP),
+	bunkerInfantry('brit-reg-1', 1, 3, 7, REGULAR_SP),
+	bunkerInfantry('brit-reg-2', 1, 4, 7, REGULAR_SP),
+	bunkerInfantry('brit-reg-3', 1, 5, 7, REGULAR_SP)
 ];
 
 // Generous radius (ARW has no command rules) — keeps command-check friction low
@@ -348,21 +350,21 @@ const WHITE_PLAINS_LEADERS: Leader[] = [
 	{ id: 'brit-howe', attachedToUnitId: 'brit-reg-1', commandRadius: 6 }
 ];
 
-// Turn 2: 3 British Regulars arrive at the `B` hexes (south edge); one is the
+// Turn 2: 3 British Regulars arrive at the `B` hexes (south edge, row 8); one is the
 // optional Grenadier (elite), matching the Bunker Hill precedent.
 const WHITE_PLAINS_REINFORCEMENTS: ReinforcementGroup[] = [
 	{
 		turn: 2,
 		player: 1,
 		units: [
-			{ id: 'brit-reg-4', type: UnitType.LINE_INFANTRY, coordinates: { col: 2, row: 10 } },
+			{ id: 'brit-reg-4', type: UnitType.LINE_INFANTRY, coordinates: { col: 2, row: 8 } },
 			{
 				id: 'brit-grenadier',
 				type: UnitType.LINE_INFANTRY,
-				coordinates: { col: 3, row: 10 },
+				coordinates: { col: 3, row: 8 },
 				elite: true
 			},
-			{ id: 'brit-reg-5', type: UnitType.LINE_INFANTRY, coordinates: { col: 4, row: 10 } }
+			{ id: 'brit-reg-5', type: UnitType.LINE_INFANTRY, coordinates: { col: 4, row: 8 } }
 		]
 	}
 ];

@@ -7,6 +7,14 @@ rules, accepting inexactness where the two systems diverge. First applied in the
 conversion (`docs/bunker-hill-conversion.md`), then White Plains (which added the off-map
 exit action + `turnLimitWinner`); generalize from there.
 
+> **Map size — fit to 7×9.** Our preferred (and rules-canonical, §2) board is **7 columns
+> × 9 rows**. Author every converted map at this size. Source maps are often larger (the
+> ARW series runs ~8×11); shave them down — drop the least-important edge column(s)/row(s)
+> and renumber, then **move every edge-anchored feature** (reinforcement entry hexes, exit
+> hexes, objective markers, road stubs) to the new edges. White Plains was ported this way:
+> its 8×11 board lost the right column and the top+bottom rows (rows renumbered −1), and its
+> reinforcements/exit were re-anchored to the new south/north edges.
+
 ## 1. System comparison (source vs. target)
 
 | Dimension                 | ARW series (source)                                                                                                                                                                 | Our engine (target)                                                                                              | Conversion stance                                                                                                                                              |
@@ -75,7 +83,8 @@ exit action + `turnLimitWinner`); generalize from there.
 
 ## 4. Conversion checklist (per battle)
 
-1. Map terrain (table §2); transcribe the battle map to a `MapDefinition` (note the two frictions).
+1. Map terrain (table §2); transcribe the battle map to a `MapDefinition`, **shaving it to the
+   preferred 7×9 size** (see the map-size note above) and noting the two frictions.
 2. Map units to types + SP; encode quality via SP (and `elite` where it's a morale-veteran).
 3. Author leaders with generous radius (avoid command-check friction).
 4. Schedule reinforcements (`ReinforcementGroup`s).

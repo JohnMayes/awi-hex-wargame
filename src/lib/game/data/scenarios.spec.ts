@@ -49,7 +49,7 @@ describe('BUNKER_HILL scenario', () => {
 });
 
 // The Bronx River winds diagonally, sealing the west bank (Chatterton's Hill + NW
-// corner) from the connected east bank, crossable only at the (1,7)-(2,7) bridge.
+// corner) from the connected east bank, crossable only at the (1,6)-(2,6) bridge.
 // Guards the generated barrier + the hand-reasoned offset geometry.
 describe('WHITE_PLAINS Bronx River (hex-side)', () => {
 	it('is registered and builds a GameStore without throwing', () => {
@@ -64,21 +64,21 @@ describe('WHITE_PLAINS Bronx River (hex-side)', () => {
 		const hex = (col: number, row: number) => store.hexAt({ col, row })!;
 		// Plain river edges block the crossing both ways (upper col-2/3, lower col-1/2)...
 		expect(riverBlocks(hex(2, 0), hex(3, 0))).toBe(true);
-		expect(riverBlocks(hex(1, 5), hex(2, 5))).toBe(true);
-		expect(riverBlocks(hex(2, 5), hex(1, 5))).toBe(true);
-		// ...but the bridged (1,7)-(2,7) edge, which the west road uses, is passable both ways.
-		expect(riverBlocks(hex(1, 7), hex(2, 7))).toBe(false);
-		expect(riverBlocks(hex(2, 7), hex(1, 7))).toBe(false);
+		expect(riverBlocks(hex(1, 4), hex(2, 4))).toBe(true);
+		expect(riverBlocks(hex(2, 4), hex(1, 4))).toBe(true);
+		// ...but the bridged (1,6)-(2,6) edge, which the west road uses, is passable both ways.
+		expect(riverBlocks(hex(1, 6), hex(2, 6))).toBe(false);
+		expect(riverBlocks(hex(2, 6), hex(1, 6))).toBe(false);
 	});
 
 	it('veers west to exit the west edge in the lower-left', () => {
 		expect.assertions(2);
 		const store = GameStore.fromScenario(WHITE_PLAINS);
 		const hex = (col: number, row: number) => store.hexAt({ col, row })!;
-		// The river turns west across col 0 (~row 8) and exits — it no longer reaches
+		// The river turns west across col 0 (~row 7) and exits — it no longer reaches
 		// the bottom edge, so the bottom-left corner is reunited with the east bank.
-		expect(riverBlocks(hex(0, 8), hex(0, 9))).toBe(true); // westward exit segment
-		expect(riverBlocks(hex(1, 9), hex(2, 9))).toBe(false); // bottom-left now east, not dammed
+		expect(riverBlocks(hex(0, 7), hex(0, 8))).toBe(true); // westward exit segment
+		expect(riverBlocks(hex(1, 8), hex(2, 8))).toBe(false); // bottom-left now east, not dammed
 	});
 
 	it('keeps the east bank connected (former river column is open ground)', () => {
@@ -86,8 +86,8 @@ describe('WHITE_PLAINS Bronx River (hex-side)', () => {
 		const store = GameStore.fromScenario(WHITE_PLAINS);
 		const hex = (col: number, row: number) => store.hexAt({ col, row })!;
 		// Lower col 2 is now east-bank open ground the British can freely traverse.
-		expect(canUnitEnterTerrain(WHITE_PLAINS.units[0].type, hex(2, 9).terrain)).toBe(true);
-		expect(riverBlocks(hex(2, 9), hex(3, 9))).toBe(false); // no river between two east hexes
+		expect(canUnitEnterTerrain(WHITE_PLAINS.units[0].type, hex(2, 8).terrain)).toBe(true);
+		expect(riverBlocks(hex(2, 8), hex(3, 8))).toBe(false); // no river between two east hexes
 	});
 });
 
@@ -100,13 +100,13 @@ describe('WHITE_PLAINS exit hexes (decoupled from roads)', () => {
 		expect(store.hexAt({ col: 3, row: 0 })!.exitEdge).toBe('north');
 	});
 
-	it('does not treat the off-map road stubs (0,7)/(0,8)/(4,10) as exits', () => {
+	it('does not treat the off-map road stubs (0,6)/(0,7)/(4,8) as exits', () => {
 		expect.assertions(3);
 		const store = GameStore.fromScenario(WHITE_PLAINS);
 		for (const [col, row] of [
+			[0, 6],
 			[0, 7],
-			[0, 8],
-			[4, 10]
+			[4, 8]
 		]) {
 			expect(store.hexAt({ col, row })!.exitEdge).toBeNull();
 		}
