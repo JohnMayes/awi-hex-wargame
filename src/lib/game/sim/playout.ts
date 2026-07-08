@@ -7,6 +7,7 @@ import { GameStore } from '../state/gameStore.svelte';
 import { ActivationStep, type Player, type Unit } from '../core/types';
 import type { Scenario } from '../core/scenario';
 import type { VictoryOutcome } from '../core/victory';
+import type { LogEvent } from '../core/log';
 import { getValidMoveTargets, type MoveTarget } from '../core/movement';
 import { getValidFireTargets, expectedFireDamage } from '../core/combat';
 import { getValidChargeTargets } from '../core/charge';
@@ -27,6 +28,8 @@ export type GameOutcome = {
 	outcome: VictoryOutcome | null;
 	turns: number;
 	survivingSpByPlayer: [number, number];
+	/** Full event log of the game, for mechanic-level metrics (see report.ts). */
+	log: LogEvent[];
 };
 
 const pick = <T>(xs: readonly T[], rng: () => number): T => xs[Math.floor(rng() * xs.length)];
@@ -211,7 +214,8 @@ export function runGame(
 	return {
 		outcome: store.victoryOutcome,
 		turns: store.turn,
-		survivingSpByPlayer: [sumSp(store.units, 0), sumSp(store.units, 1)]
+		survivingSpByPlayer: [sumSp(store.units, 0), sumSp(store.units, 1)],
+		log: store.log
 	};
 }
 

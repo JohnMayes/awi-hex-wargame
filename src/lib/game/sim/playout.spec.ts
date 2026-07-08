@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { runGame, randomPolicy, heuristicPolicy } from './playout';
+import { mechanicStats } from './report';
 import { mulberry32 } from '../core/rng';
 import { SCENARIOS } from '../data/scenarios';
 
@@ -50,5 +51,30 @@ describe('heuristicPolicy plays better than random', () => {
 			heuristicEdge += g.survivingSpByPlayer[0] - g.survivingSpByPlayer[1];
 		}
 		expect(heuristicEdge).toBeGreaterThan(0);
+	});
+});
+
+describe('mechanicStats (log-derived metrics)', () => {
+	// The heuristic engages, so a batch must show fire happening with a sane hit
+	// rate, and every counted stat must be internally consistent with its parts.
+	it('aggregates the game log into consistent mechanic totals', () => {
+		expect.assertions(6);
+		const scenario = SCENARIOS['pitched-battle'];
+		const games = Array.from({ length: 20 }, (_, seed) =>
+			runGame(scenario, heuristicPolicy, heuristicPolicy, mulberry32(seed))
+		);
+		const s = mechanicStats(games);
+
+		expect(s.fire.shots).toBeGreaterThan(0); // the policy actually fires
+		expect(s.fire.hits).toBeLessThanOrEqual(s.fire.shots); // hits are a subset of shots
+		expect(s.morale.breaks).toBeLessThanOrEqual(s.morale.checks);
+		expect(s.command.failures).toBeLessThanOrEqual(s.command.checks);
+		// Charge outcomes partition the total.
+		const c = s.charge;
+		expect(c.defenderEliminated + c.defenderRetreats + c.defenderHolds + c.attackerRepulsed).toBe(
+			c.count
+		);
+		// Every activation logs a command check, so there's at least one per game.
+		expect(s.command.checks).toBeGreaterThanOrEqual(games.length);
 	});
 });

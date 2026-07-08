@@ -11,6 +11,7 @@ import {
 	type Policy
 } from '../src/lib/game/sim/playout';
 import { mulberry32 } from '../src/lib/game/core/rng';
+import { mechanicStats, formatMechanicStats } from '../src/lib/game/sim/report';
 
 const N = Number(process.argv[2]) || 1000;
 
@@ -36,8 +37,10 @@ function report(label: string, scenario: (typeof SCENARIOS)[string], blue: Polic
 	const turns = games.map((g) => g.turns);
 	const sp0 = games.map((g) => g.survivingSpByPlayer[0]);
 	const sp1 = games.map((g) => g.survivingSpByPlayer[1]);
-	// Elimination rate: games where at least one side was wiped out entirely.
-	const elim = games.filter((g) => Math.min(...g.survivingSpByPlayer) === 0).length;
+	// Army-wipe rate: games where one side was eliminated *entirely* (0 total SP).
+	// Distinct from per-unit casualties below — this is total annihilation, which is
+	// rare when games end at the turn limit or on a victory condition first.
+	const wipe = games.filter((g) => Math.min(...g.survivingSpByPlayer) === 0).length;
 
 	console.log(`  [${label}]`);
 	console.log(
@@ -45,7 +48,8 @@ function report(label: string, scenario: (typeof SCENARIOS)[string], blue: Polic
 	);
 	console.log(`    turns: mean ${mean(turns).toFixed(1)}, median ${median(turns)}`);
 	console.log(`    surviving SP: blue ${mean(sp0).toFixed(1)}, red ${mean(sp1).toFixed(1)}`);
-	console.log(`    elimination rate: ${pct(elim)}`);
+	console.log(`    army-wipe rate: ${pct(wipe)}`);
+	console.log(formatMechanicStats(mechanicStats(games)));
 }
 
 console.log(`Playtest: ${N} games/scenario (seed i per game i)\n`);
