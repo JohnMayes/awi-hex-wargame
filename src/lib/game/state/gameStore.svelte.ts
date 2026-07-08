@@ -163,7 +163,8 @@ export class GameStore {
 					roadEdges: cell.roadEdges,
 					riverEdges: cell.riverEdges,
 					crossingEdges: cell.crossingEdges,
-					exitEdge: cell.exitEdge
+					exitEdge: cell.exitEdge,
+					objective: cell.objective
 				})
 			)
 		);

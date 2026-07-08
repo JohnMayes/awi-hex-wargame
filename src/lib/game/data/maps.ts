@@ -15,6 +15,7 @@ export type MapDefinition = (Pick<HexCell, 'terrain'> &
 		riverEdges?: readonly number[];
 		crossingEdges?: readonly number[];
 		exitEdge?: MapEdge;
+		objective?: boolean;
 	})[];
 
 export const TEST_MAP: MapDefinition = [
@@ -66,12 +67,16 @@ const PITCHED_BATTLE_ENTRENCHMENTS: Record<string, readonly number[]> = {
 	'3,4': [2, 5]
 };
 
+// Objective markers (cosmetic star): the central objective hill.
+const PITCHED_BATTLE_OBJECTIVES = new Set(['3,4']);
+
 export const PITCHED_BATTLE_MAP: MapDefinition = Array.from({ length: 7 }, (_, col) =>
 	Array.from({ length: 9 }, (_, row) => ({
 		col,
 		row,
 		terrain: PITCHED_BATTLE_FEATURES[`${col},${row}`] ?? TerrainType.OPEN,
-		entrenchedEdges: PITCHED_BATTLE_ENTRENCHMENTS[`${col},${row}`]
+		entrenchedEdges: PITCHED_BATTLE_ENTRENCHMENTS[`${col},${row}`],
+		objective: PITCHED_BATTLE_OBJECTIVES.has(`${col},${row}`)
 	}))
 ).flat();
 
@@ -148,13 +153,17 @@ const BUNKER_HILL_ENTRENCHMENTS: Record<string, readonly number[]> = {
 	'5,4': BUNKER_HILL_SOUTH_ARC // rightmost Colonial line (open ground, still dug in)
 };
 
+// Objective markers (cosmetic star): the two Charlestown town hexes (razable via torchRule).
+const BUNKER_HILL_OBJECTIVES = new Set(['1,6', '1,7']);
+
 export const BUNKER_HILL_MAP: MapDefinition = Array.from({ length: BUNKER_HILL_COLS }, (_, col) =>
 	Array.from({ length: BUNKER_HILL_ROWS }, (_, row) => ({
 		col,
 		row,
 		terrain: BUNKER_HILL_FEATURES[`${col},${row}`] ?? TerrainType.OPEN,
 		entrenchedEdges: BUNKER_HILL_ENTRENCHMENTS[`${col},${row}`],
-		roadEdges: BUNKER_HILL_ROADS[`${col},${row}`]
+		roadEdges: BUNKER_HILL_ROADS[`${col},${row}`],
+		objective: BUNKER_HILL_OBJECTIVES.has(`${col},${row}`)
 	}))
 ).flat();
 
@@ -255,6 +264,8 @@ const WHITE_PLAINS_CROSSINGS = riverEdgesFromPairs([[rc(1, 7), rc(2, 7)]], inWhi
 // toward the `exit_units` victory. (The west/south road stubs run off-map but are
 // NOT exits — a road leaving the map no longer implies an exit hex.)
 const WHITE_PLAINS_EXITS: Record<string, MapEdge> = { '3,0': 'north' };
+// Objective markers (cosmetic star): the Colonial escape exit at (3,0).
+const WHITE_PLAINS_OBJECTIVES = new Set(['3,0']);
 
 export const WHITE_PLAINS_MAP: MapDefinition = Array.from({ length: WHITE_PLAINS_COLS }, (_, col) =>
 	Array.from({ length: WHITE_PLAINS_ROWS }, (_, row) => ({
@@ -264,6 +275,7 @@ export const WHITE_PLAINS_MAP: MapDefinition = Array.from({ length: WHITE_PLAINS
 		roadEdges: WHITE_PLAINS_ROADS[`${col},${row}`],
 		riverEdges: WHITE_PLAINS_RIVER[`${col},${row}`],
 		crossingEdges: WHITE_PLAINS_CROSSINGS[`${col},${row}`],
-		exitEdge: WHITE_PLAINS_EXITS[`${col},${row}`]
+		exitEdge: WHITE_PLAINS_EXITS[`${col},${row}`],
+		objective: WHITE_PLAINS_OBJECTIVES.has(`${col},${row}`)
 	}))
 ).flat();

@@ -36,6 +36,10 @@ export class HexCell extends defineHex({
 	// here, counting toward the `exit_units` victory condition for this edge. An
 	// explicit declaration (map data) — deliberately independent of roads.
 	exitEdge: MapEdge | null = null;
+	// Generic objective marker: draws a star on the hex (see the renderer). A purely
+	// cosmetic scenario annotation to flag hexes of interest (exits, key towns, the
+	// central hill); carries no rules — decoupled from victory logic.
+	objective: boolean = false;
 
 	get elevation(): number {
 		return this.terrain === TerrainType.HILLTOP ? 1 : 0;
@@ -49,6 +53,7 @@ export class HexCell extends defineHex({
 			riverEdges?: readonly number[];
 			crossingEdges?: readonly number[];
 			exitEdge?: MapEdge | null;
+			objective?: boolean;
 		}
 	) {
 		const cell = new HexCell(config);
@@ -58,6 +63,7 @@ export class HexCell extends defineHex({
 		if (config.riverEdges?.length) cell.riverEdges = new Set(config.riverEdges);
 		if (config.crossingEdges?.length) cell.crossingEdges = new Set(config.crossingEdges);
 		if (config.exitEdge) cell.exitEdge = config.exitEdge;
+		if (config.objective) cell.objective = true;
 		return cell;
 	}
 }

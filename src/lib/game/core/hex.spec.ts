@@ -118,6 +118,19 @@ describe('HexCell.exitEdge', () => {
 	});
 });
 
+describe('HexCell.objective', () => {
+	it('defaults to false', () => {
+		expect.assertions(1);
+		expect(HexCell.create({ col: 0, row: 0, terrain: TerrainType.OPEN }).objective).toBe(false);
+	});
+
+	it('stores a declared objective marker', () => {
+		expect.assertions(1);
+		const cell = HexCell.create({ col: 0, row: 0, terrain: TerrainType.OPEN, objective: true });
+		expect(cell.objective).toBe(true);
+	});
+});
+
 describe('edgeToward', () => {
 	it('returns the direction index of each immediate neighbor', () => {
 		expect.assertions(6);

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { GameStore } from '../state/gameStore.svelte';
-import { BUNKER_HILL, SCENARIOS, WHITE_PLAINS } from './scenarios';
+import { BUNKER_HILL, PITCHED_BATTLE, SCENARIOS, WHITE_PLAINS } from './scenarios';
 import { canUnitEnterTerrain } from '../core/terrain';
 import { riverBlocks } from '../core/hex';
 
@@ -110,5 +110,30 @@ describe('WHITE_PLAINS exit hexes (decoupled from roads)', () => {
 		]) {
 			expect(store.hexAt({ col, row })!.exitEdge).toBeNull();
 		}
+	});
+});
+
+// Objective markers (cosmetic stars) are placed on exactly the intended hexes.
+describe('objective markers', () => {
+	const markedHexes = (scenario: typeof WHITE_PLAINS) => {
+		const store = GameStore.fromScenario(scenario);
+		const marked = new Set<string>();
+		for (const hex of store.grid!) if (hex.objective) marked.add(`${hex.col},${hex.row}`);
+		return marked;
+	};
+
+	it('White Plains marks the exit hex (3,0)', () => {
+		expect.assertions(1);
+		expect(markedHexes(WHITE_PLAINS)).toEqual(new Set(['3,0']));
+	});
+
+	it('Bunker Hill marks the two Charlestown town hexes', () => {
+		expect.assertions(1);
+		expect(markedHexes(BUNKER_HILL)).toEqual(new Set(['1,6', '1,7']));
+	});
+
+	it('Pitched Battle marks the central objective hill (3,4)', () => {
+		expect.assertions(1);
+		expect(markedHexes(PITCHED_BATTLE)).toEqual(new Set(['3,4']));
 	});
 });

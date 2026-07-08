@@ -90,6 +90,11 @@ const RIVER_COLOR = hexToRgb(terrainHexColors[TerrainType.RIVER]);
 const RIVER_WIDTH = 9; // world units; a touch bolder than an entrenchment
 const CROSSING_COLOR = hexToRgb(terrainHexColors[TerrainType.BRIDGE]);
 const CROSSING_WIDTH = 11;
+// Objective marker: a gold star glyph centered on a flagged hex (under counters).
+// A generic, scenario-authored annotation (`HexCell.objective`) — carries no rules.
+const OBJECTIVE_COLOR = hexToRgb('#ffd700'); // gold, matches the leader/command accents
+const OBJECTIVE_OUTLINE = hexToRgb('#3a2e00'); // dark edge for contrast on light terrain
+const OBJECTIVE_SIZE_FRACTION = 0.25; // star size as a fraction of the hex circumradius
 // honeycomb's `corners[]` run in the opposite handedness to our `directions[]` index, so
 // the edge facing direction `d` is corners[i]→corners[i+1] with i = (7 − d) % 6 (a
 // reflection, not a rotation — verified against the installed honeycomb geometry).
@@ -392,6 +397,25 @@ function gameRender() {
 				entrenchColor
 			);
 		}
+	}
+
+	// Objective markers: a gold star centered on each flagged hex (above terrain,
+	// under counters). A generic scenario annotation — see HexCell.objective.
+	const objFill = color(OBJECTIVE_COLOR);
+	const objStroke = color(OBJECTIVE_OUTLINE);
+	for (const hex of grid) {
+		if (!hex.objective) continue;
+		const c0 = hex.corners[0];
+		const r = Math.hypot(c0.x - hex.x, c0.y - hex.y);
+		LJS.drawText(
+			'★',
+			toWorld({ x: hex.x, y: hex.y }),
+			r * OBJECTIVE_SIZE_FRACTION,
+			objFill,
+			3,
+			objStroke,
+			'center'
+		);
 	}
 
 	// Command-radius context for the selected unit's side (under counters).
