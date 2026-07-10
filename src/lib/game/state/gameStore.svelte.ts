@@ -151,6 +151,12 @@ export class GameStore {
 	// 0 whenever the hex is vacated; at #torchRule.dwellTurns the hex is razed. Not reactive.
 	#torchDwell: Map<string, number> = new Map();
 
+	// The side that wins by default at the turn limit (null → SP tiebreak). Read-only view for
+	// AI heuristics that scale aggression by victory status (stall when you'll win on the clock).
+	get turnLimitWinner(): Player | null {
+		return this.#turnLimitWinner;
+	}
+
 	constructor(units: Unit[], map: MapDefinition, leaders: Leader[], config: GameStoreConfig = {}) {
 		const newGrid = new Grid(
 			HexCell,

@@ -10,11 +10,12 @@ import type { VictoryOutcome } from '../core/victory';
 import type { LogEvent } from '../core/log';
 import { getValidMoveTargets, passableNeighbors, type MoveTarget } from '../core/movement';
 import { getValidFireTargets, expectedFireDamage } from '../core/combat';
+import { hasLineOfSight } from '../core/los';
 import { getValidChargeTargets, ELEVATION_CHARGE_DEFENSE_MODIFIER } from '../core/charge';
 import { getTerrainCoverModifier, getTerrainElevation } from '../core/terrain';
 import { unitDefinitions } from '../core/unitDefinitions';
 import { getAttachedLeader } from '../core/command';
-import { HexCell, hexDistance } from '../core/hex';
+import { HexCell, hexDistance, coordsEqual } from '../core/hex';
 
 export type Action =
 	| { kind: 'move'; unitId: string; coords: OffsetCoordinates; isExit?: boolean }
@@ -145,6 +146,12 @@ export type SmartTuning = {
 	inRangeBonus: number; // move that brings an enemy within our firing range (a firing position).
 	closerWeight: number; // prefer advancing nearer the goal; tiny so the move score stays < FIRE_MIN_EV.
 	exitBonus: number; // take an off-map exit (exit_units objective): banks an irreversible win step.
+	objectiveClaimants: number; // how many nearest units pursue each control/hold objective hex; the rest engage instead (kills the column). Large value ⇒ old all-units behaviour.
+	supportWeight: number; // move onto a hex covered by friendly fire (mutual support); tiny so move stays < FIRE_MIN_EV.
+	exposureWeight: number; // penalty per enemy that can fire the destination (avoid stepping alone into guns).
+	woundedWeight: number; // fire: prefer already-wounded targets (team finishes them off).
+	concentrationWeight: number; // fire: prefer a target multiple friendlies can hit (focus fire).
+	aggressionGain: number; // how strongly board condition (SP margin, clock, timeout winner) shifts charge willingness + exposure tolerance. 0 disables phase-3 scaling.
 };
 
 export const DEFAULT_SMART_TUNING: SmartTuning = {
@@ -155,7 +162,21 @@ export const DEFAULT_SMART_TUNING: SmartTuning = {
 	elevationBonus: 0.02, // sized like coverBonus; re-sweep in the A/B harness if it matters.
 	inRangeBonus: 0.02,
 	closerWeight: 0.002,
-	exitBonus: 1.0 // above max fire EV (~0.76); swept in the A/B harness (Phase 3).
+	exitBonus: 1.0, // above max fire EV (~0.76); swept in the A/B harness (Phase 3).
+	objectiveClaimants: 1, // one unit holds each objective hex; the rest engage. Set high to A/B-disable.
+	// Phase-2 first-cut weights, shipped ON: paired-mirror A/B (300 games/scenario) vs all-zero is
+	// non-regressive on win-edge everywhere (Bunker Hill +30/600 ≈ 2.5σ, Pitched Battle within noise,
+	// White Plains win-neutral though escapers trade ~1 more SP/game) and lifts elimination/fire
+	// throughput. Not yet fully swept — re-sweep to refine, and zero exposureWeight first if it ever
+	// costs an exit scenario. supportWeight ~cover-sized so the move total stays < FIRE_MIN_EV.
+	supportWeight: 0.004,
+	exposureWeight: 0.004,
+	woundedWeight: 0.05,
+	concentrationWeight: 0.05,
+	// Phase-3 first-cut, shipped ON: paired-mirror A/B vs gain 0 is non-regressive on win-edge
+	// (Bunker Hill / White Plains — the timeout-winner scenarios it targets — mildly positive to
+	// neutral). Effect is modest and near-noise; re-sweep the gain and aggressionFor's coefficients.
+	aggressionGain: 1.0 // scales the charge-edge shift; also gates the exposure-tolerance term. 0 disables phase-3.
 };
 
 type ScoredAction = { action: Action; score: number };
@@ -167,13 +188,47 @@ type ScoredAction = { action: Action; score: number };
 // hexes for our edge) and raze (still-standing TOWN hexes to torch). Torching needs
 // no separate action — a unit on a TOWN goal has minGoalDist 0, so it never advances
 // off and dwells there until the hex burns (per the scenario torchRule).
-function goalHexes(store: GameStore, unit: Unit, objectiveAware: boolean): OffsetCoordinates[] {
+// Objective saturation: control/hold objectives have capacity, not gravity. A hex already held
+// by a friendly is a goal only for its occupier (so it dwells there); an unheld hex is a goal
+// only for the `claimants` nearest friendlies. Everyone else drops it and falls back to engaging
+// enemies — so one unit holds the hill and the rest flank/fire instead of forming a column.
+// ponytail: crow-flies nearest for the claim, not path cost — good enough for role assignment;
+// the movement scorer still routes with terrain-aware goalPathCost. Deterministic index tiebreak.
+function claimObjectives(
+	store: GameStore,
+	unit: Unit,
+	objectives: OffsetCoordinates[],
+	claimants: number
+): OffsetCoordinates[] {
+	if (!Number.isFinite(claimants)) return objectives; // A/B "off": every unit pursues every hex.
+	const grid = store.grid!;
+	const friendly = store.units.filter((u) => u.player === unit.player && u.strengthPoints > 0);
+	return objectives.filter((o) => {
+		const occupant = friendly.find((u) => coordsEqual(u.coordinates, o));
+		if (occupant) return occupant.id === unit.id;
+		const oHex = grid.getHex(o)!;
+		const nearest = friendly
+			.map((u, i) => ({ id: u.id, d: hexDistance(grid.getHex(u.coordinates)!, oHex), i }))
+			.sort((a, b) => a.d - b.d || a.i - b.i)
+			.slice(0, claimants);
+		return nearest.some((r) => r.id === unit.id);
+	});
+}
+
+export function goalHexes(
+	store: GameStore,
+	unit: Unit,
+	objectiveAware: boolean,
+	objectiveClaimants = Infinity
+): OffsetCoordinates[] {
 	const conds = store.victoryConditions.filter((c) => c.player === unit.player);
-	const objectives = conds
+	const allObjectives = conds
 		.filter((c) => c.kind === 'control_hexes' || c.kind === 'hold_hexes')
 		.flatMap((c) => (c as { hexes: OffsetCoordinates[] }).hexes);
 	const enemies = store.units.filter((u) => u.player !== unit.player).map((u) => u.coordinates);
-	if (!objectiveAware) return [...enemies, ...objectives];
+	if (!objectiveAware) return [...enemies, ...allObjectives];
+	// Smart policy only: thin the objective list per-unit so the team doesn't all pile on one hex.
+	const objectives = claimObjectives(store, unit, allObjectives, objectiveClaimants);
 
 	const exitEdges = new Set(
 		conds.filter((c) => c.kind === 'exit_units').map((c) => (c as { edge: MapEdge }).edge)
@@ -357,6 +412,81 @@ function nearestEnemyDist(store: GameStore, coords: OffsetCoordinates, player: P
 	return best;
 }
 
+// --- positional feature fns (phase 2) ----------------------------------------
+// Pure, board-relative counts a future evalState(store, player) aggregates and MCTS reuses.
+// ponytail: O(units) with an LOS trace each — cheap on a 7×9 map; called only for the
+// active unit's candidate moves / fire targets, not every hex. Watch it in headless sweeps.
+
+/** Can `firer` (at its current hex) put fire on `coords`? Range + unblocked LOS; non-firers no. */
+function canFireHex(store: GameStore, firer: Unit, coords: OffsetCoordinates): boolean {
+	const range = unitDefinitions[firer.type].firingRange;
+	if (range === 0) return false;
+	const from = store.grid!.getHex(firer.coordinates)!;
+	if (hexDistance(from, store.grid!.getHex(coords)!) > range) return false;
+	return hasLineOfSight(firer.coordinates, coords, store.grid!, store.units);
+}
+
+/** Exposure: number of living enemies that could fire onto `coords`. */
+function enemyThreatCount(store: GameStore, coords: OffsetCoordinates, player: Player): number {
+	return store.units.filter(
+		(u) => u.player !== player && u.strengthPoints > 0 && canFireHex(store, u, coords)
+	).length;
+}
+
+/** Mutual support: friendlies (excluding `unit`) whose fire already covers `coords`. */
+function friendlyCoverCount(
+	store: GameStore,
+	unit: Unit,
+	coords: OffsetCoordinates,
+	player: Player
+): number {
+	return store.units.filter(
+		(u) =>
+			u.player === player &&
+			u.id !== unit.id &&
+			u.strengthPoints > 0 &&
+			canFireHex(store, u, coords)
+	).length;
+}
+
+/** Focus fire: friendlies (including self) that can currently fire `target`. */
+function firersOnTarget(store: GameStore, target: Unit, player: Player): number {
+	return store.units.filter(
+		(u) => u.player === player && u.strengthPoints > 0 && canFireHex(store, u, target.coordinates)
+	).length;
+}
+
+// Board-condition aggression scalar (phase 3), centered ~1.0 and clamped. >1 ⇒ press (accept
+// riskier charges, tolerate fire); <1 ⇒ hold (demand a bigger edge, avoid exposure). Behind on SP
+// or holding fewer objectives ⇒ press; losing on the clock as it runs out ⇒ press hard; winning by
+// default at the turn limit ⇒ hunker down and stall. ponytail: SP margin is the main driver; the
+// objective and clock terms are light corrections, not a tuned model — re-sweep the coefficients.
+export function aggressionFor(store: GameStore, player: Player): number {
+	const enemy: Player = player === 0 ? 1 : 0;
+	const mySp = sumSp(store.units, player);
+	const enemySp = sumSp(store.units, enemy);
+	const spMargin = (mySp - enemySp) / (mySp + enemySp || 1); // in [-1, 1]
+
+	const held = (p: Player, hexes: OffsetCoordinates[]) =>
+		hexes.filter((h) =>
+			store.units.some(
+				(u) => u.player === p && u.strengthPoints > 0 && coordsEqual(u.coordinates, h)
+			)
+		).length;
+	const objHexes = (p: Player) =>
+		store.victoryConditions
+			.filter((c) => c.player === p && (c.kind === 'control_hexes' || c.kind === 'hold_hexes'))
+			.flatMap((c) => (c as { hexes: OffsetCoordinates[] }).hexes);
+	const objDiff = held(player, objHexes(player)) - held(enemy, objHexes(enemy));
+
+	const turnsLeft = store.turnLimit === null ? Infinity : Math.max(0, store.turnLimit - store.turn);
+	const clock = Number.isFinite(turnsLeft) ? 1 / (turnsLeft + 1) : 0; // →1 near the limit
+	const timeout = store.turnLimitWinner === null ? 0 : store.turnLimitWinner === player ? 1 : -1;
+
+	const raw = 1 - spMargin - 0.1 * objDiff - clock * timeout;
+	return Math.max(0.5, Math.min(1.8, raw));
+}
+
 // TREE-SEARCH HOOK. Pure value of one concrete action from the current position.
 // smartHeuristicPolicy takes the argmax of this over legalActions(); a future αβ
 // search would reuse it UNCHANGED as its move-ordering key (expand highest-scored
@@ -369,7 +499,8 @@ export function scoreAction(
 	store: GameStore,
 	unit: Unit,
 	action: Action,
-	tuning: SmartTuning
+	tuning: SmartTuning,
+	aggression = 1 // board-condition scalar (aggressionFor); 1 = neutral. Threaded from bestSmartAction.
 ): number {
 	const grid = store.grid!;
 	switch (action.kind) {
@@ -380,7 +511,19 @@ export function scoreAction(
 			if (ev < FIRE_MIN_EV) return -Infinity; // baseline hold-fire gate
 			const finish = ev >= target.strengthPoints ? tuning.finishBonus : 0; // likely kill
 			const dist = hexDistance(grid.getHex(unit.coordinates)!, grid.getHex(target.coordinates)!);
-			return ev + finish + targetValue(store, target, tuning) - tuning.closestEps * dist;
+			// Focus fire: chip already-wounded units (the team finishes them) and pile onto a
+			// target several friendlies can hit. Fire-only, so it never crosses category priority.
+			// ponytail: `4` = default starting SP (types.ts); wounded = SP below full.
+			const wounded = tuning.woundedWeight * Math.max(0, 4 - target.strengthPoints);
+			const concentration = tuning.concentrationWeight * firersOnTarget(store, target, unit.player);
+			return (
+				ev +
+				finish +
+				wounded +
+				concentration +
+				targetValue(store, target, tuning) -
+				tuning.closestEps * dist
+			);
 		}
 		case 'charge': {
 			const target = store.units.find((u) => u.id === action.targetId);
@@ -389,8 +532,14 @@ export function scoreAction(
 			// CHARGE_DEFENSE_MODIFIER in the same units as SP, so count it as extra defender
 			// strength — the AI won't charge uphill into a hilltop defender without the edge.
 			const defenderElevated = getTerrainElevation(grid.getHex(target.coordinates)!.terrain) > 0;
+			// Aggression shifts the SP edge we demand: press (>1) accepts riskier charges, hold (<1)
+			// demands a bigger edge. Applied to both the gate and the score so willingness and
+			// priority move together. Neutral (aggression 1 / aggressionGain 0) reproduces the gate.
+			const aggrShift = Math.round((aggression - 1) * tuning.aggressionGain);
 			const effectiveTargetSp =
-				target.strengthPoints + (defenderElevated ? ELEVATION_CHARGE_DEFENSE_MODIFIER : 0);
+				target.strengthPoints +
+				(defenderElevated ? ELEVATION_CHARGE_DEFENSE_MODIFIER : 0) -
+				aggrShift;
 			// ponytail: same naive SP-edge gate as bestAction — no analytic opposed-roll EV.
 			if (unit.strengthPoints < effectiveTargetSp) return -Infinity;
 			return (
@@ -403,7 +552,7 @@ export function scoreAction(
 			// Gated on wantsExit: only a side with the exit objective should leave (the
 			// isExit flag is set scenario-wide, for either player).
 			if (action.isExit && wantsExit(store, unit)) return tuning.exitBonus;
-			const goals = goalHexes(store, unit, true);
+			const goals = goalHexes(store, unit, true, tuning.objectiveClaimants);
 			const here = goalPathCost(store, unit, unit.coordinates, goals);
 			const there = goalPathCost(store, unit, action.coords, goals);
 			// Only advance (terrain-aware path cost). Relaxing this to allow lateral/uphill
@@ -421,7 +570,20 @@ export function scoreAction(
 				range > 0 && nearestEnemyDist(store, action.coords, unit.player) <= range
 					? tuning.inRangeBonus
 					: 0;
-			return MOVE_SCORE - tuning.closerWeight * there + cover + elevation + inRange;
+			// Local force ratio at the destination: reward hexes friendly fire already covers
+			// (mutual support), penalise stepping alone into enemy guns. Weights kept tiny so the
+			// move total stays < FIRE_MIN_EV (a shot always outranks a step).
+			const support =
+				tuning.supportWeight * friendlyCoverCount(store, unit, action.coords, unit.player);
+			// Aggression scales exposure tolerance: press (>1) discounts the penalty, hold (<1) inflates it.
+			const exposureFactor = Math.max(0, 2 - aggression);
+			const exposure =
+				tuning.exposureWeight *
+				enemyThreatCount(store, action.coords, unit.player) *
+				exposureFactor;
+			return (
+				MOVE_SCORE - tuning.closerWeight * there + cover + elevation + inRange + support - exposure
+			);
 		}
 		case 'skip':
 			return -Infinity;
@@ -436,8 +598,11 @@ function bestSmartAction(
 	tuning: SmartTuning
 ): ScoredAction {
 	let best: ScoredAction = { action: { kind: 'skip', unitId: unit.id }, score: -Infinity };
+	// Compute the board-condition scalar once per unit (not per candidate). Gated on aggressionGain
+	// so gain 0 collapses to neutral (1) → no phase-3 effect anywhere, the A/B "off" toggle.
+	const aggression = tuning.aggressionGain > 0 ? aggressionFor(store, unit.player) : 1;
 	for (const action of legalActions(store, unit, isActive)) {
-		const score = scoreAction(store, unit, action, tuning);
+		const score = scoreAction(store, unit, action, tuning, aggression);
 		if (score > best.score) best = { action, score };
 	}
 	return best;

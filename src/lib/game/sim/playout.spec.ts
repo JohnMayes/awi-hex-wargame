@@ -5,6 +5,8 @@ import {
 	heuristicPolicy,
 	smartHeuristicPolicy,
 	scoreAction,
+	goalHexes,
+	aggressionFor,
 	DEFAULT_SMART_TUNING,
 	type Action
 } from './playout';
@@ -89,6 +91,133 @@ describe('scoreAction — elevated-defender charge protection', () => {
 	it('gates the same charge into a HILLTOP defender', () => {
 		expect.assertions(1);
 		expect(chargeScore({ col: 2, row: 2 })).toBe(-Infinity); // (2,2) is HILLTOP
+	});
+});
+
+describe('goalHexes — objective saturation (phase 1)', () => {
+	const HILL = { col: 3, row: 4 }; // Pitched Battle central hill (a control_hexes objective for both)
+	const has = (goals: { col: number; row: number }[], c: { col: number; row: number }) =>
+		goals.some((g) => g.col === c.col && g.row === c.row);
+
+	it('a held objective is a goal only for its occupier', () => {
+		expect.assertions(2);
+		const store = GameStore.fromScenario(SCENARIOS['pitched-battle']);
+		const blues = store.units.filter((u) => u.player === 0);
+		blues[0].coordinates = { ...HILL }; // occupier dwells
+		blues[1].coordinates = { col: 2, row: 8 }; // elsewhere → should not also head for the hill
+		expect(has(goalHexes(store, blues[0], true, 1), HILL)).toBe(true);
+		expect(has(goalHexes(store, blues[1], true, 1), HILL)).toBe(false);
+	});
+
+	it('an unheld objective is a goal only for the nearest claimant', () => {
+		expect.assertions(2);
+		const store = GameStore.fromScenario(SCENARIOS['pitched-battle']);
+		const blues = store.units.filter((u) => u.player === 0);
+		blues[0].coordinates = { col: 3, row: 5 }; // adjacent to the hill → the single nearest friendly
+		expect(has(goalHexes(store, blues[0], true, 1), HILL)).toBe(true);
+		expect(has(goalHexes(store, blues[1], true, 1), HILL)).toBe(false); // farther unit drops it
+	});
+});
+
+describe('scoreAction — support/exposure + focus fire (phase 2)', () => {
+	// Reposition TEST_UNITS onto the small TEST_MAP and build a store. Each test isolates one
+	// new term by toggling only its weight, so every other term cancels in the comparison.
+	const placed = (spec: Record<string, { col: number; row: number; sp?: number }>): GameStore => {
+		const units = structuredClone(TEST_UNITS) as Unit[];
+		for (const u of units) {
+			const s = spec[u.id];
+			if (!s) continue;
+			u.coordinates = { col: s.col, row: s.row };
+			if (s.sp !== undefined) u.strengthPoints = s.sp;
+		}
+		return new GameStore(units, TEST_MAP, structuredClone(TEST_LEADERS));
+	};
+
+	it('exposure lowers a move score when enemies can fire the destination', () => {
+		expect.assertions(2);
+		// Actor at (0,1); red artillery adjacent to the destination at (2,1) — dist 1 so LOS is
+		// always clear — can fire (1,1) and is the goal drawing the advance, so the move to (1,1)
+		// is closer (ungated) and threatened (exposure ≥ 1).
+		const store = placed({
+			'blue-line-inf': { col: 0, row: 1 },
+			'blue-light-inf': { col: 0, row: 3 },
+			'blue-dragoons': { col: 1, row: 3 },
+			'red-artillery': { col: 2, row: 1 }
+		});
+		const u = store.units.find((x) => x.id === 'blue-line-inf')!;
+		const move: Action = { kind: 'move', unitId: u.id, coords: { col: 1, row: 1 } };
+		const base = scoreAction(store, u, move, { ...DEFAULT_SMART_TUNING, exposureWeight: 0 });
+		const exposed = scoreAction(store, u, move, { ...DEFAULT_SMART_TUNING, exposureWeight: 1 });
+		expect(base).toBeGreaterThan(-Infinity); // move is not gated
+		expect(exposed).toBeLessThan(base);
+	});
+
+	it('mutual support raises a move score when a friendly covers the destination', () => {
+		expect.assertions(1);
+		const store = placed({
+			'blue-line-inf': { col: 0, row: 1 },
+			'blue-light-inf': { col: 0, row: 3 },
+			'blue-dragoons': { col: 1, row: 2 }, // covers (1,1) at range 1, off the goal-LOS line
+			'red-artillery': { col: 3, row: 1 } // goal so the move is closer/ungated
+		});
+		const u = store.units.find((x) => x.id === 'blue-line-inf')!;
+		const move: Action = { kind: 'move', unitId: u.id, coords: { col: 1, row: 1 } };
+		const noSup = scoreAction(store, u, move, { ...DEFAULT_SMART_TUNING, supportWeight: 0 });
+		const withSup = scoreAction(store, u, move, { ...DEFAULT_SMART_TUNING, supportWeight: 1 });
+		expect(withSup).toBeGreaterThan(noSup);
+	});
+
+	it('focus fire prefers a wounded target and one more friendlies can hit', () => {
+		expect.assertions(2);
+		const store = placed({
+			'blue-line-inf': { col: 1, row: 1 },
+			'blue-light-inf': { col: 1, row: 3 },
+			'blue-dragoons': { col: 0, row: 3 },
+			'red-horse': { col: 2, row: 1, sp: 1 }, // wounded target, adjacent
+			'red-light-horse': { col: 0, row: 1 },
+			'red-artillery': { col: 5, row: 3 }
+		});
+		const u = store.units.find((x) => x.id === 'blue-line-inf')!;
+		const fire: Action = { kind: 'fire', unitId: u.id, targetId: 'red-horse' };
+		const w0 = scoreAction(store, u, fire, { ...DEFAULT_SMART_TUNING, woundedWeight: 0 });
+		const w1 = scoreAction(store, u, fire, { ...DEFAULT_SMART_TUNING, woundedWeight: 0.5 });
+		expect(w1).toBeGreaterThan(w0); // wounded bonus
+		const c0 = scoreAction(store, u, fire, { ...DEFAULT_SMART_TUNING, concentrationWeight: 0 });
+		const c1 = scoreAction(store, u, fire, { ...DEFAULT_SMART_TUNING, concentrationWeight: 0.5 });
+		expect(c1).toBeGreaterThan(c0); // concentration bonus (≥1 firer on target)
+	});
+});
+
+describe('aggression scaling (phase 3)', () => {
+	it('aggressionFor: behind with the clock running out presses; ahead as the timeout winner holds', () => {
+		expect.assertions(2);
+		// (a) blue far behind on SP, clock spent, red wins on timeout → blue must press (> 1).
+		const behind = structuredClone(TEST_UNITS) as Unit[];
+		behind.filter((u) => u.player === 0).forEach((u) => (u.strengthPoints = 1));
+		const sA = new GameStore(behind, TEST_MAP, [], { turnLimit: 5, turnLimitWinner: 1 });
+		sA.turn = 5;
+		expect(aggressionFor(sA, 0)).toBeGreaterThan(1);
+		// (b) blue well ahead, clock spent, blue wins on timeout → blue holds/stalls (< 1).
+		const ahead = structuredClone(TEST_UNITS) as Unit[];
+		ahead.filter((u) => u.player === 1).forEach((u) => (u.strengthPoints = 1));
+		const sB = new GameStore(ahead, TEST_MAP, [], { turnLimit: 5, turnLimitWinner: 0 });
+		sB.turn = 5;
+		expect(aggressionFor(sB, 0)).toBeLessThan(1);
+	});
+
+	it('aggression opens a marginal charge (unit weaker by 1) that neutral play gates', () => {
+		expect.assertions(2);
+		const units = structuredClone(TEST_UNITS) as Unit[];
+		const actor = units.find((u) => u.player === 0)!;
+		actor.strengthPoints = 3;
+		const target = units.find((u) => u.player === 1)!;
+		target.strengthPoints = 4;
+		target.coordinates = { col: 1, row: 1 }; // OPEN — not elevated
+		const store = new GameStore(units, TEST_MAP, structuredClone(TEST_LEADERS));
+		const a = store.units.find((u) => u.id === actor.id)!;
+		const charge: Action = { kind: 'charge', unitId: a.id, targetId: target.id };
+		expect(scoreAction(store, a, charge, DEFAULT_SMART_TUNING, 1)).toBe(-Infinity); // neutral: gated (3 < 4)
+		expect(scoreAction(store, a, charge, DEFAULT_SMART_TUNING, 1.8)).toBeGreaterThan(-Infinity); // press: allowed
 	});
 });
 
