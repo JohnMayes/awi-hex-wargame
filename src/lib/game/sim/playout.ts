@@ -8,12 +8,12 @@ import { ActivationStep, TerrainType, type MapEdge, type Player, type Unit } fro
 import type { Scenario } from '../core/scenario';
 import type { VictoryOutcome } from '../core/victory';
 import type { LogEvent } from '../core/log';
-import { getValidMoveTargets, type MoveTarget } from '../core/movement';
+import { getValidMoveTargets, passableNeighbors, type MoveTarget } from '../core/movement';
 import { getValidFireTargets, expectedFireDamage } from '../core/combat';
 import { getValidChargeTargets } from '../core/charge';
 import { getTerrainCoverModifier } from '../core/terrain';
 import { unitDefinitions } from '../core/unitDefinitions';
-import { hexDistance } from '../core/hex';
+import { HexCell, hexDistance } from '../core/hex';
 
 export type Action =
 	| { kind: 'move'; unitId: string; coords: OffsetCoordinates; isExit?: boolean }
@@ -200,6 +200,64 @@ function minGoalDist(
 	return best;
 }
 
+// Cube-key (`"q,r"`) → hex lookup, built once per grid. The grid is stable for a
+// whole game, so a WeakMap keyed on it means passableNeighbors never rescans.
+const cubeMapCache = new WeakMap<object, Map<string, HexCell>>();
+function cubeMap(grid: NonNullable<GameStore['grid']>): Map<string, HexCell> {
+	let m = cubeMapCache.get(grid);
+	if (!m) {
+		m = new Map();
+		for (const h of grid) m.set(`${h.q},${h.r}`, h);
+		cubeMapCache.set(grid, m);
+	}
+	return m;
+}
+
+// Terrain-aware replacement for minGoalDist, used only by the objective-aware smart
+// policy (the baseline keeps straight-line, staying the dumb A/B incumbent). Shortest
+// step count to the nearest reachable goal, routing around rivers/impassable terrain —
+// so a river-blocked unit sees the real detour distance instead of walking crow-flies
+// into a dead-end. Occupancy-blind (see passableNeighbors); Infinity if no goal is
+// reachable. A plain BFS: every step costs 1, so breadth order == shortest path, and
+// one sweep handles all goals at once (abstract-astar is point-to-point single-goal —
+// running it per goal per candidate move timed out the A/B harness). The installed
+// abstract-astar dep waits for the day steps carry unequal terrain cost.
+function goalPathCost(
+	store: GameStore,
+	unit: Unit,
+	coords: OffsetCoordinates,
+	goals: OffsetCoordinates[]
+): number {
+	const grid = store.grid!;
+	const hexMap = cubeMap(grid);
+	const start = grid.getHex(coords)!;
+	const goalKeys = new Set<string>();
+	for (const g of goals) {
+		const h = grid.getHex(g);
+		if (h) goalKeys.add(`${h.q},${h.r}`);
+	}
+	const startKey = `${start.q},${start.r}`;
+	if (goalKeys.has(startKey)) return 0; // dwell (e.g. a raze TOWN under the unit)
+
+	const seen = new Set([startKey]);
+	let frontier = [start];
+	let dist = 0;
+	while (frontier.length > 0) {
+		dist++;
+		const next: HexCell[] = [];
+		for (const hex of frontier)
+			for (const n of passableNeighbors(unit, hex, hexMap)) {
+				const k = `${n.q},${n.r}`;
+				if (seen.has(k)) continue;
+				if (goalKeys.has(k)) return dist;
+				seen.add(k);
+				next.push(n);
+			}
+		frontier = next;
+	}
+	return Infinity;
+}
+
 // Best single action for `unit` this step (defaults to skip). `isActive` reads
 // the store's derived targets, which already account for MP spent / having fired.
 function bestAction(store: GameStore, unit: Unit, isActive: boolean): ScoredAction {
@@ -310,9 +368,9 @@ function scoreAction(store: GameStore, unit: Unit, action: Action, tuning: Smart
 			// isExit flag is set scenario-wide, for either player).
 			if (action.isExit && wantsExit(store, unit)) return tuning.exitBonus;
 			const goals = goalHexes(store, unit, true);
-			const here = minGoalDist(store, unit.coordinates, goals);
-			const there = minGoalDist(store, action.coords, goals);
-			if (there >= here) return -Infinity; // only advance (baseline behaviour)
+			const here = goalPathCost(store, unit, unit.coordinates, goals);
+			const there = goalPathCost(store, unit, action.coords, goals);
+			if (there >= here) return -Infinity; // only advance (terrain-aware path cost)
 			const hex = grid.getHex(action.coords);
 			const cover = hex && getTerrainCoverModifier(hex.terrain) < 0 ? tuning.coverBonus : 0;
 			const range = unitDefinitions[unit.type].firingRange;

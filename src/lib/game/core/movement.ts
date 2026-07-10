@@ -168,6 +168,34 @@ export function getValidMoveTargets(
 }
 
 /**
+ * Terrain-passable neighbours of `hex` for `unit`, ignoring unit occupancy, roads,
+ * and movement allowance. This is the routing graph the AI's A* distance estimate
+ * runs over (`sim/playout.ts`): it must route around *static* terrain (rivers,
+ * impassable), but NOT around *transient* units — a goal screened by friendlies
+ * must still read as reachable, or the unit refuses to advance. Shares the exact
+ * edge rules the BFS above uses (`riverBlocks`, `canUnitEnterTerrain`), so routing
+ * can never disagree with legal movement about what terrain is traversable.
+ *
+ * `hexMap` is a cube-key (`"q,r"`) → hex lookup — build it once and reuse across
+ * calls (a fresh grid scan per neighbour lookup would be wasteful).
+ */
+export function passableNeighbors(
+	unit: Unit,
+	hex: HexCell,
+	hexMap: Map<string, HexCell>
+): HexCell[] {
+	const out: HexCell[] = [];
+	for (const [dq, dr] of directions) {
+		const neighbor = hexMap.get(cubeKey(hex.q + dq, hex.r + dr));
+		if (!neighbor) continue;
+		if (riverBlocks(hex, neighbor)) continue;
+		if (!canUnitEnterTerrain(unit.type, neighbor.terrain)) continue;
+		out.push(neighbor);
+	}
+	return out;
+}
+
+/**
  * True when the unit must pass a check to leave its current hex (rules §6.1).
  * Applies only to units with `terrainCheckRequired` starting in a difficult
  * terrain hex.
