@@ -38,10 +38,10 @@ export const terrainDefinitions: Readonly<Record<TerrainType, TerrainDefinition>
 	[TerrainType.MARSH]: {
 		blocksLOS: false,
 		providesCover: false,
-		isImpassable: true,
+		isImpassable: false,
 		isElevated: false,
-		isDifficultTerrain: false,
-		allowedUnitTypes: null
+		isDifficultTerrain: true,
+		allowedUnitTypes: [UnitType.LINE_INFANTRY, UnitType.LIGHT_INFANTRY]
 	},
 	[TerrainType.LAKE]: {
 		blocksLOS: false,
@@ -80,7 +80,7 @@ export const terrainDefinitions: Readonly<Record<TerrainType, TerrainDefinition>
 		providesCover: false,
 		isImpassable: false,
 		isElevated: true,
-		isDifficultTerrain: true,
+		isDifficultTerrain: false,
 		allowedUnitTypes: null
 	},
 	// A razed town (see scenario torchRule). Behaves exactly like OPEN — burning a
@@ -98,8 +98,8 @@ export const terrainDefinitions: Readonly<Record<TerrainType, TerrainDefinition>
 
 /**
  * Returns whether a unit type may enter a terrain hex.
- * Impassable terrain (MARSH, LAKE, RIVER) blocks all units.
- * WOODS and TOWN restrict entry to specific unit types.
+ * Impassable terrain (LAKE, RIVER) blocks all units.
+ * WOODS, TOWN and MARSH restrict entry to specific unit types.
  */
 export function canUnitEnterTerrain(unitType: UnitType, terrainType: TerrainType): boolean {
 	const def = terrainDefinitions[terrainType];

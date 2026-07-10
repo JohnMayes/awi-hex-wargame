@@ -10,8 +10,8 @@ import type { VictoryOutcome } from '../core/victory';
 import type { LogEvent } from '../core/log';
 import { getValidMoveTargets, passableNeighbors, type MoveTarget } from '../core/movement';
 import { getValidFireTargets, expectedFireDamage } from '../core/combat';
-import { getValidChargeTargets } from '../core/charge';
-import { getTerrainCoverModifier } from '../core/terrain';
+import { getValidChargeTargets, ELEVATION_CHARGE_DEFENSE_MODIFIER } from '../core/charge';
+import { getTerrainCoverModifier, getTerrainElevation } from '../core/terrain';
 import { unitDefinitions } from '../core/unitDefinitions';
 import { getAttachedLeader } from '../core/command';
 import { HexCell, hexDistance } from '../core/hex';
@@ -141,6 +141,7 @@ export type SmartTuning = {
 	leaderBonus: number; // target carries an attached leader: a casualty there disrupts enemy command.
 	closestEps: number; // faint tiebreak toward the nearer fire target (EV already folds in range/cover).
 	coverBonus: number; // move onto cover terrain (woods/town): reduces incoming fire.
+	elevationBonus: number; // move onto elevated terrain (hilltop): charge protection + downhill fire.
 	inRangeBonus: number; // move that brings an enemy within our firing range (a firing position).
 	closerWeight: number; // prefer advancing nearer the goal; tiny so the move score stays < FIRE_MIN_EV.
 	exitBonus: number; // take an off-map exit (exit_units objective): banks an irreversible win step.
@@ -151,6 +152,7 @@ export const DEFAULT_SMART_TUNING: SmartTuning = {
 	leaderBonus: 0.3,
 	closestEps: 0.01,
 	coverBonus: 0.02,
+	elevationBonus: 0.02, // sized like coverBonus; re-sweep in the A/B harness if it matters.
 	inRangeBonus: 0.02,
 	closerWeight: 0.002,
 	exitBonus: 1.0 // above max fire EV (~0.76); swept in the A/B harness (Phase 3).
@@ -363,7 +365,12 @@ function nearestEnemyDist(store: GameStore, coords: OffsetCoordinates, player: P
 // skip. The finish/leader/cover terms are deliberately the same vocabulary a leaf
 // evalState(store, player) would use (material Σ own SP − enemy SP, objective
 // control, cover) — so the eval and the ordering key can share one code path.
-function scoreAction(store: GameStore, unit: Unit, action: Action, tuning: SmartTuning): number {
+export function scoreAction(
+	store: GameStore,
+	unit: Unit,
+	action: Action,
+	tuning: SmartTuning
+): number {
 	const grid = store.grid!;
 	switch (action.kind) {
 		case 'fire': {
@@ -378,12 +385,16 @@ function scoreAction(store: GameStore, unit: Unit, action: Action, tuning: Smart
 		case 'charge': {
 			const target = store.units.find((u) => u.id === action.targetId);
 			if (!target) return -Infinity;
+			// An elevated defender's charge protection (resolveCharge) is worth ELEVATION_
+			// CHARGE_DEFENSE_MODIFIER in the same units as SP, so count it as extra defender
+			// strength — the AI won't charge uphill into a hilltop defender without the edge.
+			const defenderElevated = getTerrainElevation(grid.getHex(target.coordinates)!.terrain) > 0;
+			const effectiveTargetSp =
+				target.strengthPoints + (defenderElevated ? ELEVATION_CHARGE_DEFENSE_MODIFIER : 0);
 			// ponytail: same naive SP-edge gate as bestAction — no analytic opposed-roll EV.
-			if (unit.strengthPoints < target.strengthPoints) return -Infinity;
+			if (unit.strengthPoints < effectiveTargetSp) return -Infinity;
 			return (
-				CHARGE_BASE +
-				(unit.strengthPoints - target.strengthPoints) +
-				targetValue(store, target, tuning)
+				CHARGE_BASE + (unit.strengthPoints - effectiveTargetSp) + targetValue(store, target, tuning)
 			);
 		}
 		case 'move': {
@@ -402,12 +413,15 @@ function scoreAction(store: GameStore, unit: Unit, action: Action, tuning: Smart
 			if (there >= here) return -Infinity;
 			const hex = grid.getHex(action.coords);
 			const cover = hex && getTerrainCoverModifier(hex.terrain) < 0 ? tuning.coverBonus : 0;
+			// Elevated terrain is a more defensible hex to hold: charge protection plus a
+			// downhill fire bonus. Rewarded like cover, so the AI drifts onto hills when ties allow.
+			const elevation = hex && getTerrainElevation(hex.terrain) > 0 ? tuning.elevationBonus : 0;
 			const range = unitDefinitions[unit.type].firingRange;
 			const inRange =
 				range > 0 && nearestEnemyDist(store, action.coords, unit.player) <= range
 					? tuning.inRangeBonus
 					: 0;
-			return MOVE_SCORE - tuning.closerWeight * there + cover + inRange;
+			return MOVE_SCORE - tuning.closerWeight * there + cover + elevation + inRange;
 		}
 		case 'skip':
 			return -Infinity;

@@ -2,7 +2,7 @@ import type { Grid, OffsetCoordinates } from 'honeycomb-grid';
 import type { LeaderCasualtyResult } from './command';
 import { HexCell, directions, isEntrenchedToward, riverBlocks } from './hex';
 import type { MoraleResult } from './morale';
-import { canUnitEnterTerrain, terrainDefinitions } from './terrain';
+import { canUnitEnterTerrain, getTerrainElevation, terrainDefinitions } from './terrain';
 import { getUnitDefinition } from './unitDefinitions';
 import { getRetreatHex } from './retreat';
 import { UnitType, type Unit } from './types';
@@ -43,6 +43,14 @@ function isCavalry(type: UnitType): boolean {
 // Charge-defense bonus for a defender whose entrenched edge faces the attacker.
 // Applied to the attacker's score, like `dtModifier`; stacks with difficult terrain.
 const ENTRENCHMENT_CHARGE_MODIFIER = -1;
+// Slight bonus for charging down from an elevated origin onto a lower defender (rules §7).
+// Same-elevation charges are unaffected.
+const ELEVATION_CHARGE_ATTACK_MODIFIER = 1;
+// Slight protection for a defender sitting on elevated terrain (rules §7), applied to
+// the defender's score. Independent of the downhill attack bonus, so charging uphill onto
+// a hilltop defender is doubly discouraged. In the same units as SP in the opposed roll,
+// so the AI heuristic treats an elevated defender as this much stronger (see playout.ts).
+export const ELEVATION_CHARGE_DEFENSE_MODIFIER = 1;
 
 /**
  * Eligibility check for a single attacker/defender pair, ignoring spatial
@@ -198,13 +206,25 @@ export function resolveCharge(
 	const chargeBonus = attackerDef.charge.canCharge ? attackerDef.charge.chargeBonus : 0;
 	const dtModifier = defenderOnDifficult ? -1 : 0;
 	const entrenchModifier = entrenchedAgainstCharge ? ENTRENCHMENT_CHARGE_MODIFIER : 0;
+	const chargingDownhill =
+		attackerOriginHex != null &&
+		getTerrainElevation(attackerOriginHex.terrain) > getTerrainElevation(defenderHex.terrain);
+	const elevationAttackModifier = chargingDownhill ? ELEVATION_CHARGE_ATTACK_MODIFIER : 0;
+	const elevationDefenseModifier = terrainDefinitions[defenderHex.terrain].isElevated
+		? ELEVATION_CHARGE_DEFENSE_MODIFIER
+		: 0;
 
 	const attackerRoll = rollD6(rng);
 	const defenderRoll = rollD6(rng);
 
 	const attackerScore =
-		attackerRoll + attacker.strengthPoints + chargeBonus + dtModifier + entrenchModifier;
-	const defenderScore = defenderRoll + defender.strengthPoints;
+		attackerRoll +
+		attacker.strengthPoints +
+		chargeBonus +
+		dtModifier +
+		entrenchModifier +
+		elevationAttackModifier;
+	const defenderScore = defenderRoll + defender.strengthPoints + elevationDefenseModifier;
 	const delta = attackerScore - defenderScore;
 
 	const base: Omit<

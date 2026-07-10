@@ -301,6 +301,27 @@ describe('resolveFireAction — modifiers', () => {
 		expect(r.longRangeModifier).toBe(0);
 	});
 
+	it('firing from HILLTOP down onto a lower target: elevationModifier +0.1', () => {
+		expect.assertions(2);
+		const layout = openRect(9, 9);
+		setTerrainAt(layout, ANCHOR, TerrainType.HILLTOP);
+		const grid = buildGrid(layout);
+		const firer = unit('a', UnitType.LINE_INFANTRY, 0, ANCHOR);
+		const enemy = unit('e', UnitType.LINE_INFANTRY, 1, offsetAlong(grid, ANCHOR, 0, 1)!);
+		const r = resolveFireAction(firer, enemy, grid, () => 0.99);
+		expect(r.elevationModifier).toBeCloseTo(0.1, 10);
+		expect(r.finalHitChance).toBeCloseTo(r.baseHitChance + 0.1, 10);
+	});
+
+	it('same-elevation fire: elevationModifier 0', () => {
+		expect.assertions(1);
+		const grid = buildGrid(openRect(9, 9));
+		const firer = unit('a', UnitType.LINE_INFANTRY, 0, ANCHOR);
+		const enemy = unit('e', UnitType.LINE_INFANTRY, 1, offsetAlong(grid, ANCHOR, 0, 1)!);
+		const r = resolveFireAction(firer, enemy, grid, () => 0.99);
+		expect(r.elevationModifier).toBe(0);
+	});
+
 	it('finalHitChance is clamped to ≥ 0', () => {
 		expect.assertions(1);
 		const layout = openRect(11, 11);

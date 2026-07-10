@@ -380,7 +380,7 @@ export const WHITE_PLAINS: Scenario = {
 	units: WHITE_PLAINS_UNITS,
 	leaders: WHITE_PLAINS_LEADERS,
 	firstPlayer: 1,
-	turnLimit: 10,
+	turnLimit: 15,
 	turnLimitWinner: 1, // "any other result is a British victory"
 	reinforcements: WHITE_PLAINS_REINFORCEMENTS,
 	victoryConditions: [

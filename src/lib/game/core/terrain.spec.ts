@@ -106,14 +106,14 @@ describe('canUnitEnterTerrain', () => {
 		});
 	});
 
-	describe('MARSH — impassable to all units', () => {
-		it('LINE_INFANTRY may not enter', () => {
+	describe('MARSH — infantry only (difficult terrain)', () => {
+		it('LINE_INFANTRY may enter', () => {
 			expect.assertions(1);
-			expect(canUnitEnterTerrain(UnitType.LINE_INFANTRY, TerrainType.MARSH)).toBe(false);
+			expect(canUnitEnterTerrain(UnitType.LINE_INFANTRY, TerrainType.MARSH)).toBe(true);
 		});
-		it('LIGHT_INFANTRY may not enter', () => {
+		it('LIGHT_INFANTRY may enter', () => {
 			expect.assertions(1);
-			expect(canUnitEnterTerrain(UnitType.LIGHT_INFANTRY, TerrainType.MARSH)).toBe(false);
+			expect(canUnitEnterTerrain(UnitType.LIGHT_INFANTRY, TerrainType.MARSH)).toBe(true);
 		});
 		it('DRAGOONS may not enter', () => {
 			expect.assertions(1);
@@ -395,9 +395,9 @@ describe('getTerrainElevation', () => {
 // ─── terrainDefinitions property checks ────────────────────────────────────
 
 describe('isDifficultTerrain', () => {
-	it('HILLTOP is difficult terrain', () => {
+	it('HILLTOP is not difficult terrain', () => {
 		expect.assertions(1);
-		expect(terrainDefinitions[TerrainType.HILLTOP].isDifficultTerrain).toBe(true);
+		expect(terrainDefinitions[TerrainType.HILLTOP].isDifficultTerrain).toBe(false);
 	});
 	it('OPEN is not difficult terrain', () => {
 		expect.assertions(1);
@@ -411,9 +411,9 @@ describe('isDifficultTerrain', () => {
 		expect.assertions(1);
 		expect(terrainDefinitions[TerrainType.TOWN].isDifficultTerrain).toBe(false);
 	});
-	it('MARSH is not difficult terrain', () => {
+	it('MARSH is difficult terrain', () => {
 		expect.assertions(1);
-		expect(terrainDefinitions[TerrainType.MARSH].isDifficultTerrain).toBe(false);
+		expect(terrainDefinitions[TerrainType.MARSH].isDifficultTerrain).toBe(true);
 	});
 	it('LAKE is not difficult terrain', () => {
 		expect.assertions(1);
@@ -434,9 +434,9 @@ describe('isDifficultTerrain', () => {
 });
 
 describe('isImpassable', () => {
-	it('MARSH is impassable', () => {
+	it('MARSH is not impassable', () => {
 		expect.assertions(1);
-		expect(terrainDefinitions[TerrainType.MARSH].isImpassable).toBe(true);
+		expect(terrainDefinitions[TerrainType.MARSH].isImpassable).toBe(false);
 	});
 	it('LAKE is impassable', () => {
 		expect.assertions(1);

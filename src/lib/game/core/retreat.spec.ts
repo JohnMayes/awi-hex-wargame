@@ -208,7 +208,21 @@ describe('getRetreatHex — terrain', () => {
 		expect(result).toEqual(expected);
 	});
 
-	it('skips impassable terrain (Marsh) neighbor', () => {
+	it('skips impassable terrain (Lake) neighbor', () => {
+		expect.assertions(1);
+		const layout = openRect(5, 5);
+		const center = { col: 2, row: 2 };
+		const defender = unit('d', UnitType.LINE_INFANTRY, 1, center);
+		const attackerOrigin = neighborOffset(buildGrid(layout), center, 3)!;
+		const dir0 = neighborOffset(buildGrid(layout), center, 0)!;
+		for (const c of layout) if (coordsEqual(c, dir0)) c.terrain = TerrainType.LAKE;
+		const grid = buildGrid(layout);
+		const result = getRetreatHex(defender, attackerOrigin, grid, [defender]);
+		const expected = neighborOffset(grid, center, 1);
+		expect(result).toEqual(expected);
+	});
+
+	it('permits retreat into MARSH (difficult terrain) without check', () => {
 		expect.assertions(1);
 		const layout = openRect(5, 5);
 		const center = { col: 2, row: 2 };
@@ -216,20 +230,6 @@ describe('getRetreatHex — terrain', () => {
 		const attackerOrigin = neighborOffset(buildGrid(layout), center, 3)!;
 		const dir0 = neighborOffset(buildGrid(layout), center, 0)!;
 		for (const c of layout) if (coordsEqual(c, dir0)) c.terrain = TerrainType.MARSH;
-		const grid = buildGrid(layout);
-		const result = getRetreatHex(defender, attackerOrigin, grid, [defender]);
-		const expected = neighborOffset(grid, center, 1);
-		expect(result).toEqual(expected);
-	});
-
-	it('permits retreat into HILLTOP (difficult terrain) without check', () => {
-		expect.assertions(1);
-		const layout = openRect(5, 5);
-		const center = { col: 2, row: 2 };
-		const defender = unit('d', UnitType.LINE_INFANTRY, 1, center);
-		const attackerOrigin = neighborOffset(buildGrid(layout), center, 3)!;
-		const dir0 = neighborOffset(buildGrid(layout), center, 0)!;
-		for (const c of layout) if (coordsEqual(c, dir0)) c.terrain = TerrainType.HILLTOP;
 		const grid = buildGrid(layout);
 		const result = getRetreatHex(defender, attackerOrigin, grid, [defender]);
 		expect(result).toEqual(dir0);

@@ -216,15 +216,24 @@ describe('getValidMoveTargets — terrain entry', () => {
 		expect(targets.length).toBeGreaterThan(0);
 	});
 
-	it('MARSH and LAKE are impassable to all unit types', () => {
+	it('LAKE is impassable to all unit types', () => {
+		expect.assertions(1);
+		const layout = openRect(3, 3);
+		for (const c of layout) if (!(c.col === 1 && c.row === 1)) c.terrain = TerrainType.LAKE;
+		const grid = buildGrid(layout);
+		const u = unit('u', UnitType.LIGHT_INFANTRY, 0, { col: 1, row: 1 });
+		expect(getValidMoveTargets(u, grid, [u])).toHaveLength(0);
+	});
+
+	it('MARSH is enterable by infantry but not by cavalry or artillery', () => {
 		expect.assertions(2);
-		for (const terrain of [TerrainType.MARSH, TerrainType.LAKE]) {
-			const layout = openRect(3, 3);
-			for (const c of layout) if (!(c.col === 1 && c.row === 1)) c.terrain = terrain;
-			const grid = buildGrid(layout);
-			const u = unit('u', UnitType.LIGHT_INFANTRY, 0, { col: 1, row: 1 });
-			expect(getValidMoveTargets(u, grid, [u])).toHaveLength(0);
-		}
+		const layout = openRect(3, 3);
+		for (const c of layout) if (!(c.col === 1 && c.row === 1)) c.terrain = TerrainType.MARSH;
+		const grid = buildGrid(layout);
+		const inf = unit('inf', UnitType.LIGHT_INFANTRY, 0, { col: 1, row: 1 });
+		const cav = unit('cav', UnitType.DRAGOONS, 0, { col: 1, row: 1 });
+		expect(getValidMoveTargets(inf, grid, [inf]).length).toBeGreaterThan(0);
+		expect(getValidMoveTargets(cav, grid, [cav])).toHaveLength(0);
 	});
 
 	it('RIVER is impassable; BRIDGE and FORD are passable', () => {
@@ -523,16 +532,16 @@ describe('getValidMoveTargets — edge cases', () => {
 });
 
 describe('requiresDifficultTerrainCheck', () => {
-	it('returns true for Line Infantry on HILLTOP (difficult terrain)', () => {
+	it('returns true for Line Infantry on MARSH (difficult terrain)', () => {
 		expect.assertions(1);
-		const grid = buildGrid([{ col: 0, row: 0, terrain: TerrainType.HILLTOP }]);
+		const grid = buildGrid([{ col: 0, row: 0, terrain: TerrainType.MARSH }]);
 		const u = unit('u', UnitType.LINE_INFANTRY, 0, { col: 0, row: 0 });
 		expect(requiresDifficultTerrainCheck(u, grid)).toBe(true);
 	});
 
-	it('returns false for Light Infantry on HILLTOP (no terrain check required)', () => {
+	it('returns false for Light Infantry on MARSH (no terrain check required)', () => {
 		expect.assertions(1);
-		const grid = buildGrid([{ col: 0, row: 0, terrain: TerrainType.HILLTOP }]);
+		const grid = buildGrid([{ col: 0, row: 0, terrain: TerrainType.MARSH }]);
 		const u = unit('u', UnitType.LIGHT_INFANTRY, 0, { col: 0, row: 0 });
 		expect(requiresDifficultTerrainCheck(u, grid)).toBe(false);
 	});

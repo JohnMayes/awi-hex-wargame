@@ -21,8 +21,9 @@ Hexes may contain terrain features that affect movement, combat, and line of sig
 - **Open**: No effect. The default terrain.
 - **Woods**: Block line of sight. Only Light Infantry may enter. Provide cover.
 - **Town**: Block line of sight. Only Infantry and Light Infantry may enter. Provide cover. A town hex is a strongpoint, reflecting the fortified urban positions that dominated Horse and Musket battles.
-- **Hill**: Elevated terrain. Units on a hill can see and fire over adjacent lower-elevation units or terrain. Do not block LOS for units on the same elevation. Defenders on a hill receive a defensive bonus in charge combat.
-- **Marsh/Lake**: Impassable to all units.
+- **Hill**: Elevated terrain. Units on a hill can see and fire over adjacent lower-elevation units or terrain. Do not block LOS for units on the same elevation. A unit **firing or charging from a hill down onto a lower-elevation target** gains an attack bonus (fire: **+10% to hit**; charge: **+1 to the attacker's charge score**); fire or charge between hexes at the same elevation is unaffected. **Defenders on a hill receive a defensive bonus in charge combat** (**+1 to the defender's charge score**), which stacks with the attacker's uphill penalty so charging up a hill is doubly discouraged.
+- **Marsh**: Difficult terrain (movement check to leave). Only Infantry and Light Infantry may enter; cavalry and artillery may not.
+- **Lake**: Impassable to all units.
 - **River**: Impassable except at bridge or ford hexes.
 - **Road**: Units moving entirely along a road gain +1 hex to their movement allowance. Road movement bonus cannot be used when charging. A unit using road movement may not move adjacent to an enemy unit during that move.
 
@@ -188,6 +189,7 @@ When a unit fires, the system resolves whether a hit is scored based on the unit
 
 - **Target in cover** (woods, town, walls, etc.): -15% hit chance
 - **Target entrenched against the firer** (fire crosses an entrenched hexside, see §2.1): -15% hit chance, stacking with terrain cover
+- **Firing from a hill onto a lower-elevation target** (elevated firer, lower target): +10% hit chance. Fire between hexes at the same elevation is unaffected.
 - **Artillery at long range** (3+ hexes): -15% hit chance
 
 A successful hit inflicts **1 SP of damage** to the target. An exceptionally effective volley (roughly a 1-in-6 additional chance on a hit) may inflict **2 SP of damage** instead, representing a particularly devastating round of fire.
@@ -207,10 +209,13 @@ A unit eligible to charge spends its movement to enter the **defender's hex**, i
 The attacker's score is calculated from a base value plus the attacker's current SP, modified by:
 
 - **Horse (heavy cavalry) charging**: +1
+- **Charging from a hill down onto a lower-elevation defender**: +1 (charges between hexes at the same elevation are unaffected)
 - **Defender in difficult terrain**: -1
 - **Defender entrenched against the charge** (charge crosses an entrenched hexside, see §2.1): -1
 
-The defender's score is calculated from a base value plus the defender's current SP.
+The defender's score is calculated from a base value plus the defender's current SP, modified by:
+
+- **Defender on a hill** (elevated terrain): +1. Independent of the attacker's uphill penalty, so charging up onto a hill defender is discouraged twice over.
 
 The system compares the two scores and applies results:
 
@@ -322,15 +327,16 @@ Games are played for a set number of turns as specified by the scenario, typical
 
 ## 12. Terrain Summary Table
 
-| Terrain    | Movement Effect               | Combat Effect             | LOS       | Who May Enter            |
-| ---------- | ----------------------------- | ------------------------- | --------- | ------------------------ |
-| Open       | None                          | None                      | Clear     | All                      |
-| Woods      | Light Infantry only           | Cover (-15% hit chance)   | Blocked   | Light Infantry only      |
-| Town       | None                          | Cover                     | Blocked   | Infantry, Light Infantry |
-| Hill       | None                          | Defender bonus in charges | See rules | All                      |
-| Marsh/Lake | Impassable                    | N/A                       | Blocked   | None                     |
-| River      | Only at bridge/ford           | None                      | Clear     | All (at crossing)        |
-| Road       | +1 hex if entire move on road | None                      | Clear     | All                      |
+| Terrain | Movement Effect               | Combat Effect                                                          | LOS       | Who May Enter            |
+| ------- | ----------------------------- | ---------------------------------------------------------------------- | --------- | ------------------------ |
+| Open    | None                          | None                                                                   | Clear     | All                      |
+| Woods   | Light Infantry only           | Cover (-15% hit chance)                                                | Blocked   | Light Infantry only      |
+| Town    | None                          | Cover                                                                  | Blocked   | Infantry, Light Infantry |
+| Hill    | None                          | Uphill attacker penalty / downhill attack bonus; defender charge bonus | See rules | All                      |
+| Marsh   | Difficult (check to leave)    | None                                                                   | Clear     | Infantry, Light Infantry |
+| Lake    | Impassable                    | N/A                                                                    | Clear     | None                     |
+| River   | Only at bridge/ford           | None                                                                   | Clear     | All (at crossing)        |
+| Road    | +1 hex if entire move on road | None                                                                   | Clear     | All                      |
 
 **Entrenchments** are a **hexside** feature, not a hex terrain type: they sit on individual hexsides and give the occupying unit cover from fire and a charge-defense bonus against attacks crossing that side, with no effect on movement or LOS — see §2.1.
 

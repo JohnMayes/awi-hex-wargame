@@ -3,7 +3,7 @@ import type { LeaderCasualtyResult } from './command';
 import { HexCell, hexDistance, isEntrenchedToward } from './hex';
 import { hasLineOfSight } from './los';
 import type { MoraleResult } from './morale';
-import { getTerrainCoverModifier } from './terrain';
+import { getTerrainCoverModifier, getTerrainElevation } from './terrain';
 import { getUnitDefinition } from './unitDefinitions';
 import { UnitType, type Unit } from './types';
 
@@ -15,6 +15,7 @@ export type FireResult = {
 	baseHitChance: number;
 	coverModifier: number;
 	longRangeModifier: number;
+	elevationModifier: number;
 	finalHitChance: number;
 	leaderCasualty: LeaderCasualtyResult | null;
 	morale: MoraleResult | null;
@@ -28,6 +29,9 @@ const DOUBLE_DAMAGE_CHANCE = 1 / 6;
 // Cover for a target whose entrenched edge faces the firer (matches woods/town cover,
 // and stacks with it). Folded into `coverModifier`, so it surfaces in FireResult.
 const ENTRENCHMENT_COVER_MODIFIER = -0.15;
+// Slight bonus for firing down onto a lower-elevation target (rules §7). Same-elevation
+// fire is unaffected. Folded into its own FireResult field for UI/debug visibility.
+const ELEVATION_FIRE_BONUS = 0.1;
 
 /**
  * Returns the enemy units the firing unit may legally fire on, per rules §6.2:
@@ -66,7 +70,10 @@ function fireModifiers(
 	attacker: Unit,
 	target: Unit,
 	grid: Grid<HexCell>
-): Pick<FireResult, 'baseHitChance' | 'coverModifier' | 'longRangeModifier' | 'finalHitChance'> {
+): Pick<
+	FireResult,
+	'baseHitChance' | 'coverModifier' | 'longRangeModifier' | 'elevationModifier' | 'finalHitChance'
+> {
 	const def = getUnitDefinition(attacker.type);
 	const attackerHex = grid.getHex(attacker.coordinates)!;
 	const targetHex = grid.getHex(target.coordinates)!;
@@ -80,11 +87,15 @@ function fireModifiers(
 		attacker.type === UnitType.ARTILLERY && dist >= ARTILLERY_LONG_RANGE_MIN_DIST
 			? ARTILLERY_LONG_RANGE_PENALTY
 			: 0;
+	const elevationModifier =
+		getTerrainElevation(attackerHex.terrain) > getTerrainElevation(targetHex.terrain)
+			? ELEVATION_FIRE_BONUS
+			: 0;
 	const finalHitChance = Math.max(
 		0,
-		Math.min(1, baseHitChance + coverModifier + longRangeModifier)
+		Math.min(1, baseHitChance + coverModifier + longRangeModifier + elevationModifier)
 	);
-	return { baseHitChance, coverModifier, longRangeModifier, finalHitChance };
+	return { baseHitChance, coverModifier, longRangeModifier, elevationModifier, finalHitChance };
 }
 
 /**
@@ -108,11 +119,8 @@ export function resolveFireAction(
 	grid: Grid<HexCell>,
 	rng: () => number = Math.random
 ): FireResult {
-	const { baseHitChance, coverModifier, longRangeModifier, finalHitChance } = fireModifiers(
-		attacker,
-		target,
-		grid
-	);
+	const { baseHitChance, coverModifier, longRangeModifier, elevationModifier, finalHitChance } =
+		fireModifiers(attacker, target, grid);
 
 	const hit = rng() < finalHitChance;
 	let damage: 0 | 1 | 2 = 0;
@@ -128,6 +136,7 @@ export function resolveFireAction(
 		baseHitChance,
 		coverModifier,
 		longRangeModifier,
+		elevationModifier,
 		finalHitChance,
 		leaderCasualty: null,
 		morale: null,

@@ -337,13 +337,43 @@ describe('resolveCharge — modifiers', () => {
 		expect(r.attackerScore - r.defenderScore).toBe(1);
 	});
 
-	it('Difficult-terrain defender produces a -1 modifier to attacker score', () => {
+	it('charging downhill from HILLTOP onto a lower defender: +1 modifier to attacker score', () => {
+		expect.assertions(1);
+		const layout = openRect(5, 5);
+		const aCoord = { col: 2, row: 2 };
+		const probe = buildGrid(layout);
+		const dCoord = offsetAlong(probe, aCoord, 0, 1)!;
+		for (const c of layout) if (coordsEqual(c, aCoord)) c.terrain = TerrainType.HILLTOP;
+		const grid = buildGrid(layout);
+		const a = unit('a', UnitType.LINE_INFANTRY, 0, aCoord);
+		const d = unit('d', UnitType.LINE_INFANTRY, 1, dCoord);
+		// Both roll 1, both SP 4. Without elevation delta=0. Charging down from HILLTOP → +1.
+		const r = resolveCharge(a, d, aCoord, grid, [a, d], seqRng([0, 0]));
+		expect(r.attackerScore - r.defenderScore).toBe(1);
+	});
+
+	it('defender on HILLTOP gets +1 charge protection (uphill attacker)', () => {
 		expect.assertions(1);
 		const layout = openRect(5, 5);
 		const aCoord = { col: 2, row: 2 };
 		const probe = buildGrid(layout);
 		const dCoord = offsetAlong(probe, aCoord, 0, 1)!;
 		for (const c of layout) if (coordsEqual(c, dCoord)) c.terrain = TerrainType.HILLTOP;
+		const grid = buildGrid(layout);
+		const a = unit('a', UnitType.LINE_INFANTRY, 0, aCoord);
+		const d = unit('d', UnitType.LINE_INFANTRY, 1, dCoord);
+		// Both roll 1, both SP 4. Attacker on open, defender on HILLTOP → +1 to defender → delta -1.
+		const r = resolveCharge(a, d, aCoord, grid, [a, d], seqRng([0, 0]));
+		expect(r.attackerScore - r.defenderScore).toBe(-1);
+	});
+
+	it('Difficult-terrain defender produces a -1 modifier to attacker score', () => {
+		expect.assertions(1);
+		const layout = openRect(5, 5);
+		const aCoord = { col: 2, row: 2 };
+		const probe = buildGrid(layout);
+		const dCoord = offsetAlong(probe, aCoord, 0, 1)!;
+		for (const c of layout) if (coordsEqual(c, dCoord)) c.terrain = TerrainType.MARSH;
 		const grid = buildGrid(layout);
 		const a = unit('a', UnitType.LINE_INFANTRY, 0, aCoord);
 		const d = unit('d', UnitType.LINE_INFANTRY, 1, dCoord);
@@ -358,7 +388,7 @@ describe('resolveCharge — modifiers', () => {
 		const aCoord = { col: 2, row: 2 };
 		const probe = buildGrid(layout);
 		const dCoord = offsetAlong(probe, aCoord, 0, 1)!;
-		for (const c of layout) if (coordsEqual(c, dCoord)) c.terrain = TerrainType.HILLTOP;
+		for (const c of layout) if (coordsEqual(c, dCoord)) c.terrain = TerrainType.MARSH;
 		const grid = buildGrid(layout);
 		const a = unit('a', UnitType.LINE_INFANTRY, 0, aCoord);
 		const d = unit('d', UnitType.LINE_INFANTRY, 1, dCoord);
@@ -375,7 +405,7 @@ describe('resolveCharge — modifiers', () => {
 		const aCoord = { col: 2, row: 2 };
 		const probe = buildGrid(layout);
 		const dCoord = offsetAlong(probe, aCoord, 0, 1)!;
-		for (const c of layout) if (coordsEqual(c, dCoord)) c.terrain = TerrainType.HILLTOP;
+		for (const c of layout) if (coordsEqual(c, dCoord)) c.terrain = TerrainType.MARSH;
 		const grid = buildGrid(layout);
 		const a = unit('a', UnitType.LINE_INFANTRY, 0, aCoord);
 		const d = unit('d', UnitType.LINE_INFANTRY, 1, dCoord);

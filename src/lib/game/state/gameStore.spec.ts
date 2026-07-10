@@ -776,16 +776,16 @@ describe('moveUnit — validation (M5)', () => {
 });
 
 describe('moveUnit — difficult terrain check (M5)', () => {
-	const makeHilltopStore = () => {
+	const makeMarshStore = () => {
 		const units = structuredClone(TEST_UNITS) as Unit[];
 		const lineInf = units.find((u) => u.id === 'blue-line-inf')!;
-		lineInf.coordinates = { col: 2, row: 2 };
+		lineInf.coordinates = { col: 5, row: 2 }; // MARSH (difficult terrain)
 		return new GameStore(units, TEST_MAP, structuredClone(TEST_LEADERS));
 	};
 
-	it('Line Infantry on HILLTOP escapes when RNG ≥ 0.5', () => {
+	it('Line Infantry on MARSH escapes when RNG ≥ 0.5', () => {
 		expect.assertions(2);
-		const store = makeHilltopStore();
+		const store = makeMarshStore();
 		store.activateUnit('blue-line-inf');
 		const target = store.validMoveTargets[0];
 		expect(target).toBeDefined();
@@ -794,22 +794,22 @@ describe('moveUnit — difficult terrain check (M5)', () => {
 		expect(after.coordinates).toEqual(target.coordinates);
 	});
 
-	it('Line Infantry on HILLTOP stays put when RNG < 0.5, consuming the action', () => {
+	it('Line Infantry on MARSH stays put when RNG < 0.5, consuming the action', () => {
 		expect.assertions(2);
-		const store = makeHilltopStore();
+		const store = makeMarshStore();
 		store.activateUnit('blue-line-inf');
 		const target = store.validMoveTargets[0];
 		store.moveUnit(target.coordinates, () => 0.1);
 		const after = store.units.find((u) => u.id === 'blue-line-inf')!;
-		expect(after.coordinates).toEqual({ col: 2, row: 2 });
+		expect(after.coordinates).toEqual({ col: 5, row: 2 });
 		expect(after.movementPointsUsed).toBe(1); // allowance exhausted despite no movement
 	});
 
-	it('Light Infantry on HILLTOP moves without a check even when RNG < 0.5', () => {
+	it('Light Infantry on MARSH moves without a check even when RNG < 0.5', () => {
 		expect.assertions(1);
 		const units = structuredClone(TEST_UNITS) as Unit[];
 		const lightInf = units.find((u) => u.id === 'blue-light-inf')!;
-		lightInf.coordinates = { col: 2, row: 2 };
+		lightInf.coordinates = { col: 5, row: 2 };
 		const store = new GameStore(units, TEST_MAP, structuredClone(TEST_LEADERS));
 		store.activateUnit('blue-light-inf');
 		const target = store.validMoveTargets[0];
@@ -1798,14 +1798,15 @@ describe('log — event emission', () => {
 
 	it('moveUnit blocked by DT failure emits move_action with moved:false', () => {
 		expect.assertions(4);
-		// Line Infantry on a HILLTOP (difficult terrain, requires check)
+		// Line Infantry on a MARSH (difficult terrain, requires check)
 		const units = structuredClone(TEST_UNITS) as Unit[];
 		const lineInf = units.find((u) => u.id === 'blue-line-inf')!;
-		lineInf.coordinates = { col: 2, row: 2 }; // HILLTOP
+		lineInf.coordinates = { col: 5, row: 2 }; // MARSH
 		const store = new GameStore(units, TEST_MAP, structuredClone(TEST_LEADERS));
 		store.activateUnit('blue-line-inf');
+		const target = store.validMoveTargets[0].coordinates;
 		store.clearLog();
-		store.moveUnit({ col: 2, row: 1 }, () => 0); // 0 < 0.5 → DT fails
+		store.moveUnit(target, () => 0); // 0 < 0.5 → DT fails
 		expect(store.log).toHaveLength(1);
 		const ev = store.log[0];
 		if (ev.kind !== 'move_action') throw new Error();

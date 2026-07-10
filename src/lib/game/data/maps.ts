@@ -184,7 +184,8 @@ export const BUNKER_HILL_MAP: MapDefinition = Array.from({ length: BUNKER_HILL_C
 // the reunited bottom-left corner). The single crossing is the bridge on the (1,6)-(2,6) edge,
 // carried by the west road. The main road winds north→south through White Plains
 // (east of the river); the west road crosses the bridge and forks off the west
-// edge. Woods are Light-Inf-only route-around scenery; swamp (MARSH) is impassable.
+// edge. Woods are Light-Inf-only route-around scenery; swamp (MARSH) is difficult
+// terrain passable to infantry only.
 const WHITE_PLAINS_COLS = 7;
 const WHITE_PLAINS_ROWS = 9;
 
@@ -203,7 +204,7 @@ const WHITE_PLAINS_FEATURES: Record<string, TerrainType> = {
 	// Scattered woods (route-around; Light-Inf-only) along the edges.
 	'0,2': TerrainType.WOODS,
 	'0,8': TerrainType.WOODS,
-	// Swamp (impassable MARSH).
+	// Swamp (MARSH — difficult terrain, infantry only).
 	'0,3': TerrainType.MARSH,
 	'6,3': TerrainType.MARSH,
 	'6,6': TerrainType.MARSH

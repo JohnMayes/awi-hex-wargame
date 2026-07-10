@@ -1,8 +1,19 @@
 import { describe, expect, it } from 'vitest';
-import { runGame, randomPolicy, heuristicPolicy, smartHeuristicPolicy } from './playout';
+import {
+	runGame,
+	randomPolicy,
+	heuristicPolicy,
+	smartHeuristicPolicy,
+	scoreAction,
+	DEFAULT_SMART_TUNING,
+	type Action
+} from './playout';
 import { mechanicStats } from './report';
 import { mulberry32 } from '../core/rng';
-import { SCENARIOS } from '../data/scenarios';
+import { SCENARIOS, TEST_LEADERS, TEST_UNITS } from '../data/scenarios';
+import { TEST_MAP } from '../data/maps';
+import { GameStore } from '../state/gameStore.svelte';
+import { TerrainType, type Unit } from '../core/types';
 
 describe('runGame determinism', () => {
 	it('same seed → identical outcome', () => {
@@ -51,6 +62,33 @@ describe('heuristicPolicy plays better than random', () => {
 			heuristicEdge += g.survivingSpByPlayer[0] - g.survivingSpByPlayer[1];
 		}
 		expect(heuristicEdge).toBeGreaterThan(0);
+	});
+});
+
+describe('scoreAction — elevated-defender charge protection', () => {
+	// An elevated defender's charge protection is worth +1 (in SP units), so an
+	// equal-SP charge the AI takes on flat ground must be gated out uphill.
+	const chargeScore = (defenderCoords: { col: number; row: number }): number => {
+		const units = structuredClone(TEST_UNITS) as Unit[];
+		const attacker = units.find((u) => u.player === 0)!;
+		const defender = units.find((u) => u.player === 1)!;
+		attacker.strengthPoints = 4;
+		defender.strengthPoints = 4;
+		defender.coordinates = defenderCoords;
+		const store = new GameStore(units, TEST_MAP, structuredClone(TEST_LEADERS));
+		const a = store.units.find((u) => u.id === attacker.id)!;
+		const action: Action = { kind: 'charge', unitId: a.id, targetId: defender.id };
+		return scoreAction(store, a, action, DEFAULT_SMART_TUNING);
+	};
+
+	it('scores an equal-SP charge on OPEN ground (not gated)', () => {
+		expect.assertions(1);
+		expect(chargeScore({ col: 1, row: 1 })).toBeGreaterThan(-Infinity); // (1,1) is OPEN
+	});
+
+	it('gates the same charge into a HILLTOP defender', () => {
+		expect.assertions(1);
+		expect(chargeScore({ col: 2, row: 2 })).toBe(-Infinity); // (2,2) is HILLTOP
 	});
 });
 
