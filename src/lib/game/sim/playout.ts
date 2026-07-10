@@ -13,6 +13,7 @@ import { getValidFireTargets, expectedFireDamage } from '../core/combat';
 import { getValidChargeTargets } from '../core/charge';
 import { getTerrainCoverModifier } from '../core/terrain';
 import { unitDefinitions } from '../core/unitDefinitions';
+import { getAttachedLeader } from '../core/command';
 import { HexCell, hexDistance } from '../core/hex';
 
 export type Action =
@@ -36,12 +37,26 @@ export type GameOutcome = {
 
 const pick = <T>(xs: readonly T[], rng: () => number): T => xs[Math.floor(rng() * xs.length)];
 
+// A leader's host shepherds rather than bolting for the exit. If the leader leaves
+// (its host exits, taking it off the board), the whole side falls out of command
+// (§8.2): every subsequent activation rolls ~50% and a fail wastes the turn. So the
+// leader stays with the pack — keeping its command radius over the escaping units —
+// and leaves only once it is the last friendly unit standing. Measured: Washington's
+// host exits ~turn 4, spiking blue command failure 10.6% → 50.3% for the rest of the game.
+function isLeaderShepherd(store: GameStore, unit: Unit): boolean {
+	if (!getAttachedLeader(unit.id, store.leaders)) return false;
+	return store.units.some(
+		(u) => u.player === unit.player && u.id !== unit.id && u.strengthPoints > 0
+	);
+}
+
 // True when `unit`'s side wins (partly) by marching units off the map — gates the
 // off-map exit action so scenarios without an exit objective are unaffected. The
-// store only marks a MoveTarget `isExit` when getValidMoveTargets is passed
-// allowExit, so this same flag also gates enumeration below.
+// store only marks a MoveTarget `isExit` when getValidMoveTargets is passed allowExit,
+// so this same flag also gates enumeration below. A shepherding leader never takes it.
 const wantsExit = (store: GameStore, unit: Unit): boolean =>
-	store.victoryConditions.some((c) => c.kind === 'exit_units' && c.player === unit.player);
+	store.victoryConditions.some((c) => c.kind === 'exit_units' && c.player === unit.player) &&
+	!isLeaderShepherd(store, unit);
 
 // Legal actions for `unit`. For the unit already mid-activation we read the
 // store's derived targets (they account for MP already spent / having fired);
@@ -179,7 +194,17 @@ function goalHexes(store: GameStore, unit: Unit, objectiveAware: boolean): Offse
 	// units (their pursuers), so including them as goals would drag units backward.
 	// The exit dominates; the "break N" half of such objectives is met incidentally by
 	// firing as they disengage. Raze/eliminate sides still chase enemies AND the town.
-	if (exitGoals.length > 0) return [...objectives, ...exitGoals];
+	if (exitGoals.length > 0) {
+		// The leader shepherds: track the pack (nearest friendly) instead of the exit, so
+		// its command radius stays over the escapers and it never clogs the exit hex.
+		if (isLeaderShepherd(store, unit)) {
+			const pack = store.units
+				.filter((u) => u.player === unit.player && u.id !== unit.id && u.strengthPoints > 0)
+				.map((u) => u.coordinates);
+			return [...objectives, ...pack];
+		}
+		return [...objectives, ...exitGoals];
+	}
 	return [...enemies, ...objectives, ...townGoals];
 }
 
@@ -370,7 +395,11 @@ function scoreAction(store: GameStore, unit: Unit, action: Action, tuning: Smart
 			const goals = goalHexes(store, unit, true);
 			const here = goalPathCost(store, unit, unit.coordinates, goals);
 			const there = goalPathCost(store, unit, action.coords, goals);
-			if (there >= here) return -Infinity; // only advance (terrain-aware path cost)
+			// Only advance (terrain-aware path cost). Relaxing this to allow lateral/uphill
+			// "unstick" steps was A/B'd and measurably lost (Bunker Hill −37 to −42, no White
+			// Plains exit gain): a memoryless greedy escape just wanders/oscillates, and the
+			// stalls it targeted are correct congestion-waiting. See docs/ai-opponent-evaluation.md.
+			if (there >= here) return -Infinity;
 			const hex = grid.getHex(action.coords);
 			const cover = hex && getTerrainCoverModifier(hex.terrain) < 0 ? tuning.coverBonus : 0;
 			const range = unitDefinitions[unit.type].firingRange;

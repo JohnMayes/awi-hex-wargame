@@ -230,16 +230,61 @@ as a regression — it was switched to net-wins accordingly (`playout.spec.ts`).
 max fire EV (~0.76) so an available exit always wins the argmax; any higher value is
 behaviourally identical and White Plains can't be won regardless.
 
-**Known limitation — no terrain-aware routing (DEFERRED).** `minGoalDist` is
-straight-line cube distance, not path cost. Units greedily step toward whichever
-neighbour lowers it, blind to rivers/impassable hexes blocking the route beyond.
-**White Plains stays Colonial-unwinnable** as a result: the win needs 5 units off the
-north edge but a game yields at most 3 (measured over 500 games), a conjunction of
-(a) a single north exit hex `(3,0)` — the map's `exit refactor pending` — and (b) three
-river-blocked Colonials that march north into a dead-end instead of routing around.
-The ≥2-kill half is met in 41% of games, so only the exit half fails. Fix when a
-scenario justifies it: A\* over `movement.ts` costs keyed off the same `goalHexes`
-(see the `ponytail:` note on `minGoalDist`), plus widening the White Plains exit.
+**Terrain-aware routing (IMPLEMENTED).** The smart policy's move scoring uses
+`goalPathCost` — a multi-source BFS over `passableNeighbors` (movement.ts), i.e. a
+distance _field_ to the nearest goal that routes around rivers/impassable terrain. It
+replaces straight-line `minGoalDist` for smart (baseline keeps straight-line as the dumb
+incumbent). Verified: the White Plains west units autonomously follow
+`(1,3)→(1,6)→(2,6)→(3,4)→exit` — the correct detour around the river, no authored
+waypoints. A field (recomputed per decision) was chosen over a cached A\* path: no
+staleness when units/hexes block the route, no per-unit "which waypoint am I on" state,
+and it handles moving-enemy goals a start-of-game path can't.
+
+**White Plains stays Colonial-unwinnable anyway** — a _map_ limit, not a routing one: 5
+units must exit but a game yields at most 3, from (a) a single north exit hex `(3,0)`
+(the map's `exit refactor pending`), (b) a ~10-step river detour vs a 10-turn limit, and
+(c) three west units congesting one corridor. The ≥2-kill half is met in 41% of games;
+only the exit half fails. **This was addressed** — see "Leader command collapse" below:
+raising the turn limit to 15 (plus the leader fix) makes blue win ~19%.
+
+**Gate relaxation — tried, reverted.** Watching play, units _look_ incoherent: the
+correct river detour heads _away_ from the exit first, and jammed units stall for turns.
+The stall traced to the advance gate (`there >= here → skip`): a unit whose only reachable
+step doesn't reduce path cost freezes. Relaxing it to allow a least-bad "unstick" step was
+A/B'd two ways (uphill+lateral, and lateral-only) and **both lost** — Bunker Hill −37 to
+−42, Pitched −3 to −21, and _no_ White Plains exit gain. A memoryless greedy escape just
+wanders/oscillates (step uphill to escape → "improving" pulls it right back), and most of
+the observed stalls are _correct_ congestion-waiting behind friendlies. The strict gate
+stays. A real fix (rarely worth it) needs path memory or multi-unit path reservation —
+a much larger project than any current scenario justifies.
+
+**Leader command collapse — fixed (AI) + rebalanced (scenario).** The AI used to send
+the leader's host to the exit like any other unit; on White Plains, Washington's host
+(`col-reg-2`) exited ~turn 4 (199/200 games), and with the sole blue leader gone every
+unit fell out of command (§8.2) — blue command-failure jumped 10.6% → 50.3%, and a failed
+check wastes the whole activation (`gameStore.#activate`). Two changes, which only work
+together:
+
+- **AI (`isLeaderShepherd`, playout.ts):** a leader's host no longer bolts for the exit.
+  While any other friendly unit remains, it tracks the pack (nearest-friendly goals, not
+  the exit hex — which it would also clog) so its command radius stays over the escapers;
+  it leaves only as the last unit. Effect: blue out-of-command 53% → 0.7%. Scoped to
+  exit-side leader hosts, so Bunker Hill / Pitched are untouched by construction.
+- **Scenario (White Plains `turnLimit` 10 → 15):** the ~10-hex river detour is impossible
+  in 10 turns regardless of command.
+
+Paired result (blue win %, smart-v-smart, 300 games):
+
+|                | turnLimit 10 | turnLimit 15 |
+| -------------- | ------------ | ------------ |
+| no leader fix  | 0.0%         | 1.7%         |
+| **leader fix** | 0.0%         | **19.3%**    |
+
+Neither alone helps (turn 15 without the fix wastes the extra turns on out-of-command
+rolls; the fix at turn 10 can't beat the detour). Together, White Plains becomes a live
+"can they escape?" scenario (~19% blue / ~80% British) instead of a foregone 100% British.
+General lesson: the mechanic (command friction, §8.2) and scenario were both fine — the AI
+just wasn't respecting the value of keeping its leader with the army.
 
 **To investigate later — victory-status / completion awareness.** The heuristic has no
 notion that an objective is already banked: on Bunker Hill it keeps sending units at the
