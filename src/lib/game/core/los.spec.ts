@@ -253,7 +253,9 @@ describe('hasLineOfSight — hill elevation', () => {
 		expect(hasLineOfSight(from, to, grid, [])).toBe(false);
 	});
 
-	it('Source on hill sees over an intervening hill of equal height', () => {
+	it('Hill source over an equal intervening hill to a GROUND target is blocked', () => {
+		// Symmetric to the ground→hill case below: an equal-height ridge hides the
+		// dead ground behind it even from an observer on a hill.
 		expect.assertions(1);
 		const layout = openRect(7, 7);
 		const from = { col: 0, row: 3 };
@@ -263,10 +265,24 @@ describe('hasLineOfSight — hill elevation', () => {
 		setTerrainAt(layout, blocker, TerrainType.HILLTOP);
 		const grid = buildGrid(layout);
 		const to = offsetAlong(grid, from, 0, 2)!;
-		expect(hasLineOfSight(from, to, grid, [])).toBe(true);
+		expect(hasLineOfSight(from, to, grid, [])).toBe(false);
 	});
 
-	it('Target on hill is visible across an intervening hill', () => {
+	it('Hill-to-hill sightline grazes over an equal intervening hill', () => {
+		expect.assertions(1);
+		const layout = openRect(7, 7);
+		const from = { col: 0, row: 3 };
+		setTerrainAt(layout, from, TerrainType.HILLTOP);
+		const probe = buildGrid(openRect(7, 7));
+		const blocker = offsetAlong(probe, from, 0, 1)!;
+		const toCoord = offsetAlong(probe, from, 0, 2)!;
+		setTerrainAt(layout, blocker, TerrainType.HILLTOP);
+		setTerrainAt(layout, toCoord, TerrainType.HILLTOP);
+		const grid = buildGrid(layout);
+		expect(hasLineOfSight(from, toCoord, grid, [])).toBe(true);
+	});
+
+	it('Ground observer cannot see PAST a hill to a target on another hill', () => {
 		expect.assertions(1);
 		const layout = openRect(7, 7);
 		const from = { col: 0, row: 3 };
@@ -276,7 +292,7 @@ describe('hasLineOfSight — hill elevation', () => {
 		setTerrainAt(layout, blocker, TerrainType.HILLTOP);
 		setTerrainAt(layout, toCoord, TerrainType.HILLTOP);
 		const grid = buildGrid(layout);
-		expect(hasLineOfSight(from, toCoord, grid, [])).toBe(true);
+		expect(hasLineOfSight(from, toCoord, grid, [])).toBe(false);
 	});
 
 	it('Woods between two hill-top endpoints still blocks (Woods has no elevation override)', () => {

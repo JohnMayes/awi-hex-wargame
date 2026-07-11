@@ -47,8 +47,9 @@ const offsetKey = (col: number, row: number) => `${col},${row}`;
  * same-hex charge model.
  *
  * Charges (entering an enemy's hex) are NOT covered here — see
- * `core/charge.ts` and `gameStore.chargeAt`. Road-bonus movement (§2) still
- * forbids ending adjacent to an enemy.
+ * `core/charge.ts` and `gameStore.chargeAt`. A road path may still march past
+ * an enemy-screened hex (the terrain-bypass is ungated), but entering any
+ * enemy-adjacent hex forfeits the +1 road bonus for the rest of that path (§2).
  */
 export function getValidMoveTargets(
 	unit: Unit,
@@ -79,12 +80,14 @@ export function getValidMoveTargets(
 		}
 	}
 
-	type State = { hex: HexCell; cost: number; mode: Mode };
+	// `enemyAdj` = the road path so far has entered a hex adjacent to an enemy,
+	// which forfeits the +1 road bonus for the rest of that path (see below).
+	type State = { hex: HexCell; cost: number; mode: Mode; enemyAdj: boolean };
 	const visited = new Map<string, number>();
 	const results = new Map<string, MoveTarget>();
 
 	const seedModes: Mode[] = startHex.roadEdges.size > 0 ? ['NORMAL', 'ROAD_ONLY'] : ['NORMAL'];
-	const queue: State[] = seedModes.map((mode) => ({ hex: startHex, cost: 0, mode }));
+	const queue: State[] = seedModes.map((mode) => ({ hex: startHex, cost: 0, mode, enemyAdj: false }));
 
 	const considerEndpoint = (hex: HexCell, cost: number, usesRoad: boolean) => {
 		if (coordsEqual(hex, unit.coordinates)) return;
@@ -97,14 +100,11 @@ export function getValidMoveTargets(
 	};
 
 	while (queue.length > 0) {
-		const { hex, cost, mode } = queue.shift()!;
-		const stateKey = `${hex.q},${hex.r}|${mode}`;
+		const { hex, cost, mode, enemyAdj } = queue.shift()!;
+		const stateKey = `${hex.q},${hex.r}|${mode}|${enemyAdj ? 1 : 0}`;
 		const seen = visited.get(stateKey);
 		if (seen !== undefined && seen <= cost) continue;
 		visited.set(stateKey, cost);
-
-		const limit = mode === 'ROAD_ONLY' ? remainingMP + 1 : remainingMP;
-		if (cost >= limit) continue;
 
 		for (let dirIdx = 0; dirIdx < 6; dirIdx++) {
 			const [dq, dr] = directions[dirIdx];
@@ -124,8 +124,6 @@ export function getValidMoveTargets(
 				// starts and stays on the connected road — but never crosses truly
 				// impassable terrain (LAKE/MARSH).
 				if (terrainDefinitions[neighbor.terrain].isImpassable) continue;
-				// Road movement may not move adjacent to an enemy at any step (rules §2)
-				if (enemyAdjKeys.has(neighborKey)) continue;
 			} else if (!canUnitEnterTerrain(unit.type, neighbor.terrain)) {
 				continue;
 			}
@@ -136,8 +134,16 @@ export function getValidMoveTargets(
 				if (!def.canPassThroughFriendly) continue; // blocked by friendly
 			}
 
+			// The road grants +1 MP only while the whole march stays clear of
+			// enemy-adjacent hexes (rules §2); entering one forfeits the bonus for the
+			// rest of the path. The road terrain-bypass itself is never gated by enemy
+			// adjacency — a unit may still march the cleared lane past a screening enemy.
+			const nextEnemyAdj = enemyAdj || enemyAdjKeys.has(neighborKey);
+			const bonus = mode === 'ROAD_ONLY' && !nextEnemyAdj ? 1 : 0;
 			const newCost = cost + 1;
-			queue.push({ hex: neighbor, cost: newCost, mode });
+			if (newCost > remainingMP + bonus) continue;
+
+			queue.push({ hex: neighbor, cost: newCost, mode, enemyAdj: nextEnemyAdj });
 			considerEndpoint(neighbor, newCost, mode === 'ROAD_ONLY');
 		}
 	}

@@ -428,7 +428,7 @@ describe('getValidMoveTargets — road bonus', () => {
 		else expect(true).toBe(true);
 	});
 
-	it('Road path ending adjacent to enemy is excluded', () => {
+	it('Road +1 bonus is forfeit into an enemy-adjacent hex (bonus hex excluded)', () => {
 		expect.assertions(1);
 		const layout = openRect(5, 5);
 		const grid0 = buildGrid(layout);
@@ -457,6 +457,38 @@ describe('getValidMoveTargets — road bonus', () => {
 		const u = unit('u', UnitType.LINE_INFANTRY, 0, { col: 2, row: 2 });
 		const targets = getValidMoveTargets(u, grid, [u, enemy]);
 		expect(includesCoord(coordsOf(targets), step2)).toBe(false);
+	});
+
+	it('Road bypass into an enemy-adjacent restricted hex is allowed within normal MP', () => {
+		// The Paoli defile case: a road threads a WOODS hex screened by an adjacent
+		// enemy. The terrain-bypass is ungated, so a lone Line Infantry may still march
+		// onto the woods hex (cost 1, no bonus needed) despite the enemy next to it.
+		expect.assertions(1);
+		const layout = openRect(5, 5);
+		const grid0 = buildGrid(layout);
+		const startHex = grid0.getHex({ col: 2, row: 2 })!;
+		const cubeMap = buildCubeToOffset(grid0);
+		const [dq, dr] = directions[0];
+		const woods = cubeMap.get(`${startHex.q + dq},${startHex.r + dr}`);
+		if (!woods) {
+			expect(true).toBe(true);
+			return;
+		}
+		const woodsHex = grid0.getHex(woods)!;
+		const eCube = cubeMap.get(`${woodsHex.q + directions[1][0]},${woodsHex.r + directions[1][1]}`);
+		if (!eCube) {
+			expect(true).toBe(true);
+			return;
+		}
+		for (const c of layout) {
+			if ((c.col === 2 && c.row === 2) || coordsEqual(c, woods)) c.roadEdges = [0, 3];
+			if (coordsEqual(c, woods)) c.terrain = TerrainType.WOODS;
+		}
+		const grid = buildGrid(layout);
+		const enemy = unit('e', UnitType.LINE_INFANTRY, 1, eCube);
+		const u = unit('u', UnitType.LINE_INFANTRY, 0, { col: 2, row: 2 });
+		const targets = getValidMoveTargets(u, grid, [u, enemy]);
+		expect(includesCoord(coordsOf(targets), woods)).toBe(true);
 	});
 
 	it('Road carries a unit through terrain its type cannot normally enter', () => {

@@ -25,7 +25,7 @@ Hexes may contain terrain features that affect movement, combat, and line of sig
 - **Marsh**: Difficult terrain (movement check to leave). Only Infantry and Light Infantry may enter; cavalry and artillery may not.
 - **Lake**: Impassable to all units.
 - **River**: Impassable except at bridge or ford hexes.
-- **Road**: Units moving entirely along a road gain +1 hex to their movement allowance. Road movement bonus cannot be used when charging. A unit using road movement may not move adjacent to an enemy unit during that move.
+- **Road**: Units moving entirely along a road gain +1 hex to their movement allowance. This bonus cannot be used when charging, and is **forfeit if the move enters a hex adjacent to an enemy unit** (the unit may still make the move at its normal allowance — it simply loses the +1). A road also lets a unit follow the road through terrain its type could not otherwise enter (e.g. Line Infantry along a road through Woods); this terrain-bypass is always available and is _not_ blocked by an adjacent enemy — a cleared lane may be marched past a screening skirmisher.
 
 Only **one unit may occupy a hex** at any time. Units may not move through hexes occupied by other units, with the exception of Light Infantry (see Unit Types).
 
@@ -172,7 +172,7 @@ Each unit type has a permitted set of actions, as defined in Section 3. The core
 
 The unit moves up to its movement allowance in hexes through any combination of adjacent hexes.
 
-**Road Movement**: A unit beginning its activation in a road hex may add +1 hex to its movement if it moves entirely along the road. Road movement may not be used to move adjacent to an enemy unit.
+**Road Movement**: A unit beginning its activation in a road hex may add +1 hex to its movement if it moves entirely along the road. The +1 bonus is forfeit if the move enters a hex adjacent to an enemy unit, but the move itself (including a road's bypass of otherwise-impassable-to-that-type terrain) is still permitted at the unit's normal allowance.
 
 **Difficult Terrain**: Units in a difficult terrain hex (as defined by scenario) that are subject to terrain checks must pass a check when attempting to leave. On failure, the unit remains in place and its movement action is spent. It may attempt again on its next activation. (Digitally: ~50% chance of being held in difficult terrain.)
 
@@ -237,7 +237,7 @@ Line of sight (LOS) is traced from the center of the firing unit's hex to the ce
 
 - **Woods hexes** (between firer and target, not including the target's own hex if the target is in woods)
 - **Town hexes** (between firer and target)
-- **Hill hexes** (if the LOS-blocking hill is between two units at lower elevation)
+- **Hill hexes** (an intervening hill blocks unless _both_ the firer and the target are themselves on hills; a unit on lower ground can see _into_ a hill hex but not _past_ it, while a hill-to-hill sightline grazes over an equal intervening hill)
 - **Other units** (friendly or enemy) in hexes between the firer and target
 
 **Exception — Artillery on Hills**: An artillery unit on a hill may fire over a single adjacent friendly unit or terrain feature, provided the target is at the artillery's maximum range (4 hexes). This represents plunging fire from an elevated battery.

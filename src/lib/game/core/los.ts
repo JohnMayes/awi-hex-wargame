@@ -69,9 +69,11 @@ function hexBlocks(
 	if (offKey === fromKey || offKey === toKey) return false;
 
 	if (hex.terrain === TerrainType.HILLTOP) {
-		// Hills only block when both endpoints are at lower elevation (rules §7).
+		// A hill blocks unless BOTH endpoints are elevated. A ground observer sees
+		// *into* a hill (it's an endpoint, excluded above) but not *past* one; only
+		// hill-to-hill sightlines graze over an equal intervening hill (rules §7).
 		const elev = getTerrainElevation(hex.terrain);
-		if (elev > sourceElev && elev > targetElev) return true;
+		if (elev > sourceElev || elev > targetElev) return true;
 	} else if (doesTerrainBlockLOS(hex.terrain)) {
 		return true;
 	}
@@ -84,8 +86,8 @@ function hexBlocks(
  * Returns true if there is line of sight from `from` to `to` per rules §7.
  * Pure geometry — only terrain, intervening units, and hilltop elevation.
  *
- * Blocks: Woods, Town, intervening units, and Hilltops between two
- * lower-elevation endpoints. Hexside ties are blocked if either candidate
+ * Blocks: Woods, Town, intervening units, and Hilltops unless both endpoints
+ * are elevated. Hexside ties are blocked if either candidate
  * blocks. Adjacent hexes always have LOS.
  *
  * Plunging fire exception: an Artillery unit on a Hilltop may see over a
