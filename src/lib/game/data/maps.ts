@@ -282,3 +282,60 @@ export const WHITE_PLAINS_MAP: MapDefinition = Array.from({ length: WHITE_PLAINS
 		objective: WHITE_PLAINS_OBJECTIVES.has(`${col},${row}`)
 	}))
 ).flat();
+
+// Paoli (21 Sep 1777) — 7 cols × 9 rows, north = row 0. Grey's British surprise-assault
+// Wayne's camp near the Paoli Tavern. Adapted from the ARW-series map (decoded from
+// paoli.pdf p2): the source 8×11 board was shaved to fit by dropping the right-most
+// column (edge scenery — a hill + woods, no units). Woods run in a central band and a
+// top-right stand; two hills flank a central rise. Per the conversion, woods hex (4,2)
+// was opened so the Colonial camp (cols 4, rows 3-5) isn't sealed off by impassable woods
+// (see docs/scenario-conversion-guide.md; WOODS is Light-Infantry-only + blocks LOS).
+const PAOLI_COLS = 7;
+const PAOLI_ROWS = 9;
+
+const PAOLI_FEATURES: Record<string, TerrainType> = {
+	// Hills: top-left corner + a central rise beside the camp.
+	'0,0': TerrainType.HILLTOP,
+	'2,3': TerrainType.HILLTOP,
+	'2,4': TerrainType.HILLTOP,
+	'3,3': TerrainType.HILLTOP,
+	'6,1': TerrainType.HILLTOP,
+	// Woods: central band (the wall Line Infantry must route around / Light Infantry
+	// skirmishes through) + a top-right stand + scattered left/edge stands.
+	'0,1': TerrainType.WOODS,
+	'1,7': TerrainType.WOODS,
+	'1,6': TerrainType.WOODS,
+	'3,2': TerrainType.WOODS,
+	'5,2': TerrainType.WOODS,
+	'3,4': TerrainType.WOODS,
+	'5,3': TerrainType.WOODS,
+	'2,5': TerrainType.WOODS,
+	'3,5': TerrainType.WOODS,
+	'3,6': TerrainType.WOODS,
+	'3,7': TerrainType.WOODS,
+	'4,1': TerrainType.WOODS,
+	'4,7': TerrainType.WOODS
+};
+
+// Roads (from the source map's gray network, simplified). A north–south spine down
+// col 2 — the main axis of advance, running off both edges and through the south `R`
+// reinforcement hex (2,7) — plus a west spur off the spine at (2,4) to the west edge,
+// which the British left prong (near (0,3)) rides toward the camp. Off-board stubs
+// ({row:-1}/{row:9}/{col:-1}) give the border hexes an edge stub running off the map
+// (dropped as a key, on-board edge kept). +1 move only on an all-road path.
+const PAOLI_ROADS = roadEdgesFromPaths(
+	[
+		[rc(2, -1), rc(2, 0), rc(2, 1), rc(2, 2), rc(2, 3), rc(2, 4), rc(2, 5), rc(2, 6), rc(2, 7), rc(2, 8), rc(2, 9)], // prettier-ignore
+		[rc(2, 4), rc(1, 3), rc(0, 4), rc(-1, 4)]
+	],
+	(c) => c.col >= 0 && c.col < PAOLI_COLS && c.row >= 0 && c.row < PAOLI_ROWS
+);
+
+export const PAOLI_MAP: MapDefinition = Array.from({ length: PAOLI_COLS }, (_, col) =>
+	Array.from({ length: PAOLI_ROWS }, (_, row) => ({
+		col,
+		row,
+		terrain: PAOLI_FEATURES[`${col},${row}`] ?? TerrainType.OPEN,
+		roadEdges: PAOLI_ROADS[`${col},${row}`]
+	}))
+).flat();

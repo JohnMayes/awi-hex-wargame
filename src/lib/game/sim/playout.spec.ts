@@ -253,7 +253,7 @@ describe('smartHeuristicPolicy', () => {
 			}
 		}
 		expect(edge).toBeGreaterThan(0);
-	});
+	}, 20000); // 4 scenarios × 60 games/scenario runs past the 5s default
 });
 
 describe('objective-aware goal-seeking', () => {

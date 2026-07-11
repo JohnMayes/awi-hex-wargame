@@ -2,7 +2,7 @@ import type { Leader } from '../core/command';
 import type { ReinforcementGroup, Scenario } from '../core/scenario';
 import { UnitType, type Unit, type Player } from '../core/types';
 import { unitDefinitions } from '../core/unitDefinitions';
-import { BUNKER_HILL_MAP, PITCHED_BATTLE_MAP, WHITE_PLAINS_MAP } from './maps';
+import { BUNKER_HILL_MAP, PAOLI_MAP, PITCHED_BATTLE_MAP, WHITE_PLAINS_MAP } from './maps';
 
 const sp = (type: UnitType) => unitDefinitions[type].defaultStrengthPoints;
 
@@ -406,8 +406,78 @@ export const WHITE_PLAINS: Scenario = {
 	]
 };
 
+// --- Paoli (ARW series conversion; see docs/scenario-conversion-guide.md) ---
+
+// Regulars → Line Infantry (SP 4) per the all-foot ARW model; the lone British
+// "Cavalry" is a Dragoon (move 2, fire + charge). Beyond the source 5-v-5 roster,
+// each side gets 2 Light Infantry deployed in the woods, so the (Line-Infantry-
+// impassable) woods band is live skirmish ground rather than dead scenery.
+const PAOLI_UNITS: Unit[] = [
+	// Colonials (player 0): 3 Regulars in the camp (the `C` hexes) + 2 woods skirmishers.
+	makeUnit('col-reg-1', UnitType.LINE_INFANTRY, 0, 4, 4),
+	makeUnit('col-reg-2', UnitType.LINE_INFANTRY, 0, 4, 5),
+	makeUnit('col-reg-3', UnitType.LINE_INFANTRY, 0, 4, 6),
+	makeUnit('col-light-1', UnitType.LIGHT_INFANTRY, 0, 5, 3),
+	makeUnit('col-light-2', UnitType.LIGHT_INFANTRY, 0, 3, 5),
+	// British (player 1): 4 Regulars + 1 Dragoon (the `B` hexes) + 2 woods skirmishers.
+	makeUnit('brit-reg-1', UnitType.LINE_INFANTRY, 1, 2, 0),
+	makeUnit('brit-reg-2', UnitType.LINE_INFANTRY, 1, 3, 0),
+	makeUnit('brit-reg-3', UnitType.LINE_INFANTRY, 1, 4, 0),
+	makeUnit('brit-reg-4', UnitType.LINE_INFANTRY, 1, 0, 2),
+	makeUnit('brit-dragoons', UnitType.DRAGOONS, 1, 0, 3),
+	makeUnit('brit-light-1', UnitType.LIGHT_INFANTRY, 1, 3, 1),
+	makeUnit('brit-light-2', UnitType.LIGHT_INFANTRY, 1, 5, 1)
+];
+
+// Generous radius (ARW has no command rules). British start in two prongs (top + far
+// left) too far apart for one radius, so they get two leaders.
+const PAOLI_LEADERS: Leader[] = [
+	{ id: 'col-wayne', attachedToUnitId: 'col-reg-2', commandRadius: 6 },
+	{ id: 'brit-grey', attachedToUnitId: 'brit-reg-2', commandRadius: 6 },
+	{ id: 'brit-musgrave', attachedToUnitId: 'brit-dragoons', commandRadius: 4 }
+];
+
+// Turn 4: 2 Colonial Regulars arrive at the `R` hexes (south). The second is at (4,8)
+// rather than the source's woods hex (4,7) so it doesn't deploy onto impassable terrain.
+const PAOLI_REINFORCEMENTS: ReinforcementGroup[] = [
+	{
+		turn: 4,
+		player: 0,
+		units: [
+			{ id: 'col-reg-4', type: UnitType.LINE_INFANTRY, coordinates: { col: 2, row: 7 } },
+			{ id: 'col-reg-5', type: UnitType.LINE_INFANTRY, coordinates: { col: 4, row: 8 } }
+		]
+	}
+];
+
+export const PAOLI: Scenario = {
+	id: 'paoli',
+	name: 'Paoli',
+	description:
+		'21 September 1777: Grey launches a surprise night assault on Wayne’s camp near ' +
+		'the Paoli Tavern. The British must eliminate 3 Colonial units within 6 turns; if the ' +
+		'Colonials still stand, they win.',
+	map: PAOLI_MAP,
+	units: PAOLI_UNITS,
+	leaders: PAOLI_LEADERS,
+	firstPlayer: 1,
+	turnLimit: 6,
+	turnLimitWinner: 0, // "or the Colonials win"
+	reinforcements: PAOLI_REINFORCEMENTS,
+	victoryConditions: [
+		{
+			kind: 'eliminate_units',
+			id: 'brit-kill-3',
+			player: 1,
+			description: 'Eliminate 3 Colonial units',
+			count: 3
+		}
+	]
+};
+
 export const SCENARIOS: Record<string, Scenario> = {
 	[PITCHED_BATTLE.id]: PITCHED_BATTLE,
 	[BUNKER_HILL.id]: BUNKER_HILL,
-	[WHITE_PLAINS.id]: WHITE_PLAINS
+	[WHITE_PLAINS.id]: WHITE_PLAINS,
+	[PAOLI.id]: PAOLI
 };

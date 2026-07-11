@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { GameStore } from '../state/gameStore.svelte';
-import { BUNKER_HILL, PITCHED_BATTLE, SCENARIOS, WHITE_PLAINS } from './scenarios';
+import { BUNKER_HILL, PAOLI, PITCHED_BATTLE, SCENARIOS, WHITE_PLAINS } from './scenarios';
 import { canUnitEnterTerrain } from '../core/terrain';
 import { riverBlocks } from '../core/hex';
+import { emptyVictoryProgress, evaluateVictory, type VictorySnapshot } from '../core/victory';
+import { TerrainType, type Player } from '../core/types';
 
 // Data-coherence smoke tests for the Bunker Hill scenario: catch stacked units,
 // units placed on terrain they cannot enter, off-map placement, and that the
@@ -45,6 +47,81 @@ describe('BUNKER_HILL scenario', () => {
 		// The optional Grenadier reinforcement is the one elite unit.
 		const reinforcements = BUNKER_HILL.reinforcements!.flatMap((g) => g.units);
 		expect(reinforcements.filter((u) => u.elite).map((u) => u.id)).toEqual(['brit-grenadier']);
+	});
+});
+
+// Paoli: British night assault. Coherence + the asymmetric victory (British kill 3
+// Colonials in 6 turns, else the Colonials win via turnLimitWinner).
+describe('PAOLI scenario', () => {
+	it('is registered and builds a GameStore without throwing', () => {
+		expect.assertions(2);
+		expect(SCENARIOS['paoli']).toBe(PAOLI);
+		expect(GameStore.fromScenario(PAOLI).grid).toBeDefined();
+	});
+
+	it('places every starting unit on a distinct, on-map, enterable hex', () => {
+		expect.assertions(PAOLI.units.length * 2 + 1);
+		const store = GameStore.fromScenario(PAOLI);
+		const seen = new Set<string>();
+		for (const u of PAOLI.units) {
+			const hex = store.hexAt(u.coordinates);
+			expect(hex).toBeDefined();
+			expect(canUnitEnterTerrain(u.type, hex!.terrain)).toBe(true);
+			seen.add(`${u.coordinates.col},${u.coordinates.row}`);
+		}
+		expect(seen.size).toBe(PAOLI.units.length); // no two units stacked
+	});
+
+	it('opens the camp: (4,2) is OPEN so the Colonial camp is not woods-sealed', () => {
+		expect.assertions(2);
+		const store = GameStore.fromScenario(PAOLI);
+		expect(store.hexAt({ col: 4, row: 2 })!.terrain).toBe(TerrainType.OPEN);
+		// The camp hexes themselves are open ground.
+		expect(store.hexAt({ col: 4, row: 3 })!.terrain).toBe(TerrainType.OPEN);
+	});
+
+	it('reinforces 2 Colonials on turn 4 onto enterable south-edge hexes', () => {
+		expect.assertions(3);
+		const store = GameStore.fromScenario(PAOLI);
+		expect(PAOLI.reinforcements?.every((g) => g.turn === 4 && g.player === 0)).toBe(true);
+		for (const u of PAOLI.reinforcements!.flatMap((g) => g.units)) {
+			expect(canUnitEnterTerrain(u.type, store.hexAt(u.coordinates)!.terrain)).toBe(true);
+		}
+	});
+
+	const snapshot = (turn: number, colonialsKilled: number): VictorySnapshot => ({
+		turn,
+		turnLimit: PAOLI.turnLimit,
+		units: [],
+		// British are player 1; they win by eliminating Colonial (player 0) units.
+		eliminatedByPlayer: { 0: colonialsKilled, 1: 0 } as Record<Player, number>,
+		bounds: { minCol: 0, maxCol: 6, minRow: 0, maxRow: 8 },
+		exitedThisTurn: [],
+		burnedHexes: 0
+	});
+
+	it('gives the British the win when 3 Colonials are eliminated', () => {
+		expect.assertions(2);
+		const { outcome } = evaluateVictory(
+			PAOLI.victoryConditions,
+			snapshot(3, 3),
+			emptyVictoryProgress(),
+			PAOLI.turnLimitWinner ?? null
+		);
+		expect(outcome?.winner).toBe(1);
+		expect(outcome?.conditionId).toBe('brit-kill-3');
+	});
+
+	it('gives the Colonials the win at the turn limit if fewer than 3 fell', () => {
+		expect.assertions(2);
+		const { outcome } = evaluateVictory(
+			PAOLI.victoryConditions,
+			snapshot(6, 2),
+			emptyVictoryProgress(),
+			PAOLI.turnLimitWinner ?? null
+		);
+		expect(outcome?.winner).toBe(0);
+		expect(outcome?.reason).toBe('turn_limit_default');
 	});
 });
 
