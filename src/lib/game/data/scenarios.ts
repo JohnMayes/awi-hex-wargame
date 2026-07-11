@@ -588,6 +588,8 @@ export const HUBBARDTON: Scenario = {
 	firstPlayer: 1,
 	turnLimit: 7,
 	reinforcements: HUBBARDTON_REINFORCEMENTS,
+	// The rearguard must hold before it slips away: Colonials may exit only on turns 6-7.
+	exitRule: { player: 0, notBeforeTurn: 6 },
 	victoryConditions: [
 		{
 			kind: 'eliminate_units',

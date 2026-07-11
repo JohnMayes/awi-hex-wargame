@@ -23,6 +23,7 @@ import {
 import { applyEliminations } from '../core/elimination';
 import { checkMorale, type MoraleResult } from '../core/morale';
 import type {
+	ExitRule,
 	ReinforcementGroup,
 	ReinforcementUnitSpec,
 	Scenario,
@@ -73,6 +74,7 @@ export type GameStoreConfig = {
 	turnLimitWinner?: Player;
 	reinforcements?: ReinforcementGroup[];
 	torchRule?: TorchRule;
+	exitRule?: ExitRule;
 };
 
 /** A single reinforcement unit awaiting deployment, flattened from its group. */
@@ -144,6 +146,9 @@ export class GameStore {
 	// Whether any victory condition is exit_units. Gates the off-map exit action so
 	// scenarios without an exit objective (Bunker Hill's north road stubs) are unaffected.
 	#exitEnabled: boolean;
+	// Delayed-exit rule (Hubbardton's rearguard): the named player can't exit before
+	// #exitRule.notBeforeTurn. Null → exiting is unrestricted for both sides.
+	#exitRule: ExitRule | null;
 	// Units that have exited the board since the last victory evaluation, fed as
 	// `exitedThisTurn` once per full game turn and then cleared. Not reactive.
 	#exitedSinceEval: { unitId: string; player: Player; edge: MapEdge }[] = [];
@@ -186,6 +191,7 @@ export class GameStore {
 		this.#torchRule = config.torchRule ?? null;
 		this.#turnLimitWinner = config.turnLimitWinner ?? null;
 		this.#exitEnabled = (config.victoryConditions ?? []).some((c) => c.kind === 'exit_units');
+		this.#exitRule = config.exitRule ?? null;
 		// Clone so the store never mutates the caller's scenario data.
 		this.#pendingReinforcements = structuredClone(config.reinforcements ?? []).flatMap((g) =>
 			g.units.map((spec) => ({ turn: g.turn, player: g.player, spec }))
@@ -205,7 +211,8 @@ export class GameStore {
 				victoryConditions: scenario.victoryConditions,
 				turnLimitWinner: scenario.turnLimitWinner,
 				reinforcements: scenario.reinforcements,
-				torchRule: scenario.torchRule
+				torchRule: scenario.torchRule,
+				exitRule: scenario.exitRule
 			}
 		);
 	}
@@ -243,6 +250,21 @@ export class GameStore {
 		return this.units.find((u) => u.id === id);
 	}
 
+	// Whether `player` may step a unit off the board this turn: exit must be enabled by
+	// the scenario, and any delayed-exit rule (see #exitRule) must have reached its turn
+	// for that player. Folded into getValidMoveTargets' allowExit, so an early exit hex
+	// simply isn't offered as a target (the unit can still stand on it to hold).
+	#canExit(player: Player): boolean {
+		if (!this.#exitEnabled) return false;
+		if (
+			this.#exitRule &&
+			this.#exitRule.player === player &&
+			this.turn < this.#exitRule.notBeforeTurn
+		)
+			return false;
+		return true;
+	}
+
 	// The currently-legal move/fire/charge targets for a unit, honoring the
 	// per-unit action-type gates (MOVE_OR_FIRE exclusivity, MP exhaustion,
 	// fired-this-activation). The single source of truth shared by the
@@ -257,7 +279,13 @@ export class GameStore {
 			unit.movementPointsUsed < def.movementAllowance;
 		if (canMove) {
 			const remainingMP = def.movementAllowance - unit.movementPointsUsed;
-			move = getValidMoveTargets(unit, this.grid, this.units, remainingMP, this.#exitEnabled);
+			move = getValidMoveTargets(
+				unit,
+				this.grid,
+				this.units,
+				remainingMP,
+				this.#canExit(unit.player)
+			);
 		}
 
 		let fire: Unit[] = [];

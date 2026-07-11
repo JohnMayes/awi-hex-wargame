@@ -35,6 +35,18 @@ export type TorchRule = {
 	player: Player;
 };
 
+/**
+ * Optional scenario rule: `player`'s units may not exit the board (the off-map exit
+ * action for an `exit_units` victory) until game turn `notBeforeTurn`. Models a
+ * rearguard that must hold before it withdraws — the units can still advance to and
+ * stand on the exit hexes early, they just can't leave. Only restricts the named
+ * player; the other side (and scenarios without one) is unaffected.
+ */
+export type ExitRule = {
+	player: Player;
+	notBeforeTurn: number;
+};
+
 /** A group of reinforcements that all arrive on the same game turn for one player. */
 export type ReinforcementGroup = {
 	/** Game turn (>= 1) the group is scheduled to arrive. */
@@ -72,4 +84,6 @@ export type Scenario = {
 	reinforcements?: ReinforcementGroup[];
 	/** Town-burning rule (see TorchRule). Omit on scenarios without burnable towns. */
 	torchRule?: TorchRule;
+	/** Delayed-exit rule (see ExitRule). Omit on scenarios where exiting is unrestricted. */
+	exitRule?: ExitRule;
 };

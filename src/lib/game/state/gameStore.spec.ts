@@ -2441,12 +2441,17 @@ describe('exit action + turnLimitWinner', () => {
 
 	function makeExitStore(
 		victoryConditions: VictoryCondition[],
-		opts: { turnLimit?: number | null; turnLimitWinner?: 0 | 1 } = {}
+		opts: {
+			turnLimit?: number | null;
+			turnLimitWinner?: 0 | 1;
+			exitRule?: { player: 0 | 1; notBeforeTurn: number };
+		} = {}
 	) {
 		return new GameStore([runner(), foe()], exitMap(), [general], {
 			firstPlayer: 0,
 			turnLimit: opts.turnLimit ?? 15,
 			turnLimitWinner: opts.turnLimitWinner,
+			exitRule: opts.exitRule,
 			victoryConditions
 		});
 	}
@@ -2500,6 +2505,29 @@ describe('exit action + turnLimitWinner', () => {
 		store.endPlayerTurn();
 		store.endPlayerTurn();
 		expect(store.victoryStatus.find((s) => s.id === 'blue-exit')?.text).toBe('1 / 5');
+	});
+
+	it('a delayed-exit rule blocks the off-map exit before its turn (unit repositions, stays on board)', () => {
+		expect.assertions(3);
+		// Colonials (player 0) may not exit until turn 3. On turn 1 the runner reaching the
+		// exit hex just repositions there — it does not leave.
+		const store = makeExitStore([exitNorth(1)], { exitRule: { player: 0, notBeforeTurn: 3 } });
+		store.activateUnit('blue-runner');
+		store.moveUnit({ col: 0, row: 0 }); // the exit hex — but exit is not yet allowed
+		const runnerStill = store.units.find((u) => u.id === 'blue-runner');
+		expect(runnerStill).toBeDefined();
+		expect(runnerStill?.coordinates).toEqual({ col: 0, row: 0 });
+		expect(store.log.find((e) => e.kind === 'unit_exited')).toBeUndefined();
+	});
+
+	it('the delayed exit is allowed once its turn arrives', () => {
+		expect.assertions(2);
+		const store = makeExitStore([exitNorth(1)], { exitRule: { player: 0, notBeforeTurn: 3 } });
+		while (store.turn < 3) store.endPlayerTurn(); // advance to turn 3 without moving the runner
+		store.activateUnit('blue-runner');
+		store.moveUnit({ col: 0, row: 0 }); // now a legal off-map exit
+		expect(store.units.find((u) => u.id === 'blue-runner')).toBeUndefined();
+		expect(store.log.find((e) => e.kind === 'unit_exited')).toBeDefined();
 	});
 
 	it('turnLimitWinner takes the game at the limit, overriding the SP tiebreak', () => {
