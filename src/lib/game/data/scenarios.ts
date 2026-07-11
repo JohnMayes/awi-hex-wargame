@@ -2,7 +2,13 @@ import type { Leader } from '../core/command';
 import type { ReinforcementGroup, Scenario } from '../core/scenario';
 import { UnitType, type Unit, type Player } from '../core/types';
 import { unitDefinitions } from '../core/unitDefinitions';
-import { BUNKER_HILL_MAP, PAOLI_MAP, PITCHED_BATTLE_MAP, WHITE_PLAINS_MAP } from './maps';
+import {
+	BUNKER_HILL_MAP,
+	HUBBARDTON_MAP,
+	PAOLI_MAP,
+	PITCHED_BATTLE_MAP,
+	WHITE_PLAINS_MAP
+} from './maps';
 
 const sp = (type: UnitType) => unitDefinitions[type].defaultStrengthPoints;
 
@@ -475,9 +481,148 @@ export const PAOLI: Scenario = {
 	]
 };
 
+// --- Hubbardton (ARW series conversion; see docs/hubbardton-conversion.md) ---
+
+// Foot units modeled per the all-foot ARW pattern: Regulars → Line Infantry (SP 4); the
+// Loyalist/German militia "representing light infantry" → Light Infantry (SP 3), which can also
+// contest the woods. The Green Mountain Men marker (source: reroll 1s in woods; deny enemies the
+// woods retreat benefit) has no hook in our %-based combat / terrain model, so it collapses to a
+// single tough woods skirmisher: an `elite` Colonial Light Infantry (the Green Mountain Boys were
+// light riflemen). Variable SP + elite, so a small local builder rather than the LINE-only helpers.
+const hubUnit = (
+	id: string,
+	type: UnitType,
+	player: Player,
+	col: number,
+	row: number,
+	strength: number = sp(type),
+	elite = false
+): Unit => ({
+	id,
+	type,
+	player,
+	coordinates: { col, row },
+	strengthPoints: strength,
+	maxStrengthPoints: strength,
+	selected: false,
+	movementPointsUsed: 0,
+	firedThisActivation: false,
+	activated: false,
+	elite
+});
+
+const HUBBARDTON_UNITS: Unit[] = [
+	// Colonials (player 0): 3 Continental Regulars holding the centre-right line (the `C` hexes)
+	// + the Green Mountain Men (elite Light Infantry) forward in the (4,2) woods.
+	hubUnit('col-reg-1', UnitType.LINE_INFANTRY, 0, 5, 2, REGULAR_SP),
+	hubUnit('col-reg-2', UnitType.LINE_INFANTRY, 0, 5, 3, REGULAR_SP),
+	hubUnit('col-reg-3', UnitType.LINE_INFANTRY, 0, 5, 4, REGULAR_SP),
+	hubUnit('col-green-mtn', UnitType.LIGHT_INFANTRY, 0, 4, 2, REGULAR_SP, true),
+	// British (player 1) entering from the NW: 2 Regulars at the `B` hexes, 1 Regular +
+	// 1 Loyalist Militia (light) at the red `R` hexes.
+	hubUnit('brit-reg-1', UnitType.LINE_INFANTRY, 1, 0, 1, REGULAR_SP),
+	hubUnit('brit-reg-2', UnitType.LINE_INFANTRY, 1, 2, 1, REGULAR_SP),
+	hubUnit('brit-reg-3', UnitType.LINE_INFANTRY, 1, 1, 1, REGULAR_SP),
+	hubUnit('brit-loyalist-1', UnitType.LIGHT_INFANTRY, 1, 0, 2, MILITIA_SP)
+];
+
+// Generous radius (ARW has no command rules). Colonels Francis & Warner for the Continentals;
+// Fraser & Riedesel for the British/German advance.
+const HUBBARDTON_LEADERS: Leader[] = [
+	{ id: 'col-francis', attachedToUnitId: 'col-reg-2', commandRadius: 6 },
+	{ id: 'col-warner', attachedToUnitId: 'col-green-mtn', commandRadius: 5 },
+	{ id: 'brit-fraser', attachedToUnitId: 'brit-reg-2', commandRadius: 6 },
+	{ id: 'brit-riedesel', attachedToUnitId: 'brit-reg-1', commandRadius: 5 }
+];
+
+// Turn 3: 2 Loyalist Militia (Riedesel's Germans) arrive at the NW `R` hexes. Turn 5: 1 Colonial
+// Militia arrives at the SE `blue-R` hex. (Source gated the turn-5/6 Colonial on a 4-5-6 die roll
+// each turn; our ReinforcementGroup is fixed-turn only, so it is one guaranteed turn-5 arrival.)
+const HUBBARDTON_REINFORCEMENTS: ReinforcementGroup[] = [
+	{
+		turn: 3,
+		player: 1,
+		units: [
+			{
+				id: 'brit-loyalist-2',
+				type: UnitType.LIGHT_INFANTRY,
+				coordinates: { col: 0, row: 0 },
+				strengthPoints: MILITIA_SP,
+				maxStrengthPoints: MILITIA_SP
+			},
+			{
+				id: 'brit-loyalist-3',
+				type: UnitType.LIGHT_INFANTRY,
+				coordinates: { col: 1, row: 0 },
+				strengthPoints: MILITIA_SP,
+				maxStrengthPoints: MILITIA_SP
+			}
+		]
+	},
+	{
+		turn: 5,
+		player: 0,
+		units: [
+			{
+				id: 'col-militia-1',
+				type: UnitType.LINE_INFANTRY,
+				coordinates: { col: 6, row: 6 },
+				strengthPoints: MILITIA_SP,
+				maxStrengthPoints: MILITIA_SP
+			}
+		]
+	}
+];
+
+export const HUBBARDTON: Scenario = {
+	id: 'hubbardton',
+	name: 'Hubbardton',
+	description:
+		'7 July 1777: Fraser’s British and Riedesel’s Germans try to smash through a Continental ' +
+		'rearguard under Francis and Warner. The British must eliminate 3 Colonial units by the end ' +
+		'of turn 7; the Colonials win by bloodying the British (breaking a unit) and marching 2 units ' +
+		'off the south edge.',
+	map: HUBBARDTON_MAP,
+	units: HUBBARDTON_UNITS,
+	leaders: HUBBARDTON_LEADERS,
+	firstPlayer: 1,
+	turnLimit: 7,
+	reinforcements: HUBBARDTON_REINFORCEMENTS,
+	victoryConditions: [
+		{
+			kind: 'eliminate_units',
+			id: 'brit-kill-3',
+			player: 1,
+			description: 'Eliminate 3 Colonial units',
+			count: 3
+		},
+		// Colonial win requires BOTH (group 'col-standfast', AND): bloody the British (their
+		// historically high casualty rate) AND get the rearguard away off the south edge — so
+		// the Continentals can't just sprint for the exit, they have to fight first.
+		{
+			kind: 'eliminate_units',
+			id: 'col-bloody',
+			player: 0,
+			group: 'col-standfast',
+			description: 'Break 1 British unit',
+			count: 1
+		},
+		{
+			kind: 'exit_units',
+			id: 'col-escape-south',
+			player: 0,
+			group: 'col-standfast',
+			description: 'March 2 units off the south edge',
+			edge: 'south',
+			count: 2
+		}
+	]
+};
+
 export const SCENARIOS: Record<string, Scenario> = {
 	[PITCHED_BATTLE.id]: PITCHED_BATTLE,
 	[BUNKER_HILL.id]: BUNKER_HILL,
 	[WHITE_PLAINS.id]: WHITE_PLAINS,
-	[PAOLI.id]: PAOLI
+	[PAOLI.id]: PAOLI,
+	[HUBBARDTON.id]: HUBBARDTON
 };

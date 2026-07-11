@@ -339,3 +339,64 @@ export const PAOLI_MAP: MapDefinition = Array.from({ length: PAOLI_COLS }, (_, c
 		roadEdges: PAOLI_ROADS[`${col},${row}`]
 	}))
 ).flat();
+
+// Hubbardton (7 Jul 1777) — 7 cols × 9 rows, north = row 0. Fraser's British (+ Riedesel's
+// Germans) attack from the NW (low rows/cols) into Francis & Warner's Continental rearguard,
+// which holds the centre-right and withdraws off the SOUTH edge. Decoded from hubbardton.pdf p2
+// (an 8-col × 8-row source): the NE corner column (source c7 — the Pittsford/Ridge corner hills
+// + a road stub, off the NW→centre→SE axis) was dropped to fit 7 wide, cols 0-6 kept 1:1; an
+// OPEN row 8 was added south as the escape zone. See docs/hubbardton-conversion.md. Woods are
+// Light-Infantry-only route-around scenery (per the ARW-woods friction); HILLTOP is difficult
+// terrain + elevation with no fire cover.
+const HUBBARDTON_COLS = 7;
+const HUBBARDTON_ROWS = 9;
+
+const HUBBARDTON_FEATURES: Record<string, TerrainType> = {
+	// Hills: Sargent Hill (top-centre), a central rise, Zion Hill (centre pair), SW hill.
+	'3,0': TerrainType.HILLTOP, // Sargent Hill
+	'3,2': TerrainType.HILLTOP,
+	'5,1': TerrainType.HILLTOP,
+	'4,5': TerrainType.HILLTOP, // Zion Hill
+	'4,6': TerrainType.HILLTOP, // Zion Hill
+	'0,7': TerrainType.HILLTOP,
+	// Woods stands (Light-Infantry-only). The (4,2) stand is the Green Mountain Men's forward
+	// skirmish position; the escape column (col 5) is deliberately clear of woods.
+	'0,3': TerrainType.WOODS,
+	'4,2': TerrainType.WOODS,
+	'3,4': TerrainType.WOODS,
+	'6,7': TerrainType.WOODS
+};
+
+// The Crown Point military road: a col-5 spine running the length of the map (British axis of
+// advance from the north, and the Continental escape road south), plus a western lateral (row 1)
+// carrying the British left prong in from the NW edge to join the spine at (5,1). Off-board stubs
+// ({row:-1}/{row:9}/{col:-1}) give the border hexes an edge stub off the map. +1 move on an
+// all-road path only. All steps cube-adjacent (validated at load by roadEdgesFromPaths).
+const HUBBARDTON_ROADS = roadEdgesFromPaths(
+	[
+		[rc(5, -1), rc(5, 0), rc(5, 1), rc(5, 2), rc(5, 3), rc(5, 4), rc(5, 5), rc(5, 6), rc(5, 7), rc(5, 8), rc(5, 9)], // prettier-ignore
+		[rc(-1, 1), rc(0, 1), rc(1, 1), rc(2, 1), rc(3, 1), rc(4, 1), rc(5, 1)]
+	],
+	(c) => c.col >= 0 && c.col < HUBBARDTON_COLS && c.row >= 0 && c.row < HUBBARDTON_ROWS
+);
+
+// Exit hexes: the Continental escape off the south edge (SE corner), counting toward the
+// `exit_units` victory. Independent of the road.
+const HUBBARDTON_EXITS: Record<string, MapEdge> = {
+	'4,8': 'south',
+	'5,8': 'south',
+	'6,8': 'south'
+};
+// Objective markers (cosmetic star): the escape exits.
+const HUBBARDTON_OBJECTIVES = new Set(['4,8', '5,8', '6,8']);
+
+export const HUBBARDTON_MAP: MapDefinition = Array.from({ length: HUBBARDTON_COLS }, (_, col) =>
+	Array.from({ length: HUBBARDTON_ROWS }, (_, row) => ({
+		col,
+		row,
+		terrain: HUBBARDTON_FEATURES[`${col},${row}`] ?? TerrainType.OPEN,
+		roadEdges: HUBBARDTON_ROADS[`${col},${row}`],
+		exitEdge: HUBBARDTON_EXITS[`${col},${row}`],
+		objective: HUBBARDTON_OBJECTIVES.has(`${col},${row}`)
+	}))
+).flat();
