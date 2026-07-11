@@ -2,6 +2,9 @@
 // scenario and prints per-scenario balance stats. Run on demand (NOT part of the
 // test suite): `pnpm playtest [games]` (default 1000). Reproducible: game i uses
 // seed i, so the whole table is byte-identical across runs.
+//
+// Limit to specific scenarios (targeted playtesting / avoid timeouts) with
+// `--scenario=<id>[,<id>...]`, e.g. `pnpm playtest 500 --scenario=paoli`.
 import { SCENARIOS } from '../src/lib/game/data/scenarios';
 import {
 	runGame,
@@ -14,7 +17,19 @@ import {
 import { mulberry32 } from '../src/lib/game/core/rng';
 import { mechanicStats, formatMechanicStats } from '../src/lib/game/sim/report';
 
-const N = Number(process.argv[2]) || 1000;
+const args = process.argv.slice(2);
+const N = Number(args.find((a) => /^\d+$/.test(a))) || 1000;
+const onlyArg = args.find((a) => a.startsWith('--scenario='))?.slice('--scenario='.length);
+const only = onlyArg ? onlyArg.split(',').map((s) => s.trim()) : null;
+if (only) {
+	const unknown = only.filter((id) => !SCENARIOS[id]);
+	if (unknown.length) {
+		console.error(`Unknown scenario(s): ${unknown.join(', ')}`);
+		console.error(`Available: ${Object.keys(SCENARIOS).join(', ')}`);
+		process.exit(1);
+	}
+}
+const scenarios = only ? only.map((id) => SCENARIOS[id]) : Object.values(SCENARIOS);
 
 const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
 const median = (xs: number[]) => {
@@ -93,7 +108,7 @@ function abReport(
 
 console.log(`Playtest: ${N} games/scenario (seed i per game i)\n`);
 
-for (const scenario of Object.values(SCENARIOS)) {
+for (const scenario of scenarios) {
 	console.log(`── ${scenario.name} (${scenario.id}, turnLimit ${scenario.turnLimit}) ──`);
 	report('random vs random', scenario, randomPolicy, randomPolicy);
 	report('baseline vs baseline', scenario, heuristicPolicy, heuristicPolicy);
